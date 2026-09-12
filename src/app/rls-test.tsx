@@ -24,6 +24,30 @@ export default function RLSTestScreen() {
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
+  const addLog = (message: string) => {
+    setLogs((prev) => [
+      `[${new Date().toLocaleTimeString()}] ${message}`,
+      ...prev,
+    ]);
+  };
+
+  const fetchProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('full_name, role')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      addLog(`Profile fetch error: ${error.message}`);
+      setProfile(null);
+      return;
+    }
+
+    setProfile(data as Profile);
+    addLog(`Role detected: ${data.role}`);
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
@@ -50,31 +74,8 @@ export default function RLSTestScreen() {
     return () => {
       subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const addLog = (message: string) => {
-    setLogs((prev) => [
-      `[${new Date().toLocaleTimeString()}] ${message}`,
-      ...prev,
-    ]);
-  };
-
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('full_name, role')
-      .eq('id', userId)
-      .single();
-
-    if (error) {
-      addLog(`Profile fetch error: ${error.message}`);
-      setProfile(null);
-      return;
-    }
-
-    setProfile(data as Profile);
-    addLog(`Role detected: ${data.role}`);
-  };
 
   const handleLogin = async () => {
     setLoading(true);
@@ -448,9 +449,7 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0px 0px 4px rgba(0, 0, 0, 0.1)',
     elevation: 2,
   },
   input: {
