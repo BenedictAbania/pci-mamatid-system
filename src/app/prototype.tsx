@@ -374,9 +374,9 @@ export default function PrototypePage() {
             </View>
           ) : null}
 
-          <View style={[styles.workspace, !isDesktop && styles.workspaceCompact]}>
-            <View style={[styles.leftColumn, !isDesktop && styles.columnCompact]}>
-              <Card palette={palette} style={styles.sampleCard}>
+          <View style={[styles.workspace, !isDesktop && styles.workspaceCompact, !isTablet && styles.workspaceMobile]}>
+            <View style={[styles.leftColumn, !isDesktop && styles.leftColumnCompact, !isTablet && styles.columnMobile]}>
+              <Card palette={palette} style={[styles.sampleCard, isDesktop && { height: 227 }]}>
                 <SectionHeading icon="sample" number={1} palette={palette} subtitle="Enter the sample unit details for the PCI computation." title="Sample Unit Information" />
                 <Text style={[styles.fieldLabel, { color: palette.text }]}>Sample Unit Area (Asphalt)</Text>
                 <InputShell palette={palette} suffix="m²">
@@ -393,7 +393,7 @@ export default function PrototypePage() {
                 </View>
               </Card>
 
-              <Card palette={palette} style={styles.distressCard}>
+              <Card palette={palette} style={[styles.distressCard, isDesktop && { height: 331 }]}>
                 <SectionHeading icon="distress" number={2} palette={palette} subtitle="Select an asphalt distress, set its details, and add it to the list." title="Distress Data" />
                 <Text style={[styles.fieldLabel, { color: palette.text }]}>Asphalt Distress Type</Text>
                 <Pressable
@@ -455,8 +455,8 @@ export default function PrototypePage() {
               </Card>
             </View>
 
-            <View style={[styles.centerColumn, !isDesktop && styles.columnCompact]}>
-              <Card palette={palette} style={styles.densityCard}>
+            <View style={[styles.centerColumn, !isDesktop && styles.centerColumnCompact, !isTablet && styles.columnMobile]}>
+              <Card palette={palette} style={[styles.densityCard, isDesktop && { height: 227 }]}>
                 <SectionHeading icon="density" number={3} palette={palette} subtitle="List of distresses and their computed density and deduct values." title="Density and Deduct Values" />
                 <View style={[styles.table, { borderColor: palette.border }]}>
                   <View style={[styles.tableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
@@ -492,8 +492,8 @@ export default function PrototypePage() {
                 </View>
               </Card>
 
-              <View style={[styles.centerBottom, !isDesktop && styles.centerBottomCompact]}>
-                <Card palette={palette} style={styles.totalCard}>
+              <View style={[styles.centerBottom, isDesktop && { height: 331 }, !isDesktop && styles.centerBottomCompact]}>
+                <Card palette={palette} style={[styles.totalCard, !isDesktop && { flex: 0 }]}>
                   <SectionHeading icon="total" number={4} palette={palette} subtitle="Sum of the individual deduct values for the sample unit." title="Total Deduct Value" />
                   <View style={[styles.formulaPanel, { backgroundColor: palette.cardSoft }]}>
                     <Text style={[styles.formulaLabel, { color: palette.text }]}>Individual Deduct Values</Text>
@@ -511,7 +511,7 @@ export default function PrototypePage() {
                   </View>
                 </Card>
 
-                <Card palette={palette} style={styles.cdvCard}>
+                <Card palette={palette} style={[styles.cdvCard, !isDesktop && { flex: 0 }]}>
                   <SectionHeading icon="correction" number={5} palette={palette} subtitle="Apply ASTM D6433-07 correction procedure (illustrative)." title="CDV Correction" />
                   <View style={[styles.cdvStats, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
                     <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Highest DV:</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.highestDV}</Text></View>
@@ -526,7 +526,7 @@ export default function PrototypePage() {
                     <Text style={[styles.detailToggleText, { color: palette.text }]}>View CDV Correction Details</Text>
                   </Pressable>
                   {showDetails ? (
-                    <View style={[styles.cdvTable, { borderColor: palette.border }]}>
+                    <View style={[styles.cdvTable, { borderColor: palette.border, flex: 1 }]}>
                       <View style={[styles.cdvTableRow, styles.cdvTableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
                         <Text style={[styles.cdvHead, styles.iterCol, { color: palette.text }]}>Iteration</Text><Text style={[styles.cdvHead, styles.adjustedCol, { color: palette.text }]}>Adjusted Deduct Values</Text><Text style={[styles.cdvHead, styles.qCol, { color: palette.text }]}>q</Text><Text style={[styles.cdvHead, styles.tdvCol, { color: palette.text }]}>TDV</Text><Text style={[styles.cdvHead, styles.cdvCol, { color: palette.text }]}>CDV (Illustrative)</Text>
                       </View>
@@ -545,7 +545,7 @@ export default function PrototypePage() {
               </View>
             </View>
 
-            <View style={[styles.rightColumn, !isDesktop && styles.columnCompact]}>
+            <View style={[styles.rightColumn, !isDesktop && styles.rightColumnCompact, !isTablet && styles.columnMobile]}>
               <Card palette={palette} style={styles.ratingCard}>
                 <SectionHeading icon="rating" number={6} palette={palette} subtitle="Final PCI value and corresponding condition rating." title="PCI and Condition Rating" />
                 <RatingGauge palette={palette} result={displayedResult} />
@@ -644,17 +644,21 @@ const styles = StyleSheet.create({
   errorBanner: { alignItems: 'center', backgroundColor: '#FEE2E2', borderRadius: 6, flexDirection: 'row', gap: 8, padding: 9 },
   errorText: { color: '#B91C1C', fontSize: 12, fontWeight: '700' },
   workspace: { alignItems: 'stretch', flexDirection: 'row', gap: 10 },
-  workspaceCompact: { flexDirection: 'column', height: 'auto' },
+  workspaceCompact: { flexWrap: 'wrap', height: 'auto' },
+  workspaceMobile: { flexDirection: 'column' },
   leftColumn: { flex: 1.08, gap: 11, minWidth: 0 },
+  leftColumnCompact: { flex: 1, minWidth: 340 },
   centerColumn: { flex: 2.12, gap: 11, minWidth: 0 },
+  centerColumnCompact: { flex: 1.5, minWidth: 400 },
   rightColumn: { flex: 0.86, minWidth: 0 },
-  columnCompact: { flex: 0, width: '100%' },
-  centerBottom: { flexDirection: 'row', gap: 10, height: 331 },
+  rightColumnCompact: { flex: 1, minWidth: '100%' },
+  columnMobile: { flex: 0, width: '100%', minWidth: 0 },
+  centerBottom: { flexDirection: 'row', gap: 10, minHeight: 331 },
   centerBottomCompact: { flexDirection: 'column', height: 'auto' },
   card: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 12 },
-  sampleCard: { height: 227 },
-  distressCard: { height: 331, position: 'relative', zIndex: 4 },
-  densityCard: { height: 227 },
+  sampleCard: { minHeight: 220 },
+  distressCard: { minHeight: 330, position: 'relative', zIndex: 4 },
+  densityCard: { minHeight: 220 },
   totalCard: { flex: 0.77, minWidth: 0, overflow: 'hidden' },
   cdvCard: { flex: 1.02, minWidth: 0, paddingHorizontal: 12 },
   ratingCard: { flex: 1 },
