@@ -312,7 +312,7 @@ export default function PrototypePage() {
         </View>
         <View style={styles.headerRight}>
           <ThemeSwitch isDark={isDark} onPress={() => setIsDark((current) => !current)} />
-          <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }) => [styles.backButton, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ scale: 1.02 }], backgroundColor: '#3B82F6' }] as any}>
+          <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }: any) => [styles.backButton, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ scale: 1.02 }], backgroundColor: '#3B82F6' }] as any}>
             <Feather color="#FFFFFF" name="arrow-left" size={17} />
             <Text style={styles.backButtonText}>Sign In</Text>
           </Pressable>
@@ -448,7 +448,7 @@ export default function PrototypePage() {
                   </View>
                 </View>
                 <Text style={[styles.quantityHelp, { color: palette.secondary }]}>Enter the measured area, length, or number of the distress.</Text>
-                <Pressable onPress={handleAdd} style={({ pressed, hovered }) => [styles.addButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}>
+                <Pressable onPress={handleAdd} style={({ pressed, hovered }: any) => [styles.addButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}>
                   <View style={styles.addIcon}><Feather color={palette.primary} name="plus" size={15} /></View>
                   <Text style={styles.addButtonText}>Add to List</Text>
                 </Pressable>
@@ -570,9 +570,9 @@ export default function PrototypePage() {
           <View style={[styles.bottomRow, !isDesktop && styles.bottomRowCompact]}>
             <Notes palette={palette} />
             <View style={[styles.actions, !isDesktop && styles.actionsCompact]}>
-              <Pressable onPress={handleReset} style={({ pressed, hovered }) => [styles.secondaryButton, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.cardSoft : palette.card, borderColor: hovered ? palette.muted : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.text} name="rotate-ccw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Reset Demonstration</Text></Pressable>
-              <Pressable onPress={handleTryAnother} style={({ pressed, hovered }) => [styles.secondaryButton, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.blueSoft : palette.card, borderColor: hovered ? palette.primary : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.primary} name="refresh-cw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Try Another Example</Text></Pressable>
-              <Pressable onPress={handleCompute} style={({ pressed, hovered }) => [styles.computeButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}><Feather color="#FFFFFF" name="cpu" size={20} /><Text style={styles.computeButtonText}>Compute PCI</Text></Pressable>
+              <Pressable onPress={handleReset} style={({ pressed, hovered }: any) => [styles.secondaryButton, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.cardSoft : palette.card, borderColor: hovered ? palette.muted : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.text} name="rotate-ccw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Reset Demonstration</Text></Pressable>
+              <Pressable onPress={handleTryAnother} style={({ pressed, hovered }: any) => [styles.secondaryButton, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.blueSoft : palette.card, borderColor: hovered ? palette.primary : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.primary} name="refresh-cw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Try Another Example</Text></Pressable>
+              <Pressable onPress={handleCompute} style={({ pressed, hovered }: any) => [styles.computeButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}><Feather color="#FFFFFF" name="cpu" size={20} /><Text style={styles.computeButtonText}>Compute PCI</Text></Pressable>
             </View>
           </View>
         </View>

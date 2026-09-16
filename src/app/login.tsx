@@ -220,7 +220,7 @@ export default function LoginScreen() {
           accessibilityRole="button"
           hitSlop={8}
           onPress={toggleColorScheme}
-          style={({ pressed, hovered }) => [
+          style={({ pressed, hovered }: any) => [
             styles.themeButton,
             {
               backgroundColor: hovered ? (isDark ? '#1E293B' : '#E2E8F0') : colors.themeButton,
@@ -367,7 +367,7 @@ export default function LoginScreen() {
               accessibilityState={{ busy: loading, disabled: loading }}
               disabled={loading}
               onPress={() => void handleLogin()}
-              style={({ pressed, hovered }) => [
+              style={({ pressed, hovered }: any) => [
                 styles.submitButton,
                 {
                   backgroundColor: pressed ? colors.primaryPressed : hovered ? colors.focus : colors.primary,
@@ -389,7 +389,7 @@ export default function LoginScreen() {
               accessibilityLabel="How Automated PCI Works"
               accessibilityRole="button"
               onPress={() => router.push('/prototype')}
-              style={({ pressed, hovered }) => [
+              style={({ pressed, hovered }: any) => [
                 styles.prototypeButton,
                 {
                   backgroundColor: pressed ? '#F1F5F9' : hovered ? '#F8FAFC' : '#FFFFFF',
