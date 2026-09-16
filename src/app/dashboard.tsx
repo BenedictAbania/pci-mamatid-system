@@ -1,17 +1,13 @@
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { AdminShell } from '@/components/admin/admin-shell';
+import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   DimensionValue,
   Pressable,
   Platform,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -21,7 +17,6 @@ import {
   DashboardInspection,
   loadDashboardData,
 } from '@/lib/dashboard';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -37,17 +32,6 @@ const monthLabels = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 const conditionColors = ['#17A968', '#2878F0', '#F4B942', '#F47B20', '#E52535', '#7656D6'];
-const adminNavigation = [
-  { label: 'Dashboard', icon: 'grid', route: '/dashboard' },
-  { label: 'Road Network', icon: 'map', route: '/road-network' },
-  { label: 'Inspections', icon: 'clipboard', route: '/inspections' },
-  { label: 'PCI Results', icon: 'trending-up', route: '/pci-results' },
-  { label: 'Maintenance Plan', icon: 'tool', route: '/maintenance-plan' },
-  { label: 'Users & Roles', icon: 'users', route: '/users' },
-  { label: 'Reports', icon: 'file-text', route: '/reports' },
-  { label: 'System Settings', icon: 'settings', route: '/settings' },
-] as const;
-
 type Palette = ReturnType<typeof getPalette>;
 
 function getPalette(isDark: boolean) {
@@ -72,15 +56,6 @@ function getPalette(isDark: boolean) {
 
 function displayName(name: string | undefined, email: string | undefined) {
   return name?.trim() || email?.split('@')[0] || 'Administrator';
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'AD';
 }
 
 function formatDate(value: string) {
@@ -119,25 +94,21 @@ function buildConicGradient(
 }
 
 export default function AdminDashboard() {
-  const router = useRouter();
   const { width } = useWindowDimensions();
   const { profile, role, user } = useAuth();
-  const { colorScheme, toggleColorScheme } = useAppTheme();
+  const { colorScheme } = useAppTheme();
   const palette = useMemo(() => getPalette(colorScheme === 'dark'), [colorScheme]);
   const [data, setData] = useState<DashboardData>(emptyDashboard);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [query, setQuery] = useState('');
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const isNarrow = width < 980;
   const isPhone = width < 680;
   const name = displayName(profile?.full_name, user?.email);
 
-  const fetchDashboard = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+  const fetchDashboard = useCallback(async (_isRefresh = false) => {
+    setLoading(true);
     setErrorMessage('');
 
     try {
@@ -146,7 +117,6 @@ export default function AdminDashboard() {
       setErrorMessage(error instanceof Error ? error.message : 'The dashboard could not be loaded.');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
@@ -298,333 +268,194 @@ export default function AdminDashboard() {
       .slice(0, 6);
   }, [branchById, data, normalizedQuery, profileById, sectionById]);
 
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-  }
 
-  if (role !== 'admin') {
-    return (
-      <View style={[styles.centered, { backgroundColor: palette.background }]}>
-        <View style={[styles.accessCard, { backgroundColor: palette.panel, borderColor: palette.border }]}>
-          <View style={[styles.accessIcon, { backgroundColor: palette.redSoft }]}>
-            <Feather color={palette.red} name="shield" size={30} />
-          </View>
-          <Text style={[styles.accessTitle, { color: palette.text }]}>Administrator access required</Text>
-          <Text style={[styles.accessCopy, { color: palette.muted }]}>
-            This dashboard is available only to LAKAD system administrators.
-          </Text>
-          <Pressable onPress={handleSignOut} style={[styles.primaryButton, { backgroundColor: palette.blue }]}>
-            <Text style={styles.primaryButtonText}>Sign out</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
-  const sidebarVisible = !isNarrow || menuOpen;
+  const workflowCounts = useMemo(() => {
+    const counts = { planned: 0, draft: 0, submitted: 0, returned: 0, approved: 0, published: 0 };
+    data.inspections.forEach(i => {
+      if (i.status in counts) counts[i.status as keyof typeof counts]++;
+    });
+    return counts;
+  }, [data.inspections]);
 
   return (
-    <View style={[styles.screen, { backgroundColor: palette.background }]}>
-      {sidebarVisible ? (
-        <>
-          {isNarrow ? <Pressable onPress={() => setMenuOpen(false)} style={styles.scrim} /> : null}
-          <Sidebar
-            isOverlay={isNarrow}
-            name={name}
-            onClose={() => setMenuOpen(false)}
-            onNavigate={(route) => router.push(route as never)}
-            onSignOut={handleSignOut}
-          />
-        </>
+    <AdminShell loading={loading} onRefresh={() => fetchDashboard(true)} onSearchChange={setQuery} searchValue={query} subtitle="Monitor road data, inspections, and LAKAD users from one place." title="Dashboard">
+      <View style={[styles.welcomeRow, isNarrow && styles.stack]}>
+        <View style={styles.welcomeCopy}>
+          <Text style={[styles.eyebrow, { color: palette.muted }]}>
+            {new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(now).toUpperCase()}
+          </Text>
+          <Text style={[styles.welcomeTitle, isPhone && styles.welcomeTitlePhone, { color: palette.text }]}>
+            Welcome back, {name.split(' ')[0]}!
+          </Text>
+          <Text style={[styles.welcomeSubtitle, { color: palette.muted }]}>
+            Monitor road data, inspections, and LAKAD users from one place.
+          </Text>
+        </View>
+        <View style={styles.heroBanner}>
+          <Image contentFit="cover" source={require('../../assets/images/lakad_hero_bg.jpg')} style={styles.absoluteFill} />
+          <View style={styles.heroOverlay} />
+          <Text style={styles.heroQuote}>“Better data.\nSafer roads.\nStronger communities.”</Text>
+          <Text style={styles.heroBrand}>LAKAD</Text>
+        </View>
+      </View>
+
+      {errorMessage ? (
+        <View style={[styles.errorBanner, { backgroundColor: palette.redSoft, borderColor: palette.red }]}>
+          <Feather color={palette.red} name="alert-circle" size={19} />
+          <Text style={[styles.errorText, { color: palette.text }]}>{errorMessage}</Text>
+          <Pressable onPress={() => fetchDashboard()}>
+            <Text style={[styles.retryText, { color: palette.red }]}>Retry</Text>
+          </Pressable>
+        </View>
       ) : null}
 
-      <View style={styles.mainColumn}>
-        <View style={[styles.header, { backgroundColor: palette.panel, borderColor: palette.border }]}>
-          <Pressable
-            accessibilityLabel="Open navigation"
-            onPress={() => setMenuOpen((current) => !current)}
-            style={styles.headerIconButton}>
-            <Feather color={palette.text} name="menu" size={23} />
-          </Pressable>
-          <View style={[styles.searchBox, { backgroundColor: palette.input, borderColor: palette.border }]}>
-            <Feather color={palette.muted} name="search" size={17} />
-            <TextInput
-              onChangeText={setQuery}
-              placeholder="Search inspections, roads, or activity..."
-              placeholderTextColor={palette.muted}
-              style={[styles.searchInput, { color: palette.text }]}
-              value={query}
-            />
-            {query ? (
-              <Pressable accessibilityLabel="Clear search" onPress={() => setQuery('')}>
-                <Feather color={palette.muted} name="x" size={17} />
-              </Pressable>
-            ) : null}
-          </View>
-          <Pressable
-            accessibilityLabel={`Use ${colorScheme === 'dark' ? 'light' : 'dark'} mode`}
-            onPress={toggleColorScheme}
-            style={[styles.roundButton, { borderColor: palette.border }]}>
-            <Feather color={palette.text} name={colorScheme === 'dark' ? 'sun' : 'moon'} size={18} />
-          </Pressable>
-          {!isPhone ? (
-            <View style={[styles.account, { borderLeftColor: palette.border }]}>
-              <View style={styles.avatar}><Text style={styles.avatarText}>{initials(name)}</Text></View>
-              <View>
-                <Text numberOfLines={1} style={[styles.accountName, { color: palette.text }]}>{name}</Text>
-                <Text style={[styles.accountRole, { color: palette.muted }]}>System Administrator</Text>
-              </View>
-            </View>
-          ) : null}
-        </View>
-
-        <ScrollView
-          contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => fetchDashboard(true)}
-              tintColor={palette.blue}
-            />
-          }>
-          <View style={[styles.welcomeRow, isNarrow && styles.stack]}>
-            <View style={styles.welcomeCopy}>
-              <Text style={[styles.eyebrow, { color: palette.muted }]}>
-                {new Intl.DateTimeFormat(undefined, {
-                  weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-                }).format(now).toUpperCase()}
-              </Text>
-              <Text style={[styles.welcomeTitle, isPhone && styles.welcomeTitlePhone, { color: palette.text }]}>
-                Welcome back, {name.split(' ')[0]}!
-              </Text>
-              <Text style={[styles.welcomeSubtitle, { color: palette.muted }]}>
-                Monitor road data, inspections, and LAKAD users from one place.
-              </Text>
-            </View>
-            <View style={styles.heroBanner}>
-              <Image
-                contentFit="cover"
-                source={require('../../assets/images/lakad_hero_bg.jpg')}
-                style={styles.absoluteFill}
-              />
-              <View style={styles.heroOverlay} />
-              <Text style={styles.heroQuote}>“Better data.{`\n`}Safer roads.{`\n`}Stronger communities.”</Text>
-              <Text style={styles.heroBrand}>LAKAD</Text>
-            </View>
+      {!loading && (
+        <>
+          <View style={styles.metricGrid}>
+            <MetricCard color={palette.blue} icon="map" label="Total Road Sections" palette={palette} softColor={palette.blueSoft} value={data.sections.length.toLocaleString()} />
+            <MetricCard color={palette.green} icon="clipboard" label="Total Inspections" palette={palette} softColor={palette.greenSoft} value={data.inspections.length.toLocaleString()} />
+            <MetricCard color={palette.amber} icon="pie-chart" label="Avg. PCI (All Roads)" palette={palette} softColor={palette.amberSoft} value={averagePci === null ? '—' : averagePci.toFixed(1)} />
+            <MetricCard color={palette.red} icon="alert-triangle" label="Sections Needing Maintenance" palette={palette} softColor={palette.redSoft} value={maintenanceSections.toLocaleString()} />
           </View>
 
-          {errorMessage ? (
-            <View style={[styles.errorBanner, { backgroundColor: palette.redSoft, borderColor: palette.red }]}>
-              <Feather color={palette.red} name="alert-circle" size={19} />
-              <Text style={[styles.errorText, { color: palette.text }]}>{errorMessage}</Text>
-              <Pressable onPress={() => fetchDashboard()}>
-                <Text style={[styles.retryText, { color: palette.red }]}>Retry</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          {loading ? (
-            <View style={styles.loadingBlock}>
-              <ActivityIndicator color={palette.blue} size="large" />
-              <Text style={[styles.loadingText, { color: palette.muted }]}>Loading live dashboard data...</Text>
-            </View>
-          ) : (
-            <>
-              <View style={styles.metricGrid}>
-                <MetricCard color={palette.blue} icon="map" label="Total Road Sections" palette={palette} softColor={palette.blueSoft} value={data.sections.length.toLocaleString()} />
-                <MetricCard color={palette.green} icon="clipboard" label="Total Inspections" palette={palette} softColor={palette.greenSoft} value={data.inspections.length.toLocaleString()} />
-                <MetricCard color={palette.amber} icon="pie-chart" label="Avg. PCI (All Roads)" palette={palette} softColor={palette.amberSoft} value={averagePci === null ? '—' : averagePci.toFixed(1)} />
-                <MetricCard color={palette.red} icon="alert-triangle" label="Sections Needing Maintenance" palette={palette} softColor={palette.redSoft} value={maintenanceSections.toLocaleString()} />
+          <Panel palette={palette} title="Workflow Status" style={{ marginTop: 16 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              <View style={[styles.statusPill, { backgroundColor: palette.panelAlt }]}>
+                <Text style={{ color: palette.text, fontSize: 13, fontWeight: '700' }}>{workflowCounts.planned} Planned</Text>
               </View>
+              <View style={[styles.statusPill, { backgroundColor: palette.panelAlt }]}>
+                <Text style={{ color: palette.text, fontSize: 13, fontWeight: '700' }}>{workflowCounts.draft} Draft</Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: palette.blueSoft }]}>
+                <Text style={{ color: palette.blue, fontSize: 13, fontWeight: '700' }}>{workflowCounts.submitted} Submitted</Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: palette.amberSoft }]}>
+                <Text style={{ color: palette.amber, fontSize: 13, fontWeight: '700' }}>{workflowCounts.returned} Returned</Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: palette.greenSoft }]}>
+                <Text style={{ color: palette.green, fontSize: 13, fontWeight: '700' }}>{workflowCounts.approved} Approved</Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: palette.greenSoft }]}>
+                <Text style={{ color: palette.green, fontSize: 13, fontWeight: '700' }}>{workflowCounts.published} Published</Text>
+              </View>
+            </View>
+          </Panel>
 
-              <View style={[styles.panelGrid, isNarrow && styles.stack]}>
-                <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle="Based on assessed road sections" title="Road Condition Distribution">
-                  {conditionGroups.length ? (
-                    <View style={[styles.conditionChart, isPhone && styles.conditionChartPhone]}>
-                      {Platform.OS === 'web' ? (
-                        <View
-                          style={[
-                            styles.donut,
-                            {
-                              backgroundImage: buildConicGradient(conditionGroups, assessedSections.length),
-                            } as never,
-                          ]}>
-                          <View style={[styles.donutCenter, { backgroundColor: palette.panel }]}>
-                            <Text style={[styles.donutValue, { color: palette.text }]}>{assessedSections.length}</Text>
-                            <Text style={[styles.donutLabel, { color: palette.muted }]}>Sections</Text>
-                          </View>
-                        </View>
-                      ) : (
-                        <View style={[styles.conditionBar, { backgroundColor: palette.panelAlt }]}>
-                          {conditionGroups.map((group) => (
-                            <View
-                              key={group.label}
-                              style={{
-                                backgroundColor: group.color,
-                                width: `${(group.count / assessedSections.length) * 100}%` as DimensionValue,
-                              }}
-                            />
-                          ))}
-                        </View>
-                      )}
-                      <View style={styles.legendList}>
-                        {conditionGroups.map((group) => (
-                          <View key={group.label} style={styles.legendRow}>
-                            <View style={[styles.legendDot, { backgroundColor: group.color }]} />
-                            <Text style={[styles.legendLabel, { color: palette.text }]}>{group.label}</Text>
-                            <Text style={[styles.legendValue, { color: palette.text }]}>{group.count}</Text>
-                          </View>
-                        ))}
+          <View style={[styles.panelGrid, { marginTop: 16 }, isNarrow && styles.stack]}>
+            <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle="Based on assessed road sections" title="Road Condition Distribution">
+              {conditionGroups.length ? (
+                <View style={[styles.conditionChart, isPhone && styles.conditionChartPhone]}>
+                  {Platform.OS === 'web' ? (
+                    <View
+                      style={[
+                        styles.donut,
+                        {
+                          backgroundImage: buildConicGradient(conditionGroups, assessedSections.length),
+                        } as never,
+                      ]}>
+                      <View style={[styles.donutCenter, { backgroundColor: palette.panel }]}>
+                        <Text style={[styles.donutValue, { color: palette.text }]}>{assessedSections.length}</Text>
+                        <Text style={[styles.donutLabel, { color: palette.muted }]}>Sections</Text>
                       </View>
                     </View>
                   ) : (
-                    <EmptyState icon="pie-chart" message="PCI condition data will appear after road sections are assessed." palette={palette} />
-                  )}
-                </Panel>
-
-                <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle={`Inspections conducted in ${currentYear}`} title="Inspection Trend">
-                  {visibleMonths.some(Boolean) ? (
-                    <View style={styles.barChart}>
-                      {visibleMonths.map((count, index) => (
-                        <View key={monthLabels[index]} style={styles.barColumn}>
-                          <Text style={[styles.barValue, { color: palette.muted }]}>{count || ''}</Text>
-                          <View style={[styles.barTrack, { backgroundColor: palette.panelAlt }]}>
-                            <View
-                              style={[
-                                styles.barFill,
-                                {
-                                  height: `${Math.max((count / maxMonthCount) * 100, count ? 8 : 0)}%` as DimensionValue,
-                                },
-                              ]}
-                            />
-                          </View>
-                          <Text style={[styles.barLabel, { color: palette.muted }]}>{monthLabels[index]}</Text>
-                        </View>
+                    <View style={[styles.conditionBar, { backgroundColor: palette.panelAlt }]}>
+                      {conditionGroups.map((group) => (
+                        <View
+                          key={group.label}
+                          style={{
+                            backgroundColor: group.color,
+                            width: `${(group.count / assessedSections.length) * 100}%` as DimensionValue,
+                          }}
+                        />
                       ))}
                     </View>
-                  ) : (
-                    <EmptyState icon="bar-chart-2" message={`No inspections have been recorded in ${currentYear}.`} palette={palette} />
                   )}
-                </Panel>
-              </View>
-
-              <View style={[styles.panelGrid, isNarrow && styles.stack]}>
-                <Panel palette={palette} style={!isNarrow ? styles.widePanel : undefined} title="Recent Inspections">
-                  <InspectionList
-                    branchById={branchById}
-                    inspections={recentInspections}
-                    isPhone={isPhone}
-                    palette={palette}
-                    profileById={profileById}
-                    sectionById={sectionById}
-                  />
-                </Panel>
-                <Panel palette={palette} style={!isNarrow ? styles.sidePanel : undefined} title="User Management">
-                  {usersByRole.length ? usersByRole.map(([userRole, count]) => (
-                    <View key={userRole} style={[styles.userRow, { borderBottomColor: palette.border }]}>
-                      <View style={[styles.roleIcon, { backgroundColor: palette.blueSoft }]}>
-                        <Feather color={palette.blue} name="users" size={17} />
+                  <View style={styles.legendList}>
+                    {conditionGroups.map((group) => (
+                      <View key={group.label} style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: group.color }]} />
+                        <Text style={[styles.legendLabel, { color: palette.text }]}>{group.label}</Text>
+                        <Text style={[styles.legendValue, { color: palette.text }]}>{group.count}</Text>
                       </View>
-                      <Text style={[styles.userRole, { color: palette.text }]}>{titleCase(userRole)}</Text>
-                      <Text style={[styles.userCount, { color: palette.text }]}>{count}</Text>
-                    </View>
-                  )) : (
-                    <EmptyState icon="users" message="No user profiles are available." palette={palette} />
-                  )}
-                </Panel>
-                <Panel palette={palette} style={!isNarrow ? styles.sidePanel : undefined} title="System Activity">
-                  {activities.length ? activities.map((item) => (
-                    <View key={item.id} style={[styles.activityRow, { borderBottomColor: palette.border }]}>
-                      <Feather color={palette.blue} name={item.icon} size={18} />
-                      <View style={styles.activityCopy}>
-                        <Text numberOfLines={1} style={[styles.activityTitle, { color: palette.text }]}>{item.title}</Text>
-                        <Text numberOfLines={1} style={[styles.activityDetail, { color: palette.muted }]}>{item.detail}</Text>
-                      </View>
-                      <Text style={[styles.activityDate, { color: palette.muted }]}>{formatDateTime(item.date)}</Text>
-                    </View>
-                  )) : (
-                    <EmptyState icon="activity" message="No matching activity was found." palette={palette} />
-                  )}
-                </Panel>
-              </View>
-            </>
-          )}
-        </ScrollView>
-      </View>
-    </View>
-  );
-}
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <EmptyState icon="pie-chart" message="PCI condition data will appear after road sections are assessed." palette={palette} />
+              )}
+            </Panel>
 
-function Sidebar({
-  isOverlay,
-  name,
-  onClose,
-  onNavigate,
-  onSignOut,
-}: {
-  isOverlay: boolean;
-  name: string;
-  onClose: () => void;
-  onNavigate: (route: string) => void;
-  onSignOut: () => void;
-}) {
-  return (
-    <View style={[styles.sidebar, isOverlay && styles.sidebarOverlay]}>
-      <View style={styles.sidebarGlow} />
-      <View style={styles.logoRow}>
-        <View style={styles.sidebarBrand}>
-          <Image contentFit="contain" source={require('../../assets/images/LAKAD.png')} style={styles.logoMark} />
-          <View>
-            <Text style={styles.logoWord}>LAKAD</Text>
-            <Text style={styles.logoTagline}>Where Data Meets the Road</Text>
+            <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle={`Inspections conducted in ${currentYear}`} title="Inspection Trend">
+              {visibleMonths.some(Boolean) ? (
+                <View style={styles.barChart}>
+                  {visibleMonths.map((count, index) => (
+                    <View key={monthLabels[index]} style={styles.barColumn}>
+                      <Text style={[styles.barValue, { color: palette.muted }]}>{count || ''}</Text>
+                      <View style={[styles.barTrack, { backgroundColor: palette.panelAlt }]}>
+                        <View
+                          style={[
+                            styles.barFill,
+                            {
+                              height: `${Math.max((count / maxMonthCount) * 100, count ? 8 : 0)}%` as DimensionValue,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.barLabel, { color: palette.muted }]}>{monthLabels[index]}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <EmptyState icon="bar-chart-2" message={`No inspections have been recorded in ${currentYear}.`} palette={palette} />
+              )}
+            </Panel>
           </View>
-        </View>
-        {isOverlay ? (
-          <Pressable accessibilityLabel="Close navigation" onPress={onClose} style={styles.closeButton}>
-            <Feather color="#FFFFFF" name="x" size={22} />
-          </Pressable>
-        ) : null}
-      </View>
-      <View style={styles.adminBadge}>
-        <Feather color="#BBD5FF" name="shield" size={18} />
-        <View style={styles.adminBadgeCopy}>
-          <Text numberOfLines={1} style={styles.adminBadgeName}>{name}</Text>
-          <Text style={styles.adminBadgeRole}>System Administrator</Text>
-        </View>
-      </View>
-      <View style={styles.navList}>
-        {adminNavigation.map((item) => (
-          <Pressable
-            key={item.route}
-            onPress={() => {
-              onClose();
-              onNavigate(item.route);
-            }}
-            style={[styles.navItem, item.route === '/dashboard' && styles.navItemActive]}>
-            <Feather
-              color={item.route === '/dashboard' ? '#FFFFFF' : '#C9D9F5'}
-              name={item.icon}
-              size={19}
-            />
-            <Text style={item.route === '/dashboard' ? styles.navTextActive : styles.navText}>{item.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.sidebarBottom}>
-        <Image contentFit="cover" source={require('../../assets/images/lakad_hero_bg.jpg')} style={styles.absoluteFill} />
-        <View style={styles.sidebarBottomOverlay} />
-        <MaterialCommunityIcons color="#C7DCFF" name="road-variant" size={30} />
-        <Text style={styles.sidebarMotto}>Smarter Roads{`\n`}Through Better Data</Text>
-        <Text style={styles.sidebarPlace}>Barangay Mamatid{`\n`}Cabuyao, Laguna</Text>
-      </View>
-      <Pressable onPress={onSignOut} style={styles.signOut}>
-        <Feather color="#D7E5FF" name="log-out" size={18} />
-        <Text style={styles.signOutText}>Sign out</Text>
-      </Pressable>
-    </View>
+
+          <View style={[styles.panelGrid, { marginTop: 16 }, isNarrow && styles.stack]}>
+            <Panel palette={palette} style={!isNarrow ? styles.widePanel : undefined} title="Recent Inspections">
+              <InspectionList
+                branchById={branchById}
+                inspections={recentInspections}
+                isPhone={isPhone}
+                palette={palette}
+                profileById={profileById}
+                sectionById={sectionById}
+              />
+            </Panel>
+            <Panel palette={palette} style={!isNarrow ? styles.sidePanel : undefined} title="User Management">
+              {usersByRole.length ? usersByRole.map(([userRole, count]) => (
+                <View key={userRole} style={[styles.userRow, { borderBottomColor: palette.border }]}>
+                  <View style={[styles.roleIcon, { backgroundColor: palette.blueSoft }]}>
+                    <Feather color={palette.blue} name="users" size={17} />
+                  </View>
+                  <Text style={[styles.userRole, { color: palette.text }]}>{titleCase(userRole)}</Text>
+                  <Text style={[styles.userCount, { color: palette.text }]}>{count}</Text>
+                </View>
+              )) : (
+                <EmptyState icon="users" message="No user profiles are available." palette={palette} />
+              )}
+            </Panel>
+            <Panel palette={palette} style={!isNarrow ? styles.sidePanel : undefined} title="System Activity">
+              {activities.length ? activities.map((item) => (
+                <View key={item.id} style={[styles.activityRow, { borderBottomColor: palette.border }]}>
+                  <Feather color={palette.blue} name={item.icon} size={18} />
+                  <View style={styles.activityCopy}>
+                    <Text numberOfLines={1} style={[styles.activityTitle, { color: palette.text }]}>{item.title}</Text>
+                    <Text numberOfLines={1} style={[styles.activityDetail, { color: palette.muted }]}>{item.detail}</Text>
+                  </View>
+                  <Text style={[styles.activityDate, { color: palette.muted }]}>{formatDateTime(item.date)}</Text>
+                </View>
+              )) : (
+                <EmptyState icon="activity" message="No matching activity was found." palette={palette} />
+              )}
+            </Panel>
+          </View>
+        </>
+      )}
+    </AdminShell>
   );
 }
-
 function MetricCard({
   color,
   icon,

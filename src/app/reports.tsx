@@ -1,53 +1,34 @@
 import { Feather } from '@expo/vector-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AdminButton, AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
-import { loadPciData } from '@/lib/admin-data';
-import { downloadCsv, formatDate, formatNumber, titleCase } from '@/lib/admin-utils';
-
-type ReportData = Awaited<ReturnType<typeof loadPciData>>;
+import { Notice, useWorkflow } from '@/components/workflow/shared';
+import { downloadCsv, formatDate, titleCase } from '@/lib/admin-utils';
 
 export default function ReportsScreen() {
   const palette = useAdminPalette();
   const { width } = useWindowDimensions();
-  const [data, setData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { data, loading, error, refresh } = useWorkflow();
   const [message, setMessage] = useState('');
   const isCompact = width < 850;
 
-  const refresh = useCallback(async () => {
-    try {
-      const reportData = await loadPciData();
-      setError('');
-      setData(reportData);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Report data could not be loaded.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  if (!data) {
+    return (
+      <AdminShell loading={loading} onRefresh={refresh} subtitle="Generate downloadable operational reports from the current Supabase records." title="Reports">
+        <View />
+      </AdminShell>
+    );
+  }
 
-  useEffect(() => {
-    // Initial synchronization with the remote data source.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
-  }, [refresh]);
-
-  const branches = data?.branches ?? [];
-  const sections = data?.sections ?? [];
-  const inspections = data?.inspections ?? [];
-  const profiles = data?.profiles ?? [];
-  const distresses = data?.distresses ?? [];
+  const { branches = [], sections = [], samples = [], profiles = [], distresses = [], computations = [] } = data;
   const branchById = new Map(branches.map((item) => [item.id, item.name]));
   const sectionById = new Map(sections.map((item) => [item.id, item]));
-  const profileById = new Map(profiles.map((item) => [item.id, item.full_name]));
-  const typeById = new Map((data?.distressTypes ?? []).map((item) => [item.id, item.name]));
-  const computed = inspections.filter((item) => item.pci_score !== null);
-  const average = computed.length
-    ? computed.reduce((sum, item) => sum + Number(item.pci_score), 0) / computed.length
-    : null;
+  const profileById = new Map(profiles.map((item: any) => [item.id, item.full_name]));
+  const typeById = new Map(data.types?.map((item: any) => [item.id, item.name]) || []);
+
+  const computed = computations.filter(c => c.verification === 'verified' && c.output_snapshot !== null);
+  const average = computed.length ? computed.reduce((sum, item) => sum + (item.output_snapshot?.pci ?? 0), 0) / computed.length : null;
 
   function printReport() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -65,7 +46,7 @@ export default function ReportsScreen() {
     const stamp = new Date().toISOString().slice(0, 10);
     if (name === 'roads') {
       downloadCsv(`lakad-road-network-${stamp}.csv`, [
-        ['Branch', 'Section', 'Length (m)', 'Width (m)', 'Area (m²)', 'PCI', 'Condition'],
+        ['Branch', 'Section', 'Length (m)', 'Width (m)', 'Area (m²)', 'Current PCI', 'Condition'],
         ...sections.map((section) => [
           branchById.get(section.branch_id) ?? '', section.name, section.length_meters,
           section.width_meters, section.area_sqm, section.pci_score, section.condition_label,
@@ -74,36 +55,35 @@ export default function ReportsScreen() {
     } else if (name === 'inspections') {
       downloadCsv(`lakad-inspections-${stamp}.csv`, [
         ['Date', 'Branch', 'Road Section', 'Sample Unit', 'Type', 'Inspector', 'Status'],
-        ...inspections.map((inspection) => {
+        ...samples.map((inspection) => {
           const section = sectionById.get(inspection.section_id);
           return [
             inspection.surveyed_at ?? inspection.created_at,
             section ? branchById.get(section.branch_id) ?? '' : '',
             section?.name ?? '', inspection.unit_number, inspection.sample_type,
             inspection.surveyed_by ? profileById.get(inspection.surveyed_by) ?? '' : '',
-            inspection.status,
+            inspection.workflow_state,
           ];
         }),
       ]);
     } else if (name === 'pci') {
       downloadCsv(`lakad-pci-results-${stamp}.csv`, [
         ['Branch', 'Road Section', 'Sample Unit', 'PCI', 'Condition', 'Computed At'],
-        ...computed.map((inspection) => {
-          const section = sectionById.get(inspection.section_id);
+        ...computed.map((result) => {
+          const sample = samples.find(s => s.id === result.sample_unit_id);
+          const section = sectionById.get(sample?.section_id || '');
           return [
             section ? branchById.get(section.branch_id) ?? '' : '', section?.name ?? '',
-            inspection.unit_number, inspection.pci_score, inspection.condition_label,
-            inspection.pci_computed_at,
+            sample?.unit_number ?? '', result.output_snapshot?.pci ?? '', result.output_snapshot?.condition ?? '', result.created_at,
           ];
         }),
       ]);
     } else {
       downloadCsv(`lakad-distress-records-${stamp}.csv`, [
-        ['Sample Unit ID', 'Distress Type', 'Severity', 'Quantity', 'Unit', 'Density (%)', 'Deduct Value'],
+        ['Sample Unit ID', 'Distress Type', 'Severity', 'Quantity', 'Unit', 'Notes'],
         ...distresses.map((distress) => [
           distress.sample_unit_id, typeById.get(distress.distress_type_id) ?? '',
-          distress.severity, distress.quantity, distress.unit_of_measure,
-          distress.density_percent, distress.deduct_value,
+          distress.severity, distress.quantity, distress.unit_of_measure, distress.notes
         ]),
       ]);
     }
@@ -111,13 +91,13 @@ export default function ReportsScreen() {
   }
 
   return (
-    <AdminShell action={<AdminButton icon="printer" label="Print / Save PDF" onPress={printReport} palette={palette} tone="secondary" />} loading={loading} onRefresh={() => void refresh()} subtitle="Generate downloadable operational reports from the current Supabase records." title="Reports">
-      {error ? <Notice icon="alert-circle" message={error} palette={palette} tone="error" /> : null}
-      {message ? <Notice icon="check-circle" message={message} palette={palette} tone="success" /> : null}
+    <AdminShell action={<AdminButton icon="printer" label="Print / Save PDF" onPress={printReport} palette={palette} tone="secondary" />} loading={loading} onRefresh={refresh} subtitle="Generate downloadable operational reports from the current Supabase records." title="Reports">
+      {error ? <Notice error>{error}</Notice> : null}
+      {message ? <Notice>{message}</Notice> : null}
 
       <View style={[styles.summary, isCompact && styles.stack]}>
         <Summary label="Road sections" palette={palette} value={sections.length.toLocaleString()} />
-        <Summary label="Inspections" palette={palette} value={inspections.length.toLocaleString()} />
+        <Summary label="Sample units" palette={palette} value={samples.length.toLocaleString()} />
         <Summary label="Computed PCI" palette={palette} value={computed.length.toLocaleString()} />
         <Summary label="Average PCI" palette={palette} value={average === null ? '—' : average.toFixed(1)} />
       </View>
@@ -125,20 +105,19 @@ export default function ReportsScreen() {
       <AdminPanel palette={palette} subtitle="Each file is generated from live records visible to the signed-in administrator" title="Available exports">
         <View style={[styles.reportGrid, isCompact && styles.stack]}>
           <ReportCard count={sections.length} description="Branch and section dimensions, sampling counts, and current condition." icon="map" label="Road network register" onExport={() => exportReport('roads')} palette={palette} />
-          <ReportCard count={inspections.length} description="Sample units, inspectors, survey dates, types, and workflow status." icon="clipboard" label="Inspection register" onExport={() => exportReport('inspections')} palette={palette} />
+          <ReportCard count={samples.length} description="Sample units, inspectors, survey dates, types, and workflow status." icon="clipboard" label="Inspection register" onExport={() => exportReport('inspections')} palette={palette} />
           <ReportCard count={computed.length} description="Computed PCI values and condition labels for assessed sample units." icon="activity" label="PCI results report" onExport={() => exportReport('pci')} palette={palette} />
-          <ReportCard count={distresses.length} description="Recorded distress quantities, severities, densities, and deduct values." icon="alert-triangle" label="Distress inventory" onExport={() => exportReport('distresses')} palette={palette} />
+          <ReportCard count={distresses.length} description="Recorded distress quantities, severities, and notes." icon="alert-triangle" label="Distress inventory" onExport={() => exportReport('distresses')} palette={palette} />
         </View>
       </AdminPanel>
 
-      <AdminPanel palette={palette} subtitle="A quick auditable snapshot of the most recent records" title="Latest data included">
-        {inspections.length ? inspections.slice(0, 5).map((inspection) => {
+      <AdminPanel palette={palette} subtitle="A quick auditable snapshot of the most recent samples" title="Latest data included">
+        {samples.length ? samples.slice(0, 5).map((inspection) => {
           const section = sectionById.get(inspection.section_id);
           return (
             <View key={inspection.id} style={[styles.latestRow, { borderBottomColor: palette.border }]}>
               <View style={[styles.latestIcon, { backgroundColor: palette.blueSoft }]}><Feather color={palette.blue} name="clipboard" size={16} /></View>
-              <View style={styles.latestCopy}><Text style={[styles.latestTitle, { color: palette.text }]}>{section?.name ?? 'Unknown section'} · Unit {inspection.unit_number}</Text><Text style={[styles.latestMeta, { color: palette.muted }]}>{formatDate(inspection.surveyed_at ?? inspection.created_at)} · {titleCase(inspection.status)}</Text></View>
-              <Text style={[styles.latestPci, { color: palette.text }]}>PCI {formatNumber(inspection.pci_score)}</Text>
+              <View style={styles.latestCopy}><Text style={[styles.latestTitle, { color: palette.text }]}>{section?.name ?? 'Unknown section'} · Unit {inspection.unit_number}</Text><Text style={[styles.latestMeta, { color: palette.muted }]}>{formatDate(inspection.surveyed_at ?? inspection.created_at)} · {titleCase(inspection.workflow_state)}</Text></View>
             </View>
           );
         }) : <AdminEmpty icon="file-text" message="Reports are ready, but there are no inspection records to preview yet." palette={palette} />}
@@ -155,13 +134,8 @@ function ReportCard({ count, description, icon, label, onExport, palette }: { co
   return <View style={[styles.reportCard, { backgroundColor: palette.panelAlt, borderColor: palette.border }]}><View style={[styles.reportIcon, { backgroundColor: palette.blueSoft }]}><Feather color={palette.blue} name={icon} size={22} /></View><Text style={[styles.reportTitle, { color: palette.text }]}>{label}</Text><Text style={[styles.reportDescription, { color: palette.muted }]}>{description}</Text><Text style={[styles.reportCount, { color: palette.muted }]}>{count.toLocaleString()} record{count === 1 ? '' : 's'}</Text><AdminButton disabled={!count} icon="download" label="Download CSV" onPress={onExport} palette={palette} tone="secondary" /></View>;
 }
 
-function Notice({ icon, message, palette, tone }: { icon: keyof typeof Feather.glyphMap; message: string; palette: ReturnType<typeof useAdminPalette>; tone: 'error' | 'success' }) {
-  const color = tone === 'error' ? palette.red : palette.green;
-  return <View style={[styles.notice, { backgroundColor: tone === 'error' ? palette.redSoft : palette.greenSoft, borderColor: color }]}><Feather color={color} name={icon} size={17} /><Text style={[styles.noticeText, { color: palette.text }]}>{message}</Text></View>;
-}
-
 const styles = StyleSheet.create({
-  summary: { flexDirection: 'row', gap: 13 },
+  summary: { flexDirection: 'row', gap: 13, marginBottom: 16 },
   stack: { flexDirection: 'column' },
   summaryCard: { borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 83, padding: 14 },
   summaryLabel: { fontSize: 10.5 },
@@ -178,6 +152,4 @@ const styles = StyleSheet.create({
   latestTitle: { fontSize: 12.5, fontWeight: '700' },
   latestMeta: { fontSize: 10.5, marginTop: 3 },
   latestPci: { fontSize: 11.5, fontWeight: '800' },
-  notice: { alignItems: 'center', borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: 8, padding: 11 },
-  noticeText: { flex: 1, fontSize: 12 },
 });

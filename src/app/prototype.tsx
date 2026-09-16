@@ -448,7 +448,7 @@ export default function PrototypePage() {
                   </View>
                 </View>
                 <Text style={[styles.quantityHelp, { color: palette.secondary }]}>Enter the measured area, length, or number of the distress.</Text>
-                <Pressable onPress={handleAdd} style={({ pressed }) => [styles.addButton, { backgroundColor: palette.primary }, pressed && styles.buttonPressed]}>
+                <Pressable onPress={handleAdd} style={({ pressed, hovered }) => [styles.addButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}>
                   <View style={styles.addIcon}><Feather color={palette.primary} name="plus" size={15} /></View>
                   <Text style={styles.addButtonText}>Add to List</Text>
                 </Pressable>
@@ -469,7 +469,7 @@ export default function PrototypePage() {
                     <Text style={[styles.cellHeader, styles.dvCol, { color: palette.text }]}>Deduct Value</Text>
                     <Text style={[styles.cellHeader, styles.actionCol, { color: palette.text }]}>Action</Text>
                   </View>
-                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 240 }}>
                     {computedRows.map((entry, index) => {
                       const severityBackground = entry.severity === 'Low' ? '#D9F5E5' : entry.severity === 'Medium' ? '#FFF0C9' : '#FFD9D5';
                       const severityColor = entry.severity === 'Low' ? '#075E2E' : entry.severity === 'Medium' ? '#975300' : '#B20A0A';
@@ -530,7 +530,7 @@ export default function PrototypePage() {
                       <View style={[styles.cdvTableRow, styles.cdvTableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
                         <Text style={[styles.cdvHead, styles.iterCol, { color: palette.text }]}>Iteration</Text><Text style={[styles.cdvHead, styles.adjustedCol, { color: palette.text }]}>Adjusted Deduct Values</Text><Text style={[styles.cdvHead, styles.qCol, { color: palette.text }]}>q</Text><Text style={[styles.cdvHead, styles.tdvCol, { color: palette.text }]}>TDV</Text><Text style={[styles.cdvHead, styles.cdvCol, { color: palette.text }]}>CDV (Illustrative)</Text>
                       </View>
-                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 200 }}>
                         {displayedResult.cdvIterations.map((iteration) => (
                           <View key={iteration.iteration} style={[styles.cdvTableRow, { borderBottomColor: palette.border }]}>
                             <Text style={[styles.cdvCell, styles.iterCol, { color: palette.text }]}>{iteration.iteration}</Text><Text style={[styles.cdvCell, styles.adjustedCol, { color: palette.text }]}>{iteration.adjustedDVs.join(', ')}</Text><Text style={[styles.cdvCell, styles.qCol, { color: palette.text }]}>{iteration.q}</Text><Text style={[styles.cdvCell, styles.tdvCol, { color: palette.text }]}>{iteration.tdv}</Text><Text style={[styles.cdvCell, styles.cdvCol, styles.boldCell, { color: palette.text }]}>{iteration.cdv}</Text>
@@ -647,11 +647,11 @@ const styles = StyleSheet.create({
   workspaceCompact: { flexWrap: 'wrap', height: 'auto' },
   workspaceMobile: { flexDirection: 'column' },
   leftColumn: { flex: 1.08, gap: 11, minWidth: 0 },
-  leftColumnCompact: { flex: 1, minWidth: 340 },
+  leftColumnCompact: { flex: 1, minWidth: '100%', maxWidth: '100%' },
   centerColumn: { flex: 2.12, gap: 11, minWidth: 0 },
-  centerColumnCompact: { flex: 1.5, minWidth: 400 },
+  centerColumnCompact: { flex: 1.5, minWidth: '100%', maxWidth: '100%' },
   rightColumn: { flex: 0.86, minWidth: 0 },
-  rightColumnCompact: { flex: 1, minWidth: '100%' },
+  rightColumnCompact: { flex: 1, minWidth: '100%', maxWidth: '100%' },
   columnMobile: { flex: 0, width: '100%', minWidth: 0 },
   centerBottom: { flexDirection: 'row', gap: 10, minHeight: 331 },
   centerBottomCompact: { flexDirection: 'column', height: 'auto' },

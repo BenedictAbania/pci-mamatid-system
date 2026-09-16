@@ -6,6 +6,8 @@ export type BranchRecord = {
   id: string;
   name: string;
   description: string | null;
+  location: string | null;
+  administrative_status: string;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -16,6 +18,13 @@ export type SectionRecord = {
   branch_id: string;
   name: string;
   description: string | null;
+  start_description: string | null;
+  end_description: string | null;
+  pavement_type: 'asphalt';
+  homogeneous_confirmed_by: string | null;
+  homogeneous_confirmed_at: string | null;
+  latitude: number | null;
+  longitude: number | null;
   length_meters: number | null;
   width_meters: number | null;
   area_sqm: number | null;
@@ -55,6 +64,8 @@ export type InspectionRecord = {
 };
 
 export type ProfileRecord = {
+  email?: string;
+  is_active?: boolean;
   id: string;
   full_name: string;
   role: UserRole;
@@ -66,6 +77,7 @@ export type DistressTypeRecord = {
   id: string;
   code: string | null;
   name: string;
+  description: string | null;
   default_unit_of_measure: string | null;
   is_active: boolean;
 };
@@ -100,12 +112,14 @@ export async function loadRoadNetwork() {
 }
 
 export async function saveBranch(
-  values: { id?: string; name: string; description: string },
+  values: { id?: string; name: string; description: string; location: string; administrative_status: string },
   userId: string
 ) {
   const payload = {
     name: values.name.trim(),
     description: values.description.trim() || null,
+    location: values.location.trim() || null,
+    administrative_status: values.administrative_status.trim().toLowerCase(),
     updated_at: new Date().toISOString(),
   };
   const result = values.id
@@ -127,8 +141,10 @@ export async function saveSection(
     description: string;
     length_meters: string;
     width_meters: string;
-    total_sample_units: string;
-    recommended_sample_units: string;
+    start_description: string;
+    end_description: string;
+    latitude: string;
+    longitude: string;
     notes: string;
   },
   userId: string
@@ -139,13 +155,14 @@ export async function saveSection(
     branch_id: values.branch_id,
     name: values.name.trim(),
     description: values.description.trim() || null,
+    start_description: values.start_description.trim() || null,
+    end_description: values.end_description.trim() || null,
+    pavement_type: 'asphalt',
     length_meters: length,
     width_meters: width,
     area_sqm: length !== null && width !== null ? length * width : null,
-    total_sample_units: values.total_sample_units ? Number(values.total_sample_units) : null,
-    recommended_sample_units: values.recommended_sample_units
-      ? Number(values.recommended_sample_units)
-      : null,
+    latitude: values.latitude ? Number(values.latitude) : null,
+    longitude: values.longitude ? Number(values.longitude) : null,
     notes: values.notes.trim() || null,
     updated_at: new Date().toISOString(),
   };
@@ -227,7 +244,7 @@ export async function loadPciData() {
   const [base, distressesResult, typesResult] = await Promise.all([
     loadInspections(),
     supabase.from('distress_records').select('*').order('created_at', { ascending: false }),
-    supabase.from('distress_types').select('id, code, name, default_unit_of_measure, is_active').order('name'),
+    supabase.from('distress_types').select('id, code, name, description, default_unit_of_measure, is_active').order('name'),
   ]);
   return {
     ...base,
@@ -242,9 +259,6 @@ export async function loadProfiles() {
 }
 
 export async function updateProfileRole(id: string, role: UserRole) {
-  const { error } = await supabase
-    .from('profiles')
-    .update({ role, updated_at: new Date().toISOString() })
-    .eq('id', id);
+  const { error } = await supabase.rpc('lakad_manage_account', { target: id, new_role: role, active: true });
   if (error) throw new Error(error.message);
 }

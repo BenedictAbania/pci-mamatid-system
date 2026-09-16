@@ -8,10 +8,12 @@ import {
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { canAccess, homeForRole } from '@/lib/access';
+import { supabase } from '@/lib/supabase';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { AppThemeProvider } from '@/providers/ThemeProvider';
 
@@ -19,7 +21,7 @@ SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
-  const { session, isLoading } = useAuth();
+  const { session, role, isLoading, error, refreshProfile } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const isLoginRoute = pathname === '/' || pathname === '/login';
@@ -30,12 +32,12 @@ function RootLayoutNav() {
 
     if (!session && !isPublicRoute) {
       router.replace('/');
-    } else if (session && isLoginRoute) {
-      router.replace('/dashboard');
+    } else if (session && role && isLoginRoute) {
+      router.replace(homeForRole(role));
     }
-  }, [isLoading, isLoginRoute, isPublicRoute, router, session]);
+  }, [isLoading, isLoginRoute, isPublicRoute, role, router, session]);
 
-  if ((!isPublicRoute && isLoading) || (!session && !isPublicRoute) || (session && isLoginRoute)) {
+  if (pathname !== '/prototype' && ((!isPublicRoute && isLoading) || (!session && !isPublicRoute) || (session && isLoginRoute && !error))) {
     return (
       <View
         style={[
@@ -47,12 +49,23 @@ function RootLayoutNav() {
     );
   }
 
+  if (pathname !== '/prototype' && session && !isLoading && (error || !canAccess(role, pathname))) {
+    return <View style={[styles.loadingScreen, { backgroundColor: colorScheme === 'dark' ? '#071127' : '#F7FAFF', padding: 24, gap: 18 }]}>
+      <Text style={{ color: colorScheme === 'dark' ? '#FFFFFF' : '#071A43', fontSize: 18, textAlign: 'center' }}>{error || 'You are not authorized to open this page.'}</Text>
+      {error ? <Pressable onPress={() => void refreshProfile()}><Text style={styles.actionText}>Retry profile</Text></Pressable> : <Pressable onPress={() => role && router.replace(homeForRole(role))}><Text style={styles.actionText}>Back to my dashboard</Text></Pressable>}
+      <Pressable onPress={() => void supabase.auth.signOut()}><Text style={styles.actionText}>Sign out</Text></Pressable>
+    </View>;
+  }
+
   return (
     <>
       <AnimatedSplashOverlay />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" options={{ title: 'PCI Prototype · LAKAD' }} />
+        <Stack.Screen name="index" options={{ title: 'Sign in · LAKAD' }} />
         <Stack.Screen name="login" options={{ title: 'Sign in · LAKAD' }} />
+        <Stack.Screen name="workspace" options={{ title: 'Workspace · LAKAD' }} />
+        <Stack.Screen name="field-inspections" options={{ title: 'Field Inspections · LAKAD' }} />
+        <Stack.Screen name="sampling" options={{ title: 'Sample Planning · LAKAD' }} />
         <Stack.Screen name="dashboard" options={{ title: 'Dashboard · LAKAD' }} />
         <Stack.Screen name="road-network" options={{ title: 'Road Network · LAKAD' }} />
         <Stack.Screen name="inspections" options={{ title: 'Inspections · LAKAD' }} />
@@ -94,4 +107,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  actionText: { color: '#1769E8', fontSize: 15, fontWeight: '700' },
 });
