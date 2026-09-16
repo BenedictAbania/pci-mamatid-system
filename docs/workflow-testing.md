@@ -71,10 +71,14 @@ photographs. Browser/device verification has not yet been performed in this turn
   implement an official calculation without verified licensed DV/CDV references.
   Outputs remain null/pending; approval is blocked by the backend.
 - Automatic ASTM required-inspection recommendation is pending verification. The
-  layout estimate uses the user-specified 225 ± 90 m² guidance, and the engineer
+  layout estimate uses the manuscript-specified 230 ± 93 m² guidance for pavement
+  width below 7.30 m, and the engineer
   supplies and records the required count and justification.
 - The section-results table/consumer UI is ready for trusted results, but verified
   random/additional weighting and server-side publication are not implemented yet.
+- The manuscript says section PCI is the mean PCI of inspected sample units,
+  weighted by area where applicable. The meaning of “where applicable” remains an
+  engineering decision and is not inferred by the application.
 - Historical calculations must use immutable input snapshots, edition/reference ID
   and algorithm version. Do not promote legacy illustrative or unverified scores.
 - In-app map currently opens stored coordinates in OpenStreetMap; it is not an

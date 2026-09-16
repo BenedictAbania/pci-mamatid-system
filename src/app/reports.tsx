@@ -5,6 +5,7 @@ import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-nat
 import { AdminButton, AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Notice, useWorkflow } from '@/components/workflow/shared';
 import { downloadCsv, formatDate, titleCase } from '@/lib/admin-utils';
+import { getPciCondition } from '@/lib/pci-classification';
 
 export default function ReportsScreen() {
   const palette = useAdminPalette();
@@ -49,7 +50,7 @@ export default function ReportsScreen() {
         ['Branch', 'Section', 'Length (m)', 'Width (m)', 'Area (m²)', 'Current PCI', 'Condition'],
         ...sections.map((section) => [
           branchById.get(section.branch_id) ?? '', section.name, section.length_meters,
-          section.width_meters, section.area_sqm, section.pci_score, section.condition_label,
+          section.width_meters, section.area_sqm, section.pci_score, section.pci_score === null ? '' : getPciCondition(Number(section.pci_score)),
         ]),
       ]);
     } else if (name === 'inspections') {
@@ -74,7 +75,7 @@ export default function ReportsScreen() {
           const section = sectionById.get(sample?.section_id || '');
           return [
             section ? branchById.get(section.branch_id) ?? '' : '', section?.name ?? '',
-            sample?.unit_number ?? '', result.output_snapshot?.pci ?? '', result.output_snapshot?.condition ?? '', result.created_at,
+            sample?.unit_number ?? '', result.output_snapshot?.pci ?? '', result.output_snapshot ? getPciCondition(Number(result.output_snapshot.pci)) : '', result.created_at,
           ];
         }),
       ]);

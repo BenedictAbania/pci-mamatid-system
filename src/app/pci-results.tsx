@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Notice, useWorkflow } from '@/components/workflow/shared';
 import { formatDate, formatNumber, titleCase } from '@/lib/admin-utils';
+import { getPciCondition, getPciConditionCategory } from '@/lib/pci-classification';
 
 export default function PciResultsScreen() {
   const palette = useAdminPalette();
@@ -43,7 +44,7 @@ export default function PciResultsScreen() {
   const filtered = computed.filter((c) => {
     const sample = sampleById.get(c.sample_unit_id);
     const section = sectionById.get(sample?.section_id || '');
-    return `${section?.name ?? ''} ${section ? branchById.get(section.branch_id) : ''} ${c.output_snapshot?.condition ?? ''} ${sample?.unit_number}`.toLowerCase().includes(query.trim().toLowerCase());
+    return `${section?.name ?? ''} ${section ? branchById.get(section.branch_id) : ''} ${c.output_snapshot ? getPciCondition(Number(c.output_snapshot.pci)) : ''} ${sample?.unit_number}`.toLowerCase().includes(query.trim().toLowerCase());
   });
 
   const selected = computed.find((item) => item.id === selectedId) ?? null;
@@ -81,7 +82,7 @@ export default function PciResultsScreen() {
                   <Text style={[styles.resultMeta, { color: palette.muted }]}>{section ? branchById.get(section.branch_id) : ''} · {formatDate(c.created_at)}</Text>
                 </View>
                 <View style={styles.conditionCopy}>
-                  <Text style={[styles.condition, { color: palette.text }]}>{c.output_snapshot?.condition ?? 'Unclassified'}</Text>
+                  <Text style={[styles.condition, { color: palette.text }]}>{c.output_snapshot ? getPciCondition(Number(c.output_snapshot.pci)) : 'Unclassified'}</Text>
                   <Text style={[styles.resultMeta, { color: palette.muted }]}>Verified</Text>
                 </View>
                 <Feather color={palette.muted} name="chevron-right" size={18} />
@@ -99,7 +100,7 @@ export default function PciResultsScreen() {
                   <Text style={styles.largeScoreLabel}>PCI</Text>
                 </View>
                 <View style={styles.scoreHeroCopy}>
-                  <Text style={[styles.detailTitle, { color: palette.text }]}>{selected.output_snapshot.condition ?? 'Unclassified'}</Text>
+                  <Text style={[styles.detailTitle, { color: palette.text }]}>{getPciCondition(Number(selected.output_snapshot.pci))}</Text>
                   <Text style={[styles.resultMeta, { color: palette.muted }]}>{selectedSection?.name ?? 'Unknown section'} · Unit {selectedSample.unit_number}</Text>
                 </View>
               </View>
@@ -130,11 +131,7 @@ export default function PciResultsScreen() {
 }
 
 function scoreColor(score: number) {
-  if (score >= 85) return '#16A765';
-  if (score >= 70) return '#2878F0';
-  if (score >= 55) return '#F0AE32';
-  if (score >= 40) return '#F47B20';
-  return '#E52535';
+  return getPciConditionCategory(score).color;
 }
 
 function Metric({ icon, label, palette, value }: { icon: keyof typeof Feather.glyphMap; label: string; palette: ReturnType<typeof useAdminPalette>; value: string }) {

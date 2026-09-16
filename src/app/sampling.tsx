@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { possibleSampleUnits } from '@/lib/pci-service';
+import { possibleSampleUnits, SAMPLE_UNIT_GUIDANCE } from '@/lib/pci-service';
 import { callWorkflow } from '@/lib/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -29,6 +29,7 @@ export default function Sampling() {
   const input = (label: string, value: string, onChangeText: (text: string) => void) => <AdminField palette={p} label={label} value={value} onChangeText={onChangeText} />;
   return <AdminShell title="Sample-unit planning" subtitle="Engineer-defined homogeneous boundaries and traceable random / additional sample selection." loading={state.loading} onRefresh={() => void state.refresh()}>
     {!!state.error && <Notice error>{state.error}</Notice>}{!!state.message && <Notice>{state.message}</Notice>}
+    <Notice>{SAMPLE_UNIT_GUIDANCE}</Notice>
     <Notice>Area-based counts are layout estimates, not automatic homogeneous sections. The ASTM required-inspection sampling procedure still needs a verified reference implementation. An engineer must supply and justify the required count; no statistical rule is invented.</Notice>
     {state.data && <AdminPanel palette={p} title="Section plan"><View style={{ gap: 16 }}>
       <Choices label="Pavement section" value={sectionId} options={state.data.sections.map(s => ({ value: s.id, label: s.name }))} onChange={id => { setSectionId(id); setConfirm(false); setAdditional(false); const s = state.data?.sections.find(x => x.id === id); setStart(s?.start_description ?? ''); setEnd(s?.end_description ?? ''); }} />
@@ -52,7 +53,7 @@ export default function Sampling() {
         </>}
         {!!planned.length && <>
           <Notice>This plan is locked against boundary changes. Create a new section revision for a materially different layout.</Notice>
-          {planned.sort((a, b) => a.unit_number - b.unit_number).map(s => <Text key={s.id} style={{ color: p.text }}>SU-{String(s.unit_number).padStart(3, '0')} · {s.sample_type} · {s.start_m}–{s.end_m} m · {s.workflow_state}</Text>)}
+          {planned.sort((a, b) => a.unit_number - b.unit_number).map(s => <Text key={s.id} style={{ color: p.text }}>SU-{String(s.unit_number).padStart(3, '0')} · {s.sample_type === 'additional' ? 'Additional' : 'Random'} · {s.start_m}–{s.end_m} m · {s.workflow_state}</Text>)}
           <AdminButton palette={p} tone="secondary" label="Plan an additional sample" disabled={role !== 'reviewer'} onPress={() => setAdditional(!additional)} />
           {additional && <>
             <Notice>Choose an unselected sequential unit from this section. Do not duplicate an existing random sample. Describe the unusual/severe condition.</Notice>

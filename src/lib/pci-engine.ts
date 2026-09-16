@@ -14,6 +14,8 @@
  * inspection workflow.
  */
 
+import { getPciConditionCategory, PCI_CONDITION_SCALE, type PciConditionCategory } from './pci-classification';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -53,13 +55,7 @@ export interface CDVIteration {
   isMax: boolean;
 }
 
-export interface ConditionCategory {
-  rating: string;
-  minPCI: number;
-  maxPCI: number;
-  color: string;
-  darkColor: string;
-}
+export type ConditionCategory = PciConditionCategory;
 
 export interface PCIResult {
   distresses: ComputedDistress[];
@@ -106,25 +102,7 @@ export const ASPHALT_DISTRESSES: readonly DistressTypeInfo[] = [
 // Condition Rating Scale (7 tiers, non-overlapping whole-number ranges)
 // ---------------------------------------------------------------------------
 
-export const CONDITION_RATINGS: readonly ConditionCategory[] = [
-  { rating: 'Good', minPCI: 86, maxPCI: 100, color: '#16A34A', darkColor: '#4ADE80' },
-  { rating: 'Satisfactory', minPCI: 71, maxPCI: 85, color: '#65A30D', darkColor: '#A3E635' },
-  { rating: 'Fair', minPCI: 56, maxPCI: 70, color: '#D97706', darkColor: '#FBBF24' },
-  { rating: 'Poor', minPCI: 41, maxPCI: 55, color: '#EA580C', darkColor: '#FB923C' },
-  { rating: 'Very Poor', minPCI: 26, maxPCI: 40, color: '#DC2626', darkColor: '#F87171' },
-  { rating: 'Serious', minPCI: 11, maxPCI: 25, color: '#B91C1C', darkColor: '#EF4444' },
-  { rating: 'Failed', minPCI: 0, maxPCI: 10, color: '#7F1D1D', darkColor: '#FCA5A5' },
-] as const;
-
-const RATING_DESCRIPTIONS: Record<string, string> = {
-  Good: 'The pavement is in good condition with only minor distresses, if any.',
-  Satisfactory: 'The pavement is in satisfactory condition with low-severity distresses.',
-  Fair: 'The pavement is in fair condition, with some distress and signs of deterioration.',
-  Poor: 'The pavement has significant deterioration and requires maintenance.',
-  'Very Poor': 'The pavement is in very poor condition with extensive deterioration.',
-  Serious: 'The pavement has serious deterioration and needs urgent repair.',
-  Failed: 'The pavement has failed and requires immediate reconstruction.',
-};
+export const CONDITION_RATINGS: readonly ConditionCategory[] = PCI_CONDITION_SCALE;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -256,11 +234,7 @@ export function computeDensity(quantity: number, sampleArea: number): number {
 // ---------------------------------------------------------------------------
 
 export function getConditionRating(pci: number): ConditionCategory {
-  const rounded = Math.round(pci);
-  for (const cat of CONDITION_RATINGS) {
-    if (rounded >= cat.minPCI && rounded <= cat.maxPCI) return cat;
-  }
-  return CONDITION_RATINGS[CONDITION_RATINGS.length - 1];
+  return getPciConditionCategory(pci);
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +266,7 @@ export function computePCI(entries: DistressEntry[], sampleArea: number): PCIRes
       rating: cat.rating,
       ratingColor: cat.color,
       ratingDarkColor: cat.darkColor,
-      ratingDescription: RATING_DESCRIPTIONS[cat.rating] ?? '',
+      ratingDescription: cat.description,
     };
   }
 
@@ -369,7 +343,7 @@ export function computePCI(entries: DistressEntry[], sampleArea: number): PCIRes
     rating: cat.rating,
     ratingColor: cat.color,
     ratingDarkColor: cat.darkColor,
-    ratingDescription: RATING_DESCRIPTIONS[cat.rating] ?? '',
+    ratingDescription: cat.description,
   };
 }
 

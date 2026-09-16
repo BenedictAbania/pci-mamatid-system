@@ -5,6 +5,7 @@ import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { useWorkflow } from '@/components/workflow/shared';
 import { formatNumber } from '@/lib/admin-utils';
+import { getPciCondition, getPciConditionCategory } from '@/lib/pci-classification';
 import { PrioritySection, rankPriorities } from '@/lib/pci-service';
 
 export default function MaintenancePlanScreen() {
@@ -22,11 +23,9 @@ export default function MaintenancePlanScreen() {
     );
   }
 
-  const { branches, sections, results, settings } = data;
+  const { branches, sections, results } = data;
   const branchById = new Map(branches.map((item) => [item.id, item.name]));
   const sectionById = new Map(sections.map((item) => [item.id, item]));
-
-  const { priority_safety = true, priority_area = true } = settings || {};
 
   // Find latest result for each section
   const latestResultsMap = new Map();
@@ -45,7 +44,7 @@ export default function MaintenancePlanScreen() {
     affectedArea: r.affected_area
   }));
 
-  const ranked = rankPriorities(prioritySections, priority_safety, priority_area);
+  const ranked = rankPriorities(prioritySections);
 
   const plan = ranked
     .filter((r) => {
@@ -69,10 +68,10 @@ export default function MaintenancePlanScreen() {
         <Metric color={palette.blue} icon="activity" label="Assessed sections" palette={palette} value={latestResults.length} />
       </View>
 
-      <AdminPanel palette={palette} subtitle={`Ranked according to LAKAD settings (Safety: ${priority_safety ? 'Yes' : 'No'}, Area: ${priority_area ? 'Yes' : 'No'})`} title="Priority Queue">
+      <AdminPanel palette={palette} subtitle="Approved section PCI → high-severity/safety-related distress → affected pavement area" title="Priority Queue">
         {plan.length ? plan.map((item, index) => {
           const section = sectionById.get(item.id);
-          const guidance = getMaintenanceGuidance(item.pci, palette);
+          const guidance = getMaintenanceGuidance(item.pci);
           return (
             <View key={item.id} style={[styles.planRow, isCompact && styles.planRowCompact, { borderBottomColor: palette.border }]}>
               <View style={[styles.rank, { backgroundColor: index < 3 ? palette.redSoft : palette.blueSoft }]}><Text style={{ color: index < 3 ? palette.red : palette.blue, fontWeight: '900' }}>{item.rank}</Text></View>
@@ -82,7 +81,7 @@ export default function MaintenancePlanScreen() {
               </View>
               <View style={styles.pci}>
                 <Text style={[styles.pciValue, { color: guidance.color }]}>{formatNumber(item.pci)}</Text>
-                <Text style={[styles.smallLabel, { color: palette.muted }]}>PCI</Text>
+                <Text style={[styles.smallLabel, { color: palette.muted }]}>{getPciCondition(item.pci)}</Text>
               </View>
               <View style={styles.action}>
                 <Text style={[styles.actionTitle, { color: palette.text }]}>{guidance.action}</Text>
@@ -97,7 +96,7 @@ export default function MaintenancePlanScreen() {
       <AdminPanel palette={palette} subtitle="The plan remains traceable to computed PCI data" title="How priorities are produced">
         <View style={[styles.explanation, isCompact && styles.stack]}>
           <Explanation icon="database" palette={palette} text="Uses each section’s current published PCI score." />
-          <Explanation icon="arrow-up" palette={palette} text="Places the most deteriorated sections first based on active LAKAD Settings." />
+          <Explanation icon="arrow-up" palette={palette} text="Orders lower PCI first, then risk presence, then greater affected area—without extra criteria." />
           <Explanation icon="refresh-cw" palette={palette} text="Updates dynamically when new inspections are published." />
         </View>
       </AdminPanel>
@@ -105,13 +104,14 @@ export default function MaintenancePlanScreen() {
   );
 }
 
-function getMaintenanceGuidance(score: number, palette: any) {
-  if (score < 25) return { priority: 'Critical', action: 'Reconstruction assessment', detail: 'Plan structural intervention and detailed engineering review.', color: palette.red, soft: palette.redSoft };
-  if (score < 40) return { priority: 'High', action: 'Major rehabilitation', detail: 'Validate failures and prepare a rehabilitation scope.', color: palette.red, soft: palette.redSoft };
-  if (score < 55) return { priority: 'High', action: 'Corrective maintenance', detail: 'Address high-impact distress before further deterioration.', color: palette.amber, soft: palette.amberSoft };
-  if (score < 70) return { priority: 'Medium', action: 'Preventive maintenance', detail: 'Schedule sealing, patching, or localized treatment.', color: palette.amber, soft: palette.amberSoft };
-  if (score < 85) return { priority: 'Low', action: 'Preservation treatment', detail: 'Preserve condition and continue routine inspections.', color: palette.blue, soft: palette.blueSoft };
-  return { priority: 'Monitor', action: 'Routine monitoring', detail: 'No major intervention indicated by the current PCI.', color: palette.green, soft: palette.greenSoft };
+function getMaintenanceGuidance(score: number) {
+  const condition = getPciConditionCategory(score);
+  if (score < 25) return { priority: 'Critical', action: 'Reconstruction assessment', color: condition.color, soft: `${condition.color}22` };
+  if (score < 40) return { priority: 'High', action: 'Major rehabilitation', color: condition.color, soft: `${condition.color}22` };
+  if (score < 55) return { priority: 'High', action: 'Corrective maintenance', color: condition.color, soft: `${condition.color}22` };
+  if (score < 70) return { priority: 'Medium', action: 'Preventive maintenance', color: condition.color, soft: `${condition.color}22` };
+  if (score < 85) return { priority: 'Low', action: 'Preservation treatment', color: condition.color, soft: `${condition.color}22` };
+  return { priority: 'Monitor', action: 'Routine monitoring', color: condition.color, soft: `${condition.color}22` };
 }
 
 function Metric({ color, icon, label, palette, value }: { color: string; icon: keyof typeof Feather.glyphMap; label: string; palette: ReturnType<typeof useAdminPalette>; value: number }) {

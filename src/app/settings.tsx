@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Switch, Text, useWindowDimensions, View } from '
 
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
+import { PCI_CONDITION_SCALE } from '@/lib/pci-classification';
 import { callWorkflow } from '@/lib/workflow-data';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -17,8 +18,6 @@ export default function SettingsScreen() {
   const isCompact = width < 820;
 
   const [edition, setEdition] = useState('');
-  const [safety, setSafety] = useState(false);
-  const [area, setArea] = useState(false);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [referenceCode, setReferenceCode] = useState('');
   const [referenceName, setReferenceName] = useState('');
@@ -33,13 +32,11 @@ export default function SettingsScreen() {
       // Synchronize editable fields after the remote settings record arrives.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setEdition(data.settings.active_edition || '');
-      setSafety(data.settings.priority_safety || false);
-      setArea(data.settings.priority_area || false);
     }
   }, [data]);
 
   const handleSaveSettings = () => {
-    void run(() => callWorkflow('lakad_save_settings', { payload: { edition, priority_safety: safety, priority_area: area } }), 'Settings saved successfully.');
+    void run(() => callWorkflow('lakad_save_settings', { payload: { edition, priority_safety: true, priority_area: true } }), 'Settings saved successfully.');
   };
 
   const resetReference = () => {
@@ -101,17 +98,17 @@ export default function SettingsScreen() {
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}>
                   <Text style={[styles.settingTitle, { color: palette.text }]}>Prioritize Safety</Text>
-                  <Text style={[styles.settingText, { color: palette.muted }]}>When ranking maintenance plans, prioritize sections with safety issues or high-severity distresses.</Text>
+                  <Text style={[styles.settingText, { color: palette.muted }]}>Required tie-breaker after approved section PCI: high-severity or safety-related distress.</Text>
                 </View>
-                <Switch disabled={busy} onValueChange={setSafety} value={safety} trackColor={{ false: palette.border, true: palette.blue }} />
+                <View style={[styles.statusPill, { backgroundColor: palette.greenSoft }]}><Text style={[styles.statusText, { color: palette.green }]}>Required</Text></View>
               </View>
 
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}>
                   <Text style={[styles.settingTitle, { color: palette.text }]}>Prioritize Affected Area</Text>
-                  <Text style={[styles.settingText, { color: palette.muted }]}>When ranking maintenance plans, sort by the total affected distress area.</Text>
+                  <Text style={[styles.settingText, { color: palette.muted }]}>Required final tie-breaker: greater affected pavement area.</Text>
                 </View>
-                <Switch disabled={busy} onValueChange={setArea} value={area} trackColor={{ false: palette.border, true: palette.blue }} />
+                <View style={[styles.statusPill, { backgroundColor: palette.greenSoft }]}><Text style={[styles.statusText, { color: palette.green }]}>Required</Text></View>
               </View>
 
               <AdminButton disabled={busy} label="Save Settings" onPress={handleSaveSettings} palette={palette} />
@@ -138,11 +135,7 @@ export default function SettingsScreen() {
 
           <AdminPanel palette={palette} style={{ marginTop: 16 }} subtitle="These values describe the classifications used by the maintenance view" title="PCI Interpretation Guide">
             <View style={styles.scale}>
-              <Scale color="#E52535" label="Failed / Very Poor" range="0–39" palette={palette} />
-              <Scale color="#F47B20" label="Poor" range="40–54" palette={palette} />
-              <Scale color="#F0AE32" label="Fair" range="55–69" palette={palette} />
-              <Scale color="#2878F0" label="Satisfactory" range="70–84" palette={palette} />
-              <Scale color="#16A765" label="Good" range="85–100" palette={palette} />
+              {PCI_CONDITION_SCALE.map((condition) => <Scale color={condition.color} key={condition.rating} label={condition.rating} range={condition.range} palette={palette} />)}
             </View>
           </AdminPanel>
         </View>

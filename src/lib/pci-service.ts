@@ -1,5 +1,9 @@
 /** Official integration boundary. This module never imports the public demo curves. */
 export const REFERENCE_PENDING = 'Preliminary — ASTM reference data pending verification';
+export const SAMPLE_UNIT_TARGET_AREA = 230;
+export const SAMPLE_UNIT_MIN_AREA = 137;
+export const SAMPLE_UNIT_MAX_AREA = 323;
+export const SAMPLE_UNIT_GUIDANCE = 'Recommended asphalt sample-unit area:\napproximately 230 ± 93 m² when pavement width is below 7.30 m.';
 export type Measurement = { distress_type_id: string; severity: 'low' | 'medium' | 'high' | null; quantity: number; unit_of_measure: string; location_m: number | null };
 export type ReferenceDistress = { id: string; default_unit_of_measure: string | null; severity_required: boolean; allowed_severities: string[]; is_active: boolean };
 export type CalculationInput = { area_sqm: number; edition: string; revision: number; measurements: Measurement[] };
@@ -29,12 +33,24 @@ export function validateMeasurement(row: Measurement, type: ReferenceDistress, a
   if (row.location_m !== null && (!Number.isFinite(row.location_m) || row.location_m < 0 || length === null || row.location_m > length)) throw new Error('Location must fall within the sample length.');
   if (existing.some(other => other.distress_type_id === row.distress_type_id && other.severity === row.severity)) throw new Error('This distress and severity already exists. Combine measurements in the existing record.');
 }
-export function possibleSampleUnits(area: number, target = 225) {
-  if (!Number.isFinite(area) || area < 135 || !Number.isFinite(target) || target < 135 || target > 315) throw new Error('Check section area and target sample size (135–315 m²).');
+export function isSampleUnitAreaAllowed(area: number) {
+  return Number.isFinite(area) && area >= SAMPLE_UNIT_MIN_AREA && area <= SAMPLE_UNIT_MAX_AREA;
+}
+export function possibleSampleUnits(area: number, target = SAMPLE_UNIT_TARGET_AREA) {
+  if (!Number.isFinite(area) || area < SAMPLE_UNIT_MIN_AREA || !isSampleUnitAreaAllowed(target)) throw new Error('Check section area and target sample size (137–323 m²).');
   const count = Math.max(1, Math.ceil(area / target));
-  return { count, areaPerUnit: area / count, needsAdjustment: area / count < 135 };
+  const areaPerUnit = area / count;
+  return { count, areaPerUnit, needsAdjustment: !isSampleUnitAreaAllowed(areaPerUnit) };
 }
 export type PrioritySection = { id: string; pci: number; safety: boolean; highSeverity: number; affectedArea: number };
-export function rankPriorities(rows: PrioritySection[], useSafety = true, useArea = true) {
-  return [...rows].sort((a, b) => a.pci - b.pci || (useSafety ? Number(b.safety) - Number(a.safety) || b.highSeverity - a.highSeverity : 0) || (useArea ? b.affectedArea - a.affectedArea : 0) || a.id.localeCompare(b.id)).map((row, index) => ({ ...row, rank: index + 1, reason: `LAKAD rule: PCI ${row.pci} (lowest first)${useSafety ? `; safety ${row.safety ? 'yes' : 'no'}, high-severity records ${row.highSeverity}` : ''}${useArea ? `; affected area ${row.affectedArea} m²` : ''}.` }));
+export function rankPriorities(rows: PrioritySection[]) {
+  return [...rows].sort((a, b) => {
+    const aRisk = a.safety || a.highSeverity > 0;
+    const bRisk = b.safety || b.highSeverity > 0;
+    return a.pci - b.pci || Number(bRisk) - Number(aRisk) || b.affectedArea - a.affectedArea;
+  }).map((row, index) => ({
+    ...row,
+    rank: index + 1,
+    reason: `LAKAD rule: PCI ${row.pci} (lowest first); high-severity/safety-related distress ${row.safety || row.highSeverity > 0 ? 'present' : 'not recorded'}; affected area ${row.affectedArea} m².`,
+  }));
 }

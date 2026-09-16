@@ -17,6 +17,7 @@ import {
   DashboardInspection,
   loadDashboardData,
 } from '@/lib/dashboard';
+import { getPciCondition, PCI_CONDITION_SCALE } from '@/lib/pci-classification';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -31,7 +32,6 @@ const monthLabels = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
-const conditionColors = ['#17A968', '#2878F0', '#F4B942', '#F47B20', '#E52535', '#7656D6'];
 type Palette = ReturnType<typeof getPalette>;
 
 function getPalette(isDark: boolean) {
@@ -162,25 +162,19 @@ export default function AdminDashboard() {
     ? assessedSections.reduce((sum, section) => sum + Number(section.pci_score), 0) /
       assessedSections.length
     : null;
-  const maintenanceSections = data.sections.filter((section) => {
-    const condition = section.condition_label?.trim().toLowerCase();
-    return condition === 'fair' || condition === 'poor' || condition === 'very poor';
-  }).length;
+  const maintenanceSections = data.sections.filter((section) => section.pci_score !== null && Number(section.pci_score) < 55).length;
 
   const conditionGroups = useMemo(() => {
     const grouped = new Map<string, number>();
     data.sections.forEach((section) => {
-      if (section.condition_label) {
-        grouped.set(section.condition_label, (grouped.get(section.condition_label) ?? 0) + 1);
+      if (section.pci_score !== null) {
+        const condition = getPciCondition(Number(section.pci_score));
+        grouped.set(condition, (grouped.get(condition) ?? 0) + 1);
       }
     });
-    return Array.from(grouped.entries())
-      .map(([label, count], index) => ({
-        label,
-        count,
-        color: conditionColors[index % conditionColors.length],
-      }))
-      .sort((a, b) => b.count - a.count);
+    return PCI_CONDITION_SCALE
+      .filter(({ rating }) => grouped.has(rating))
+      .map(({ rating, color }) => ({ label: rating, count: grouped.get(rating) ?? 0, color }));
   }, [data.sections]);
 
   const now = new Date();

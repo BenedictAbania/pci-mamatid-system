@@ -24,6 +24,7 @@ import {
     type PCIResult,
     type Severity,
 } from '@/lib/pci-engine';
+import { SAMPLE_UNIT_GUIDANCE } from '@/lib/pci-service';
 
 const heroImage = require('../../assets/images/lakad_hero_bg.jpg');
 const logoImage = require('../../assets/images/LAKAD.png');
@@ -180,7 +181,7 @@ function Notes({ palette }: { palette: Palette }) {
 }
 
 function RatingGauge({ palette, result }: { palette: Palette; result: PCIResult }) {
-  const resultColor = result.rating === 'Fair' ? '#FFB400' : result.ratingColor;
+  const resultColor = result.ratingColor;
   const progressDegrees = Math.round((Math.max(0, Math.min(100, result.pci)) / 100) * 270);
   const gaugeStyle = {
     backgroundImage: `conic-gradient(from 225deg, ${resultColor} 0deg ${progressDegrees}deg, ${palette.track} ${progressDegrees}deg 270deg, transparent 270deg 360deg)`,
@@ -389,7 +390,7 @@ export default function PrototypePage() {
                 </InputShell>
                 <View style={[styles.infoBox, { backgroundColor: palette.cardSoft }]}>
                   <Feather color={palette.primary} name="info" size={18} />
-                  <Text style={[styles.infoText, { color: palette.secondary }]}>Recommended asphalt sample-unit area: approximately{`\n`}225 ± 90 m² or 2,500 ± 1,000 ft² under ASTM D6433-07.</Text>
+                  <Text style={[styles.infoText, { color: palette.secondary }]}>{SAMPLE_UNIT_GUIDANCE}</Text>
                 </View>
               </Card>
 
@@ -551,7 +552,7 @@ export default function PrototypePage() {
                 <RatingGauge palette={palette} result={displayedResult} />
                 <View style={styles.ratingSummary}>
                   <Text style={[styles.conditionLabel, { color: palette.text }]}>Condition Rating</Text>
-                  <View style={styles.ratingBadge}><Text style={styles.ratingBadgeText}>{isComputed ? displayedResult.rating.toUpperCase() : 'PENDING'}</Text></View>
+                  <View style={[styles.ratingBadge, isComputed && { backgroundColor: displayedResult.ratingColor }]}><Text style={styles.ratingBadgeText}>{isComputed ? displayedResult.rating.toUpperCase() : 'PENDING'}</Text></View>
                   <Text style={[styles.ratingDescription, { color: palette.secondary }]}>{isComputed ? displayedResult.ratingDescription : 'Compute the sample to display its pavement condition.'}</Text>
                 </View>
                 <View style={[styles.legend, { borderColor: palette.border }]}>
@@ -559,7 +560,7 @@ export default function PrototypePage() {
                   {CONDITION_RATINGS.map((rating) => (
                     <View key={rating.rating} style={[styles.legendRow, { backgroundColor: `${rating.color}22` }]}>
                       <View style={styles.legendName}><View style={[styles.legendDot, { backgroundColor: rating.color }]} /><Text style={[styles.legendText, { color: palette.text }]}>{rating.rating}</Text></View>
-                      <Text style={[styles.legendRange, { color: palette.text }]}>{rating.minPCI} – {rating.maxPCI}</Text>
+                      <Text style={[styles.legendRange, { color: palette.text }]}>{rating.range}</Text>
                     </View>
                   ))}
                 </View>

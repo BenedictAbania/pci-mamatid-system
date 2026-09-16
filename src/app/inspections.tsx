@@ -14,6 +14,7 @@ import {
   updateInspectionStatus,
 } from '@/lib/admin-data';
 import { confirmAction, formatDate, formatNumber, titleCase } from '@/lib/admin-utils';
+import { getPciCondition } from '@/lib/pci-classification';
 import { useAuth } from '@/providers/AuthProvider';
 
 type InspectionForm = {
@@ -190,7 +191,7 @@ export default function InspectionsScreen() {
                   <View style={styles.dateCell}><Text style={[styles.primaryText, { color: palette.text }]}>{formatDate(inspection.surveyed_at ?? inspection.created_at)}</Text><Text style={[styles.secondaryText, { color: palette.muted }]}>Unit {inspection.unit_number} · {titleCase(inspection.sample_type ?? 'Unspecified')}</Text></View>
                   <View style={styles.mainCell}><Text style={[styles.primaryText, { color: palette.text }]}>{section?.name ?? 'Unknown section'}</Text><Text style={[styles.secondaryText, { color: palette.muted }]}>{section ? branchById.get(section.branch_id) : ''}</Text></View>
                   <Text numberOfLines={1} style={[styles.cell, styles.primaryText, { color: palette.text }]}>{inspection.surveyed_by ? profileById.get(inspection.surveyed_by) ?? 'Inspector' : 'Unassigned'}</Text>
-                  <View style={styles.cell}><Text style={[styles.pciText, { color: palette.text }]}>{formatNumber(inspection.pci_score)}</Text><Text style={[styles.secondaryText, { color: palette.muted }]}>{inspection.condition_label ?? 'Not computed'}</Text></View>
+                  <View style={styles.cell}><Text style={[styles.pciText, { color: palette.text }]}>{formatNumber(inspection.pci_score)}</Text><Text style={[styles.secondaryText, { color: palette.muted }]}>{inspection.pci_score === null ? 'Not computed' : getPciCondition(Number(inspection.pci_score))}</Text></View>
                   <View style={styles.statusCell}><StatusBadge palette={palette} status={inspection.status} /></View>
                   <View style={styles.actionCell}>
                     {inspection.status === 'draft' ? <ActionIcon icon="send" label="Submit" onPress={() => void changeStatus(inspection, 'submitted')} palette={palette} /> : null}

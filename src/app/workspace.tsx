@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Linking, Platform, Text, View } from 'react-native';
 import { AdminButton, AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
+import { getPciCondition, getPciConditionCategory } from '@/lib/pci-classification';
 import { rankPriorities } from '@/lib/pci-service';
 import { latestSectionResults } from '@/lib/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
@@ -18,7 +19,7 @@ export default function Workspace() {
   const [sampleId, setSampleId] = useState('');
   const results = latestSectionResults(state.data?.results ?? []);
   const officialSamples = state.data?.samples.filter(s => ['approved', 'published'].includes(s.workflow_state) && state.data?.computations.some(c => c.id === s.computation_id && c.verification === 'verified')) ?? [];
-  const priority = rankPriorities(results.map(r => ({ id: r.section_id, pci: Number(r.pci), safety: r.safety, highSeverity: r.high_severity, affectedArea: Number(r.affected_area) })), state.data?.settings.priority_safety, state.data?.settings.priority_area);
+  const priority = rankPriorities(results.map(r => ({ id: r.section_id, pci: Number(r.pci), safety: r.safety, highSeverity: r.high_severity, affectedArea: Number(r.affected_area) })));
   const selected = officialSamples.find(s => s.id === sampleId);
   const calculation = state.data?.computations.find(c => c.id === selected?.computation_id);
   const sectionFor = (id: string) => state.data?.sections.find(s => s.id === id);
@@ -33,7 +34,7 @@ export default function Workspace() {
       </View>
       <AdminPanel palette={p} title="Approved condition distribution & inspection progress">
         {!results.length && <Notice>No verified, approved section PCI is available. Preliminary and legacy unverified scores are excluded.</Notice>}
-        {[...new Set(results.map(r => r.condition))].map(condition => { const count = results.filter(r => r.condition === condition).length; return <View key={condition} style={{ gap: 5, marginBottom: 12 }}><Text style={{ color: p.text }}>{condition}: {count} sections</Text><View style={{ backgroundColor: p.blueSoft, height: 12, borderRadius: 6 }}><View style={{ backgroundColor: p.blue, height: 12, width: `${count / results.length * 100}%`, borderRadius: 6 }} /></View></View>; })}
+        {[...new Set(results.map(r => getPciCondition(Number(r.pci))))].map(condition => { const count = results.filter(r => getPciCondition(Number(r.pci)) === condition).length; const color = getPciConditionCategory(results.find(r => getPciCondition(Number(r.pci)) === condition)!.pci).color; return <View key={condition} style={{ gap: 5, marginBottom: 12 }}><Text style={{ color: p.text }}>{condition}: {count} sections</Text><View style={{ backgroundColor: p.blueSoft, height: 12, borderRadius: 6 }}><View style={{ backgroundColor: color, height: 12, width: `${count / results.length * 100}%`, borderRadius: 6 }} /></View></View>; })}
         <Text style={{ color: p.muted, marginTop: 12 }}>{officialSamples.length} of {state.data.samples.length} visible sample units approved. {state.data.samples.filter(s => s.workflow_state === 'submitted').length} awaiting review.</Text>
       </AdminPanel>
       <AdminPanel palette={p} title="Section PCI completion">
@@ -41,8 +42,16 @@ export default function Workspace() {
           const units = state.data!.samples.filter(u => u.section_id === s.id && u.sample_type === 'random');
           const approved = units.filter(u => officialSamples.some(a => a.id === u.id)).length;
           const result = results.find(r => r.section_id === s.id);
-          return <Text key={s.id} style={{ color: p.text }}>{s.name} · {result ? `Approved PCI ${result.pci} — ${result.condition}` : `Incomplete: ${approved}/${s.recommended_sample_units ?? '?'} required random inspections approved. ${units.length ? 'Verified section aggregation pending.' : 'Sampling plan not confirmed.'}`}</Text>;
+          return <Text key={s.id} style={{ color: p.text }}>{s.name} · {result ? `Approved PCI ${result.pci} — ${getPciCondition(Number(result.pci))}` : `Incomplete: ${approved}/${s.recommended_sample_units ?? '?'} required random inspections approved. ${units.length ? 'Verified section aggregation pending.' : 'Sampling plan not confirmed.'}`}</Text>;
         })}</View>
+        <Notice>Section PCI is represented by the mean PCI of inspected sample units, weighted by area where applicable. The exact “where applicable” rule still requires engineering validation; no aggregation method is invented here.</Notice>
+      </AdminPanel>
+      <AdminPanel palette={p} title="Approved sample units by section" subtitle="Verified sample-unit PCI in ascending order; random and additional units remain separately identified.">
+        {state.data.sections.map(section => {
+          const rows = officialSamples.map(sample => ({ sample, computation: state.data!.computations.find(item => item.id === sample.computation_id) })).filter(item => item.sample.section_id === section.id && typeof item.computation?.output_snapshot?.pci === 'number').sort((a, b) => Number(a.computation!.output_snapshot!.pci) - Number(b.computation!.output_snapshot!.pci));
+          return rows.length ? <View key={section.id} style={{ gap: 6, marginBottom: 14 }}><Text style={{ color: p.text, fontWeight: '700' }}>{section.name}</Text>{rows.map(({ sample, computation }) => <Text key={sample.id} style={{ color: p.muted }}>SU-{String(sample.unit_number).padStart(3, '0')} · {sample.sample_type === 'additional' ? 'Additional' : 'Random'} · PCI {computation!.output_snapshot!.pci} · {getPciCondition(Number(computation!.output_snapshot!.pci))}</Text>)}</View> : null;
+        })}
+        {!officialSamples.length && <AdminEmpty palette={p} icon="clipboard" message="No verified approved sample-unit PCI is available." />}
       </AdminPanel>
       <AdminPanel palette={p} title="Maintenance priorities" subtitle="LAKAD prioritization rules — not ASTM PCI formulas.">
         {priority.map(r => <View key={r.id} style={{ gap: 5, marginBottom: 14 }}><Text style={{ color: p.text, fontWeight: '700' }}>{r.rank}. {sectionFor(r.id)?.name} — PCI {r.pci}</Text><Text style={{ color: p.muted }}>{r.reason}</Text></View>)}
@@ -57,14 +66,14 @@ export default function Workspace() {
           <Choices label="Report type" value={report} options={[{ value: 'inventory', label: 'Road-condition inventory' }, { value: 'section', label: 'Section PCI summary' }, { value: 'priority', label: 'Maintenance ranking' }, { value: 'sample', label: 'Sample inspection' }]} onChange={setReport} />
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}><Image source={require('../../assets/images/LAKAD.png')} style={{ width: 52, height: 52 }} contentFit="contain" /><View><Text style={{ color: p.text, fontSize: 23, fontWeight: '800' }}>LAKAD</Text><Text style={{ color: p.muted }}>Where Data Meets the Road</Text></View></View>
           <Text style={{ color: p.text, fontWeight: '700' }}>Approved information · {new Date().toLocaleDateString()}</Text>
-          {(report === 'inventory' || report === 'section') && results.map(r => <View key={r.id} style={{ gap: 5 }}><Text style={{ color: p.text }}>{state.data?.branches.find(b => b.id === sectionFor(r.section_id)?.branch_id)?.name} / {sectionFor(r.section_id)?.name} · PCI {r.pci} · {r.condition}</Text><Text selectable style={{ color: p.muted }}>{r.edition} · {r.method} · Published {new Date(r.published_at).toLocaleString()}{`\n`}Sample computations: {r.sample_computation_ids.join(', ')}{`\n`}Weights: {JSON.stringify(r.weights)}</Text></View>)}
+          {(report === 'inventory' || report === 'section') && results.map(r => <View key={r.id} style={{ gap: 5 }}><Text style={{ color: p.text }}>{state.data?.branches.find(b => b.id === sectionFor(r.section_id)?.branch_id)?.name} / {sectionFor(r.section_id)?.name} · PCI {r.pci} · {getPciCondition(Number(r.pci))}</Text><Text selectable style={{ color: p.muted }}>{r.edition} · {r.method} · Published {new Date(r.published_at).toLocaleString()}{`\n`}Sample computations: {r.sample_computation_ids.join(', ')}{`\n`}Weights: {JSON.stringify(r.weights)}</Text></View>)}
           {report === 'priority' && priority.map(r => <Text key={r.id} style={{ color: p.text }}>{r.rank}. {sectionFor(r.id)?.name} · {r.reason}</Text>)}
           {report === 'sample' && <>
             <Choices label="Approved sample unit" value={sampleId} options={officialSamples.map(s => ({ value: s.id, label: `${sectionFor(s.section_id)?.name} · SU-${s.unit_number}` }))} onChange={setSampleId} />
             {!!selected && <>
               <Text selectable style={{ color: p.text }}>{sectionFor(selected.section_id)?.name} / SU-{selected.unit_number}{`\n`}Status: {selected.workflow_state} · Inspected {selected.surveyed_at}{`\n`}Inspector: {state.data.profiles.find(u => u.id === selected.surveyed_by)?.full_name ?? selected.surveyed_by}{`\n`}Reviewer: {state.data.profiles.find(u => u.id === selected.reviewed_by)?.full_name ?? selected.reviewed_by}{`\n`}Reviewed: {selected.reviewed_at}{`\n`}{calculation?.edition} · Reference {calculation?.reference_id}{`\n`}{selected.inspection_notes}</Text>
               {state.data.distresses.filter(d => d.sample_unit_id === selected.id).map(d => <Text key={d.id} style={{ color: p.text }}>{state.data?.types.find(t => t.id === d.distress_type_id)?.name} · {d.severity ?? 'Not applicable'} · {d.quantity} {d.unit_of_measure} · {d.notes}</Text>)}
-              <Text selectable style={{ color: p.text }}>{JSON.stringify(calculation?.output_snapshot, null, 2)}</Text>
+              <Text selectable style={{ color: p.text }}>{JSON.stringify(calculation?.output_snapshot ? { ...calculation.output_snapshot, condition: getPciCondition(Number(calculation.output_snapshot.pci)) } : null, null, 2)}</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>{state.data.photos.filter(photo => photo.sample_unit_id === selected.id).map(photo => <PhotoCard key={photo.id} photo={photo} />)}</View>
             </>}
           </>}
