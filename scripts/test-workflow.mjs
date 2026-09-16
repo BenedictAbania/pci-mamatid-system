@@ -1,7 +1,7 @@
+import { PGlite } from '@electric-sql/pglite';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
-import { PGlite } from '@electric-sql/pglite';
 import ts from 'typescript';
 
 let checks = 0;
