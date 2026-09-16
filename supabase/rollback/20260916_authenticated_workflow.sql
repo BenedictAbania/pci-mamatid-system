@@ -31,9 +31,12 @@ do $$ declare t text; begin
    execute format('drop policy if exists lakad_no_direct_update on public.%I',t);
    execute format('drop policy if exists lakad_no_direct_delete on public.%I',t);
  end loop;
- foreach t in array array['branches','sections','distress_types','deduct_value_points'] loop
+ foreach t in array array['branches','sections','deduct_value_points'] loop
    execute format('drop policy if exists lakad_active_write on public.%I',t);
  end loop;
+ drop policy if exists lakad_dt_insert on public.distress_types;
+ drop policy if exists lakad_dt_update on public.distress_types;
+ drop policy if exists lakad_dt_delete on public.distress_types;
 end $$;
 
 drop policy if exists lakad_reference on public.deduct_value_points;

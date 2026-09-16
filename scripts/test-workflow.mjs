@@ -34,9 +34,9 @@ const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
 check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
 
 const db = new PGlite();
-const awaitableRollback = await fs.readFile('supabase/rollback/20260915103850_authenticated_workflow.sql', 'utf8');
+const awaitableRollback = await fs.readFile('supabase/rollback/20260916_authenticated_workflow.sql', 'utf8');
 await db.exec(await fs.readFile('tests/schema-fixture.sql', 'utf8'));
-await db.exec(await fs.readFile('supabase/migrations/20260915103850_authenticated_workflow.sql', 'utf8'));
+await db.exec(await fs.readFile('supabase/migrations/20260916_authenticated_workflow.sql', 'utf8'));
 const ids = Object.fromEntries(['admin', 'reviewer', 'encoder', 'viewer', 'other'].map((name, index) => [name, `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`]));
 for (const [name, id] of Object.entries(ids)) {
   await db.query('insert into auth.users values($1,$2)', [id, `${name}@example.test`]);
@@ -69,10 +69,12 @@ await rejected(() => db.query('select lakad_inspection_action($1,$2)', [sample, 
 await as('viewer');
 check((await db.query('select * from sample_units')).rows.length === 0, 'viewer cannot read drafts');
 check((await db.query('select * from sections')).rows.length === 0, 'viewer cannot read unpublished inventory');
+await rejected(() => db.query("insert into deduct_value_points(density_percent) values(10)"), /row-level security|permission denied/i);
 await rejected(() => db.query('select * from lakad_accounts()'), /Administrator/);
 await rejected(() => db.query('select lakad_manage_account($1,$2,$3)', [ids.encoder, 'admin', true]), /Administrator/);
 await as('encoder');
-await rejected(() => db.query("insert into sample_units(section_id,unit_number) values($1,999)", [section]), /row-level security/i);
+check((await db.query("select * from distress_types")).rows.length > 0, "encoder can read distress types");
+await rejected(() => db.query("insert into sample_units(section_id,unit_number) values($1,999)", [section]), /row-level security|permission denied/i);
 await db.query('select lakad_inspection_action($1,$2)', [sample, 'start']); checks++;
 const invoke = (action, payload = {}) => db.query('select lakad_inspection_action($1,$2,$3)', [sample, action, payload]);
 await rejected(() => invoke('submit'), /Add distresses/);
@@ -120,12 +122,16 @@ const rls = (await db.query("select tablename,rowsecurity from pg_tables where s
 check(rls.every(table => table.rowsecurity), 'RLS enabled on every public table');
 await rejected(() => db.exec(awaitableRollback), /Rollback refused/);
 await db.exec('rollback');
+await as('admin');
+await db.query("insert into deduct_value_points(density_percent) values(10)"); checks++;
+await db.query("delete from deduct_value_points where density_percent=10"); checks++;
 await as('anon');
-await rejected(() => db.query('select lakad_inspection_action($1,$2)', [sample, 'start']), /permission denied/);
+await rejected(() => db.query('select * from sample_units'), /permission denied/i);
+await rejected(() => db.query('select lakad_inspection_action($1,$2)', [sample, 'start']), /permission denied/i);
 await db.close();
 const empty = new PGlite();
 await empty.exec(await fs.readFile('tests/schema-fixture.sql', 'utf8'));
-await empty.exec(await fs.readFile('supabase/migrations/20260915103850_authenticated_workflow.sql', 'utf8'));
+await empty.exec(await fs.readFile('supabase/migrations/20260916_authenticated_workflow.sql', 'utf8'));
 await empty.exec(awaitableRollback); checks++;
 check((await empty.query("select count(*)::integer n from information_schema.columns where table_schema='public' and column_name='workflow_state'")).rows[0].n === 0, 'Unused migration rolls back cleanly');
 await empty.close();

@@ -355,19 +355,43 @@ $$;
 -- Restrictive policies AND with any pre-existing permissive policies.
 -- They never widen access beyond what the role helpers allow.
 
--- Drop-if-exists wrapper for policies (Postgres has no CREATE POLICY IF NOT EXISTS).
-do $$ declare
-  pol record;
-begin
-  -- Clean up any leftover lakad policies from a partial prior run.
-  for pol in
-    select policyname, tablename, schemaname
-    from pg_policies
-    where policyname like 'lakad_%'
-  loop
-    execute format('drop policy %I on %I.%I', pol.policyname, pol.schemaname, pol.tablename);
-  end loop;
-end $$;
+-- Explicitly drop only the policies created by this migration.
+drop policy if exists lakad_scope on public.sample_units;
+drop policy if exists lakad_scope on public.sections;
+drop policy if exists lakad_scope on public.branches;
+drop policy if exists lakad_scope on public.distress_records;
+drop policy if exists lakad_scope on public.distress_photos;
+drop policy if exists lakad_scope on public.profiles;
+
+drop policy if exists lakad_reference on public.deduct_value_points;
+drop policy if exists lakad_reference on public.distress_types;
+
+drop policy if exists lakad_no_direct_insert on public.sample_units;
+drop policy if exists lakad_no_direct_update on public.sample_units;
+drop policy if exists lakad_no_direct_delete on public.sample_units;
+drop policy if exists lakad_no_direct_insert on public.distress_records;
+drop policy if exists lakad_no_direct_update on public.distress_records;
+drop policy if exists lakad_no_direct_delete on public.distress_records;
+drop policy if exists lakad_no_direct_insert on public.distress_photos;
+drop policy if exists lakad_no_direct_update on public.distress_photos;
+drop policy if exists lakad_no_direct_delete on public.distress_photos;
+drop policy if exists lakad_no_direct_insert on public.profiles;
+drop policy if exists lakad_no_direct_update on public.profiles;
+drop policy if exists lakad_no_direct_delete on public.profiles;
+
+drop policy if exists lakad_active_write on public.branches;
+drop policy if exists lakad_active_write on public.sections;
+drop policy if exists lakad_active_write on public.deduct_value_points;
+
+drop policy if exists lakad_dt_insert on public.distress_types;
+drop policy if exists lakad_dt_update on public.distress_types;
+drop policy if exists lakad_dt_delete on public.distress_types;
+
+drop policy if exists lakad_read on public.lakad_settings;
+drop policy if exists lakad_read on public.inspection_computations;
+drop policy if exists lakad_read on public.inspection_history;
+drop policy if exists lakad_read on public.lakad_audit;
+drop policy if exists lakad_read on public.section_results;
 
 -- Row-scoped SELECT on existing tables.
 create policy lakad_scope on public.sample_units
@@ -403,10 +427,12 @@ create policy lakad_scope on public.profiles
   );
 
 -- Reference tables: read-only scoping.
+-- deduct_value_points: only admin can read (licensed/reference data protection)
 create policy lakad_reference on public.deduct_value_points
   as restrictive for select to authenticated
   using ((select lakad_private.role()) = 'admin');
 
+-- distress_types: any active user can read (needed by encoders and reviewers)
 create policy lakad_reference on public.distress_types
   as restrictive for select to authenticated
   using ((select lakad_private.role()) is not null);
@@ -415,6 +441,8 @@ create policy lakad_reference on public.distress_types
 do $$ declare t text; begin
   foreach t in array array['sample_units','sections','branches','distress_records','distress_photos','profiles','distress_types','deduct_value_points'] loop
     execute format('alter table public.%I enable row level security', t);
+    -- Revoke legacy privileges
+    execute format('revoke all on public.%I from anon, authenticated', t);
   end loop;
 end $$;
 
@@ -438,14 +466,17 @@ do $$ declare t text; begin
     -- Explicit minimum Data API grants for these (they allow writes)
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
   end loop;
-  -- Reference catalog: admin-only write.
-  foreach t in array array['distress_types','deduct_value_points'] loop
-    execute format(
-      'create policy lakad_active_write on public.%I as restrictive for all to authenticated using((select lakad_private.role())=''admin'') with check((select lakad_private.role())=''admin'')', t);
-    -- Explicit minimum Data API grants for these
-    execute format('grant select, insert, update, delete on public.%I to authenticated', t);
-  end loop;
 end $$;
+
+-- Reference catalog deduct_value_points: admin-only write via FOR ALL.
+create policy lakad_active_write on public.deduct_value_points as restrictive for all to authenticated using((select lakad_private.role())='admin') with check((select lakad_private.role())='admin');
+grant select, insert, update, delete on public.deduct_value_points to authenticated;
+
+-- distress_types: active admin can insert/update/delete (SELECT handled by lakad_reference above)
+create policy lakad_dt_insert on public.distress_types as restrictive for insert to authenticated with check((select lakad_private.role())='admin');
+create policy lakad_dt_update on public.distress_types as restrictive for update to authenticated using((select lakad_private.role())='admin') with check((select lakad_private.role())='admin');
+create policy lakad_dt_delete on public.distress_types as restrictive for delete to authenticated using((select lakad_private.role())='admin');
+grant select, insert, update, delete on public.distress_types to authenticated;
 
 -- New tables: enable RLS, restrict to SELECT only (writes via RPCs).
 do $$ declare t text; begin

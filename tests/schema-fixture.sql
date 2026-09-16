@@ -17,8 +17,8 @@ create table distress_types(id uuid primary key default gen_random_uuid(),code t
 create table distress_records(id uuid primary key default gen_random_uuid(),sample_unit_id uuid not null references sample_units on delete cascade,distress_type_id uuid not null references distress_types,severity distress_severity,quantity numeric not null,unit_of_measure text not null,density_percent numeric,deduct_value numeric,notes text,created_by uuid references profiles,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),measurement_details jsonb not null default '{}');
 create table distress_photos(id uuid primary key default gen_random_uuid(),sample_unit_id uuid not null references sample_units on delete cascade,distress_record_id uuid references distress_records on delete set null,photo_path text not null,caption text,uploaded_by uuid references profiles,uploaded_at timestamptz not null default now());
 create table deduct_value_points(id uuid primary key default gen_random_uuid(),distress_type_id uuid references distress_types,severity distress_severity,density_percent numeric,deduct_value numeric,created_at timestamptz not null default now());
-create table storage.buckets(id text primary key,public boolean,file_size_limit bigint,allowed_mime_types text[]);
-insert into storage.buckets values('sample-unit-photos',false,null,null);
+create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('sample-unit-photos','sample-unit-photos',false,null,null);
 create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,metadata jsonb);
 alter table storage.objects enable row level security;
 grant select,insert,update,delete on storage.objects to authenticated;
