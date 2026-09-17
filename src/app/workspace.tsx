@@ -6,13 +6,16 @@ import { AdminButton, AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
 import { getPciCondition, getPciConditionCategory } from '@/lib/pci-classification';
 import { rankPriorities } from '@/lib/pci-service';
+import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
 import { latestSectionResults } from '@/lib/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppTheme } from '@/providers/ThemeProvider';
 import { PhotoCard } from './field-inspections';
 
 export default function Workspace() {
   const state = useWorkflow();
   const p = useAdminPalette();
+  const { colorScheme } = useAppTheme();
   const router = useRouter();
   const { role, profile } = useAuth();
   const [report, setReport] = useState('inventory');
@@ -34,17 +37,17 @@ export default function Workspace() {
       </View>
       <AdminPanel palette={p} title="Approved condition distribution & inspection progress">
         {!results.length && <Notice>No verified, approved section PCI is available. Preliminary and legacy unverified scores are excluded.</Notice>}
-        {[...new Set(results.map(r => getPciCondition(Number(r.pci))))].map(condition => { const count = results.filter(r => getPciCondition(Number(r.pci)) === condition).length; const color = getPciConditionCategory(results.find(r => getPciCondition(Number(r.pci)) === condition)!.pci).color; return <View key={condition} style={{ gap: 5, marginBottom: 12 }}><Text style={{ color: p.text }}>{condition}: {count} sections</Text><View style={{ backgroundColor: p.blueSoft, height: 12, borderRadius: 6 }}><View style={{ backgroundColor: color, height: 12, width: `${count / results.length * 100}%`, borderRadius: 6 }} /></View></View>; })}
+        {[...new Set(results.map(r => getPciCondition(Number(r.pci))))].map(condition => { const count = results.filter(r => getPciCondition(Number(r.pci)) === condition).length; const category = getPciConditionCategory(results.find(r => getPciCondition(Number(r.pci)) === condition)!.pci); const color = colorScheme === 'dark' ? category.darkColor : category.color; return <View key={condition} style={{ gap: 5, marginBottom: 12 }}><Text style={{ color: p.text }}>{condition} ({category.range}): {count} sections</Text><View style={{ backgroundColor: p.blueSoft, height: 12, borderRadius: 6 }}><View style={{ backgroundColor: color, height: 12, width: `${count / results.length * 100}%`, borderRadius: 6 }} /></View></View>; })}
         <Text style={{ color: p.muted, marginTop: 12 }}>{officialSamples.length} of {state.data.samples.length} visible sample units approved. {state.data.samples.filter(s => s.workflow_state === 'submitted').length} awaiting review.</Text>
       </AdminPanel>
-      <AdminPanel palette={p} title="Section PCI completion">
+      <AdminPanel palette={p} title="Section PCI presentation">
         <View style={{ gap: 12 }}>{state.data.sections.map(s => {
           const units = state.data!.samples.filter(u => u.section_id === s.id && u.sample_type === 'random');
           const approved = units.filter(u => officialSamples.some(a => a.id === u.id)).length;
           const result = results.find(r => r.section_id === s.id);
-          return <Text key={s.id} style={{ color: p.text }}>{s.name} · {result ? `Approved PCI ${result.pci} — ${getPciCondition(Number(result.pci))}` : `Incomplete: ${approved}/${s.recommended_sample_units ?? '?'} required random inspections approved. ${units.length ? 'Verified section aggregation pending.' : 'Sampling plan not confirmed.'}`}</Text>;
+          return <Text key={s.id} style={{ color: p.text }}>{s.name} · {result ? `Official published section PCI ${result.pci} — ${getPciCondition(Number(result.pci))}` : `Official Section PCI Pending Engineering Validation · ${approved}/${s.recommended_sample_units ?? '?'} required random inspections approved. ${units.length ? 'No aggregation has been performed.' : 'Sampling plan not confirmed.'}`}</Text>;
         })}</View>
-        <Notice>Section PCI is represented by the mean PCI of inspected sample units, weighted by area where applicable. The exact “where applicable” rule still requires engineering validation; no aggregation method is invented here.</Notice>
+        <Notice>No section-level PCI is calculated or saved unless a valid persisted section result exists. The manuscript phrase “weighted by area where applicable” remains pending engineering validation.</Notice>
       </AdminPanel>
       <AdminPanel palette={p} title="Approved sample units by section" subtitle="Verified sample-unit PCI in ascending order; random and additional units remain separately identified.">
         {state.data.sections.map(section => {
@@ -72,7 +75,11 @@ export default function Workspace() {
             <Choices label="Approved sample unit" value={sampleId} options={officialSamples.map(s => ({ value: s.id, label: `${sectionFor(s.section_id)?.name} · SU-${s.unit_number}` }))} onChange={setSampleId} />
             {!!selected && <>
               <Text selectable style={{ color: p.text }}>{sectionFor(selected.section_id)?.name} / SU-{selected.unit_number}{`\n`}Status: {selected.workflow_state} · Inspected {selected.surveyed_at}{`\n`}Inspector: {state.data.profiles.find(u => u.id === selected.surveyed_by)?.full_name ?? selected.surveyed_by}{`\n`}Reviewer: {state.data.profiles.find(u => u.id === selected.reviewed_by)?.full_name ?? selected.reviewed_by}{`\n`}Reviewed: {selected.reviewed_at}{`\n`}{calculation?.edition} · Reference {calculation?.reference_id}{`\n`}{selected.inspection_notes}</Text>
-              {state.data.distresses.filter(d => d.sample_unit_id === selected.id).map(d => <Text key={d.id} style={{ color: p.text }}>{state.data?.types.find(t => t.id === d.distress_type_id)?.name} · {d.severity ?? 'Not applicable'} · {d.quantity} {d.unit_of_measure} · {d.notes}</Text>)}
+              {state.data.distresses.filter(d => d.sample_unit_id === selected.id).map(d => {
+                const severity = normalizeDistressSeverity(d.severity);
+                const colors = severity ? getDistressSeverityColors(severity) : null;
+                return <View key={d.id} style={{ alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Text style={{ color: p.text }}>{state.data?.types.find(t => t.id === d.distress_type_id)?.name}</Text>{severity && colors ? <View style={{ backgroundColor: colors.backgroundColor, borderColor: colors.borderColor, borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ color: colors.textColor, fontWeight: '800' }}>{severity}</Text></View> : <Text style={{ color: p.muted }}>Not applicable</Text>}<Text style={{ color: p.text }}>· {d.quantity} {d.unit_of_measure} · {d.notes}</Text></View>;
+              })}
               <Text selectable style={{ color: p.text }}>{JSON.stringify(calculation?.output_snapshot ? { ...calculation.output_snapshot, condition: getPciCondition(Number(calculation.output_snapshot.pci)) } : null, null, 2)}</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>{state.data.photos.filter(photo => photo.sample_unit_id === selected.id).map(photo => <PhotoCard key={photo.id} photo={photo} />)}</View>
             </>}
@@ -81,7 +88,7 @@ export default function Workspace() {
           {Platform.OS === 'web' && <AdminButton palette={p} tone="secondary" label="Print / Save as PDF" disabled={report === 'sample' ? !selected : !results.length} onPress={() => window.print()} />}
         </View>
       </AdminPanel>
-      <AdminPanel palette={p} title="Recent activity"><View style={{ gap: 12 }}>{state.data.history.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10).map(h => <Text key={h.id} style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action} · {h.comments || `Revision ${h.revision}`}</Text>)}{role === 'admin' && state.data.audit.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10).map(h => <Text key={h.id} style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action}</Text>)}{!state.data.history.length && !state.data.audit.length && <Text style={{ color: p.muted }}>No activity in your authorized scope.</Text>}</View></AdminPanel>
+      <AdminPanel palette={p} title="Recent activity"><View style={{ gap: 12 }}>{state.data.history.filter(h => role !== 'viewer' || ['approve', 'publish'].includes(h.action)).slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10).map(h => <Text key={h.id} style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action}{role !== 'viewer' ? ` · ${h.comments || `Revision ${h.revision}`}` : ''}</Text>)}{role === 'admin' && state.data.audit.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10).map(h => <Text key={h.id} style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action}</Text>)}{!state.data.history.filter(h => role !== 'viewer' || ['approve', 'publish'].includes(h.action)).length && !state.data.audit.length && <Text style={{ color: p.muted }}>No activity in your authorized scope.</Text>}</View></AdminPanel>
     </>}
   </AdminShell>;
 }

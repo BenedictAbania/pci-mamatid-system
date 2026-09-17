@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useAdminPalette } from '@/components/admin/admin-shell';
 import { loadWorkflow, WorkflowData } from '@/lib/workflow-data';
@@ -9,16 +9,24 @@ export function useWorkflow() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const requestSequence = useRef(0);
   const refresh = useCallback(async () => {
+    const request = ++requestSequence.current;
     setLoading(true);
-    try { setData(await loadWorkflow()); setError(''); }
-    catch (reason) { setData(null); setError(reason instanceof Error ? reason.message : 'Unable to load live data.'); }
-    finally { setLoading(false); }
+    try {
+      const nextData = await loadWorkflow();
+      if (request === requestSequence.current) { setData(nextData); setError(''); }
+    }
+    catch (reason) {
+      if (request === requestSequence.current) { setData(null); setError(reason instanceof Error ? reason.message : 'Unable to load live data.'); }
+    }
+    finally { if (request === requestSequence.current) setLoading(false); }
   }, []);
   useEffect(() => {
     // Initial synchronization with the remote data source.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
+    return () => { requestSequence.current += 1; };
   }, [refresh]);
   async function run(task: () => Promise<unknown>, success = 'Saved successfully.') {
     setBusy(true); setError(''); setMessage('');

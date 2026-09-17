@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Switch, Text, useWindowDimensions, View } from '
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
 import { PCI_CONDITION_SCALE } from '@/lib/pci-classification';
+import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
 import { callWorkflow } from '@/lib/workflow-data';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -135,7 +136,7 @@ export default function SettingsScreen() {
 
           <AdminPanel palette={palette} style={{ marginTop: 16 }} subtitle="These values describe the classifications used by the maintenance view" title="PCI Interpretation Guide">
             <View style={styles.scale}>
-              {PCI_CONDITION_SCALE.map((condition) => <Scale color={condition.color} key={condition.rating} label={condition.rating} range={condition.range} palette={palette} />)}
+              {PCI_CONDITION_SCALE.map((condition) => <Scale color={colorScheme === 'dark' ? condition.darkColor : condition.color} key={condition.rating} label={condition.rating} range={condition.range} palette={palette} />)}
             </View>
           </AdminPanel>
         </View>
@@ -153,7 +154,12 @@ export default function SettingsScreen() {
                 <View style={styles.settingCopy}><Text style={[styles.settingTitle, { color: palette.text }]}>Severity is required</Text><Text style={[styles.settingText, { color: palette.muted }]}>Require inspectors to classify the record using the allowed levels below.</Text></View>
                 <Switch disabled={busy} onValueChange={setSeverityRequired} value={severityRequired} trackColor={{ false: palette.border, true: palette.blue }} />
               </View>
-              {severityRequired ? <View style={{ gap: 8 }}><Text style={[styles.settingTitle, { color: palette.text }]}>Allowed Severity Levels</Text><View style={styles.severityRow}>{['low', 'medium', 'high'].map((severity) => <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: allowedSeverities.includes(severity) }} key={severity} onPress={() => toggleSeverity(severity)} style={[styles.severityChoice, { backgroundColor: allowedSeverities.includes(severity) ? palette.blue : palette.panel, borderColor: palette.border }]}><Text style={{ color: allowedSeverities.includes(severity) ? '#fff' : palette.text, fontWeight: '700', textTransform: 'capitalize' }}>{severity}</Text></Pressable>)}</View></View> : null}
+              {severityRequired ? <View style={{ gap: 8 }}><Text style={[styles.settingTitle, { color: palette.text }]}>Allowed Severity Levels</Text><View style={styles.severityRow}>{['low', 'medium', 'high'].map((severity) => {
+                const label = normalizeDistressSeverity(severity)!;
+                const colors = getDistressSeverityColors(label);
+                const selected = allowedSeverities.includes(severity);
+                return <Pressable accessibilityLabel={`${label} severity`} accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={severity} onPress={() => toggleSeverity(severity)} style={[styles.severityChoice, { backgroundColor: selected ? colors.backgroundColor : palette.panel, borderColor: selected ? colors.borderColor : palette.border }]}><Text style={{ color: selected ? colors.textColor : palette.text, fontWeight: '700' }}>{selected ? '✓ ' : ''}{label}</Text></Pressable>;
+              })}</View></View> : null}
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}><Text style={[styles.settingTitle, { color: palette.text }]}>Active for field entry</Text><Text style={[styles.settingText, { color: palette.muted }]}>Inactive references remain attached to historical records but cannot be selected for new entries.</Text></View>
                 <Switch disabled={busy} onValueChange={setReferenceActive} value={referenceActive} trackColor={{ false: palette.border, true: palette.green }} />

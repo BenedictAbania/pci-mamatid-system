@@ -3,13 +3,15 @@ import { useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
-import { useWorkflow } from '@/components/workflow/shared';
+import { Notice, useWorkflow } from '@/components/workflow/shared';
 import { formatNumber } from '@/lib/admin-utils';
 import { getPciCondition, getPciConditionCategory } from '@/lib/pci-classification';
 import { PrioritySection, rankPriorities } from '@/lib/pci-service';
+import { useAppTheme } from '@/providers/ThemeProvider';
 
 export default function MaintenancePlanScreen() {
   const palette = useAdminPalette();
+  const { colorScheme } = useAppTheme();
   const { width } = useWindowDimensions();
   const { data, loading, error, refresh } = useWorkflow();
   const [query, setQuery] = useState('');
@@ -18,7 +20,7 @@ export default function MaintenancePlanScreen() {
   if (!data) {
     return (
       <AdminShell loading={loading} onRefresh={refresh} subtitle="Prioritize maintenance directly from the latest computed road-section PCI scores." title="Maintenance Plan">
-        <View />
+        {error ? <Notice error>{error} Use Refresh to try again.</Notice> : <View />}
       </AdminShell>
     );
   }
@@ -71,7 +73,7 @@ export default function MaintenancePlanScreen() {
       <AdminPanel palette={palette} subtitle="Approved section PCI → high-severity/safety-related distress → affected pavement area" title="Priority Queue">
         {plan.length ? plan.map((item, index) => {
           const section = sectionById.get(item.id);
-          const guidance = getMaintenanceGuidance(item.pci);
+          const guidance = getMaintenanceGuidance(item.pci, colorScheme === 'dark');
           return (
             <View key={item.id} style={[styles.planRow, isCompact && styles.planRowCompact, { borderBottomColor: palette.border }]}>
               <View style={[styles.rank, { backgroundColor: index < 3 ? palette.redSoft : palette.blueSoft }]}><Text style={{ color: index < 3 ? palette.red : palette.blue, fontWeight: '900' }}>{item.rank}</Text></View>
@@ -87,7 +89,7 @@ export default function MaintenancePlanScreen() {
                 <Text style={[styles.actionTitle, { color: palette.text }]}>{guidance.action}</Text>
                 <Text style={[styles.meta, { color: palette.muted }]}>{item.reason}</Text>
               </View>
-              <View style={[styles.priorityBadge, { backgroundColor: guidance.soft }]}><Text style={[styles.priorityText, { color: guidance.color }]}>{guidance.priority}</Text></View>
+              <View style={[styles.priorityBadge, { backgroundColor: guidance.soft }]}><Text style={[styles.priorityText, { color: guidance.text }]}>{guidance.priority}</Text></View>
             </View>
           );
         }) : <AdminEmpty icon="tool" message={query ? 'No maintenance priorities match your search.' : 'Maintenance priorities will be generated once road-section PCI values are approved.'} palette={palette} />}
@@ -104,14 +106,19 @@ export default function MaintenancePlanScreen() {
   );
 }
 
-function getMaintenanceGuidance(score: number) {
+function getMaintenanceGuidance(score: number, isDark: boolean) {
   const condition = getPciConditionCategory(score);
-  if (score < 25) return { priority: 'Critical', action: 'Reconstruction assessment', color: condition.color, soft: `${condition.color}22` };
-  if (score < 40) return { priority: 'High', action: 'Major rehabilitation', color: condition.color, soft: `${condition.color}22` };
-  if (score < 55) return { priority: 'High', action: 'Corrective maintenance', color: condition.color, soft: `${condition.color}22` };
-  if (score < 70) return { priority: 'Medium', action: 'Preventive maintenance', color: condition.color, soft: `${condition.color}22` };
-  if (score < 85) return { priority: 'Low', action: 'Preservation treatment', color: condition.color, soft: `${condition.color}22` };
-  return { priority: 'Monitor', action: 'Routine monitoring', color: condition.color, soft: `${condition.color}22` };
+  const visual = {
+    color: isDark ? condition.darkColor : condition.color,
+    soft: isDark ? condition.darkColor : condition.softColor,
+    text: isDark ? condition.darkForegroundColor : condition.color,
+  };
+  if (score < 25) return { priority: 'Critical', action: 'Reconstruction assessment', ...visual };
+  if (score < 40) return { priority: 'High', action: 'Major rehabilitation', ...visual };
+  if (score < 55) return { priority: 'High', action: 'Corrective maintenance', ...visual };
+  if (score < 70) return { priority: 'Medium', action: 'Preventive maintenance', ...visual };
+  if (score < 85) return { priority: 'Low', action: 'Preservation treatment', ...visual };
+  return { priority: 'Monitor', action: 'Routine monitoring', ...visual };
 }
 
 function Metric({ color, icon, label, palette, value }: { color: string; icon: keyof typeof Feather.glyphMap; label: string; palette: ReturnType<typeof useAdminPalette>; value: number }) {

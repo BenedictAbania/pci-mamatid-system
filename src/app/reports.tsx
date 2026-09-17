@@ -17,19 +17,26 @@ export default function ReportsScreen() {
   if (!data) {
     return (
       <AdminShell loading={loading} onRefresh={refresh} subtitle="Generate downloadable operational reports from the current Supabase records." title="Reports">
-        <View />
+        {error ? <Notice error>{error} Use Refresh to try again.</Notice> : <View />}
       </AdminShell>
     );
   }
 
-  const { branches = [], sections = [], samples = [], profiles = [], distresses = [], computations = [] } = data;
+  const { branches = [], sections = [], samples = [], profiles = [], distresses = [], computations = [], results = [] } = data;
   const branchById = new Map(branches.map((item) => [item.id, item.name]));
   const sectionById = new Map(sections.map((item) => [item.id, item]));
   const profileById = new Map(profiles.map((item: any) => [item.id, item.full_name]));
   const typeById = new Map(data.types?.map((item: any) => [item.id, item.name]) || []);
 
-  const computed = computations.filter(c => c.verification === 'verified' && c.output_snapshot !== null);
-  const average = computed.length ? computed.reduce((sum, item) => sum + (item.output_snapshot?.pci ?? 0), 0) / computed.length : null;
+  const latestResultBySection = new Map<string, typeof results[number]>();
+  results.forEach((result) => {
+    if (!latestResultBySection.has(result.section_id) || latestResultBySection.get(result.section_id)!.published_at < result.published_at) latestResultBySection.set(result.section_id, result);
+  });
+  const officialComputations = computations.filter(c => {
+    const sample = samples.find(item => item.id === c.sample_unit_id);
+    return c.verification === 'verified' && c.output_snapshot !== null && !!sample && ['approved', 'published'].includes(sample.workflow_state);
+  });
+  const average = officialComputations.length ? officialComputations.reduce((sum, item) => sum + (item.output_snapshot?.pci ?? 0), 0) / officialComputations.length : null;
 
   function printReport() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -47,35 +54,41 @@ export default function ReportsScreen() {
     const stamp = new Date().toISOString().slice(0, 10);
     if (name === 'roads') {
       downloadCsv(`lakad-road-network-${stamp}.csv`, [
-        ['Branch', 'Section', 'Length (m)', 'Width (m)', 'Area (m²)', 'Current PCI', 'Condition'],
-        ...sections.map((section) => [
+        ['Branch', 'Section', 'Length (m)', 'Width (m)', 'Area (m²)', 'Official Section PCI', 'Condition', 'Verification Status'],
+        ...sections.map((section) => {
+          const result = latestResultBySection.get(section.id);
+          return [
           branchById.get(section.branch_id) ?? '', section.name, section.length_meters,
-          section.width_meters, section.area_sqm, section.pci_score, section.pci_score === null ? '' : getPciCondition(Number(section.pci_score)),
-        ]),
+          section.width_meters, section.area_sqm, result?.pci ?? '', result ? getPciCondition(Number(result.pci)) : '', result ? 'Verified published section result' : 'Official Section PCI Pending Engineering Validation',
+        ]; }),
       ]);
     } else if (name === 'inspections') {
       downloadCsv(`lakad-inspections-${stamp}.csv`, [
-        ['Date', 'Branch', 'Road Section', 'Sample Unit', 'Type', 'Inspector', 'Status'],
+        ['Date', 'Branch', 'Road Section', 'Sample Unit', 'Type', 'Inspector', 'Inspection Status', 'PCI', 'Condition', 'Verification Status'],
         ...samples.map((inspection) => {
           const section = sectionById.get(inspection.section_id);
+          const computation = computations.find(item => item.id === inspection.computation_id);
           return [
             inspection.surveyed_at ?? inspection.created_at,
             section ? branchById.get(section.branch_id) ?? '' : '',
             section?.name ?? '', inspection.unit_number, inspection.sample_type,
             inspection.surveyed_by ? profileById.get(inspection.surveyed_by) ?? '' : '',
             inspection.workflow_state,
+            computation?.output_snapshot?.pci ?? '',
+            computation?.output_snapshot ? getPciCondition(Number(computation.output_snapshot.pci)) : '',
+            calculationStatus(computation, inspection.workflow_state),
           ];
         }),
       ]);
     } else if (name === 'pci') {
       downloadCsv(`lakad-pci-results-${stamp}.csv`, [
-        ['Branch', 'Road Section', 'Sample Unit', 'PCI', 'Condition', 'Computed At'],
-        ...computed.map((result) => {
+        ['Branch', 'Road Section', 'Sample Unit', 'Inspection Status', 'PCI', 'Condition', 'Verification Status', 'Computed At'],
+        ...computations.map((result) => {
           const sample = samples.find(s => s.id === result.sample_unit_id);
           const section = sectionById.get(sample?.section_id || '');
           return [
             section ? branchById.get(section.branch_id) ?? '' : '', section?.name ?? '',
-            sample?.unit_number ?? '', result.output_snapshot?.pci ?? '', result.output_snapshot ? getPciCondition(Number(result.output_snapshot.pci)) : '', result.created_at,
+            sample?.unit_number ?? '', sample?.workflow_state ?? '', result.output_snapshot?.pci ?? '', result.output_snapshot ? getPciCondition(Number(result.output_snapshot.pci)) : '', calculationStatus(result, sample?.workflow_state), result.created_at,
           ];
         }),
       ]);
@@ -99,15 +112,15 @@ export default function ReportsScreen() {
       <View style={[styles.summary, isCompact && styles.stack]}>
         <Summary label="Road sections" palette={palette} value={sections.length.toLocaleString()} />
         <Summary label="Sample units" palette={palette} value={samples.length.toLocaleString()} />
-        <Summary label="Computed PCI" palette={palette} value={computed.length.toLocaleString()} />
-        <Summary label="Average PCI" palette={palette} value={average === null ? '—' : average.toFixed(1)} />
+        <Summary label="Official sample PCI" palette={palette} value={officialComputations.length.toLocaleString()} />
+        <Summary label="Average approved sample PCI" palette={palette} value={average === null ? '—' : average.toFixed(1)} />
       </View>
 
       <AdminPanel palette={palette} subtitle="Each file is generated from live records visible to the signed-in administrator" title="Available exports">
         <View style={[styles.reportGrid, isCompact && styles.stack]}>
           <ReportCard count={sections.length} description="Branch and section dimensions, sampling counts, and current condition." icon="map" label="Road network register" onExport={() => exportReport('roads')} palette={palette} />
           <ReportCard count={samples.length} description="Sample units, inspectors, survey dates, types, and workflow status." icon="clipboard" label="Inspection register" onExport={() => exportReport('inspections')} palette={palette} />
-          <ReportCard count={computed.length} description="Computed PCI values and condition labels for assessed sample units." icon="activity" label="PCI results report" onExport={() => exportReport('pci')} palette={palette} />
+          <ReportCard count={computations.length} description="Sample-unit PCI values when available, with inspection and verification status." icon="activity" label="PCI results report" onExport={() => exportReport('pci')} palette={palette} />
           <ReportCard count={distresses.length} description="Recorded distress quantities, severities, and notes." icon="alert-triangle" label="Distress inventory" onExport={() => exportReport('distresses')} palette={palette} />
         </View>
       </AdminPanel>
@@ -118,13 +131,18 @@ export default function ReportsScreen() {
           return (
             <View key={inspection.id} style={[styles.latestRow, { borderBottomColor: palette.border }]}>
               <View style={[styles.latestIcon, { backgroundColor: palette.blueSoft }]}><Feather color={palette.blue} name="clipboard" size={16} /></View>
-              <View style={styles.latestCopy}><Text style={[styles.latestTitle, { color: palette.text }]}>{section?.name ?? 'Unknown section'} · Unit {inspection.unit_number}</Text><Text style={[styles.latestMeta, { color: palette.muted }]}>{formatDate(inspection.surveyed_at ?? inspection.created_at)} · {titleCase(inspection.workflow_state)}</Text></View>
+              <View style={styles.latestCopy}><Text style={[styles.latestTitle, { color: palette.text }]}>{section?.name ?? 'Unknown section'} · Unit {inspection.unit_number}</Text><Text style={[styles.latestMeta, { color: palette.muted }]}>{formatDate(inspection.surveyed_at ?? inspection.created_at)} · {titleCase(inspection.workflow_state)} · {calculationStatus(computations.find(item => item.id === inspection.computation_id), inspection.workflow_state)}</Text></View>
             </View>
           );
         }) : <AdminEmpty icon="file-text" message="Reports are ready, but there are no inspection records to preview yet." palette={palette} />}
       </AdminPanel>
     </AdminShell>
   );
+}
+
+function calculationStatus(computation: { verification: 'pending' | 'verified'; output_snapshot: unknown } | undefined, workflowState?: string) {
+  if (!computation || computation.verification === 'pending' || !computation.output_snapshot) return 'Preliminary Result — Pending ASTM/Engineering Validation';
+  return ['approved', 'published'].includes(workflowState ?? '') ? 'Verified approved/published result' : 'Verified calculation — awaiting reviewer approval';
 }
 
 function Summary({ label, palette, value }: { label: string; palette: ReturnType<typeof useAdminPalette>; value: string }) {

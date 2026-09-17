@@ -27,8 +27,7 @@ const navigation = [
   { label: 'Field & Review', icon: 'edit-3', route: '/field-inspections' },
   { label: 'Sample Planning', icon: 'layers', route: '/sampling' },
   { label: 'Dashboard', icon: 'grid', route: '/dashboard' },
-  { label: 'Road Network', icon: 'map', route: '/road-network' },
-  { label: 'Inspections', icon: 'clipboard', route: '/inspections' },
+  { label: 'Road / Section Inventory', icon: 'map', route: '/road-network' },
   { label: 'PCI Results', icon: 'trending-up', route: '/pci-results' },
   { label: 'Maintenance Plan', icon: 'tool', route: '/maintenance-plan' },
   { label: 'Users & Roles', icon: 'users', route: '/users' },
@@ -62,7 +61,7 @@ export function useAdminPalette() {
 }
 
 function getName(fullName?: string, email?: string) {
-  return fullName?.trim() || email?.split('@')[0] || 'Administrator';
+  return fullName?.trim() || email?.split('@')[0] || 'LAKAD User';
 }
 
 function getInitials(name: string) {
@@ -71,7 +70,17 @@ function getInitials(name: string) {
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
-    .join('') || 'AD';
+    .join('') || 'LU';
+}
+
+function getNavigationLabel(route: string, fallback: string, role: 'admin' | 'reviewer' | 'encoder' | 'viewer') {
+  if (route === '/field-inspections') {
+    return role === 'reviewer' ? 'Inspection Review' : 'Field Inspections';
+  }
+  if (route === '/workspace') {
+    return role === 'viewer' ? 'Approved Results' : 'Overview & Reports';
+  }
+  return fallback;
 }
 
 export function AdminShell({
@@ -109,7 +118,7 @@ export function AdminShell({
       <View style={[styles.restrictedScreen, { backgroundColor: palette.background }]}>
         <View style={[styles.restrictedCard, { backgroundColor: palette.panel, borderColor: palette.border }]}>
           <Feather color={palette.red} name="shield" size={34} />
-          <Text style={[styles.restrictedTitle, { color: palette.text }]}>Administrator access required</Text>
+          <Text style={[styles.restrictedTitle, { color: palette.text }]}>Access denied</Text>
           <Text style={[styles.restrictedText, { color: palette.muted }]}>Your signed-in role cannot access this workspace.</Text>
           <AdminButton label="Sign out" onPress={() => void supabase.auth.signOut()} palette={palette} />
         </View>
@@ -158,7 +167,7 @@ export function AdminShell({
                     }}
                     style={[styles.navItem, active && styles.navItemActive]}>
                     <Feather color={active ? '#FFFFFF' : '#C9D9F5'} name={item.icon} size={18} />
-                    <Text style={active ? styles.navTextActive : styles.navText}>{item.label}</Text>
+                    <Text style={active ? styles.navTextActive : styles.navText}>{getNavigationLabel(item.route, item.label, role)}</Text>
                   </Pressable>
                 );
               })}

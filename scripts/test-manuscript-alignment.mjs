@@ -19,7 +19,31 @@ async function compileUrlWithImports(path, replacements) {
 
 const classificationUrl = await compileUrl('src/lib/pci-classification.ts');
 const classification = await import(classificationUrl);
-const engine = await import(await compileUrlWithImports('src/lib/pci-engine.ts', { './pci-classification': classificationUrl }));
+const severityColorsUrl = await compileUrl('src/lib/severity-colors.ts');
+const severityColors = await import(severityColorsUrl);
+const engine = await import(await compileUrlWithImports('src/lib/pci-engine.ts', { './pci-classification': classificationUrl, './severity-colors': severityColorsUrl }));
+const expectedConditions = [
+  { rating: 'Excellent', minPCI: 85, maxPCI: 100, range: '85\u2013100', color: '#166534', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#4ADE80', darkForegroundColor: '#052E16' },
+  { rating: 'Very Good', minPCI: 70, maxPCI: 84.99, range: '70\u2013below 85', color: '#15803D', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#86EFAC', darkForegroundColor: '#052E16' },
+  { rating: 'Good', minPCI: 55, maxPCI: 69.99, range: '55\u2013below 70', color: '#65A30D', softColor: '#ECFCCB', foregroundColor: '#1A2E05', darkColor: '#BEF264', darkForegroundColor: '#1A2E05' },
+  { rating: 'Fair', minPCI: 40, maxPCI: 54.99, range: '40\u2013below 55', color: '#CA8A04', softColor: '#FEF9C3', foregroundColor: '#422006', darkColor: '#FDE047', darkForegroundColor: '#422006' },
+  { rating: 'Poor', minPCI: 25, maxPCI: 39.99, range: '25\u2013below 40', color: '#EA580C', softColor: '#FFEDD5', foregroundColor: '#431407', darkColor: '#FB923C', darkForegroundColor: '#431407' },
+  { rating: 'Very Poor', minPCI: 10, maxPCI: 24.99, range: '10\u2013below 25', color: '#DC2626', softColor: '#FEE2E2', foregroundColor: '#FFFFFF', darkColor: '#F87171', darkForegroundColor: '#450A0A' },
+  { rating: 'Failed', minPCI: 0, maxPCI: 9.99, range: '0\u2013below 10', color: '#7F1D1D', softColor: '#FECACA', foregroundColor: '#FFFFFF', darkColor: '#FCA5A5', darkForegroundColor: '#450A0A' },
+];
+check(classification.PCI_CONDITION_SCALE.length === 7, 'All seven authoritative PCI condition categories exist');
+for (const expected of expectedConditions) {
+  const actual = classification.PCI_CONDITION_SCALE.find(category => category.rating === expected.rating);
+  check(actual && Object.entries(expected).every(([key, value]) => actual[key] === value), `${expected.rating} range and light/dark color tokens are authoritative`);
+}
+const expectedSeverityColors = {
+  Low: { backgroundColor: '#DCFCE7', textColor: '#166534', borderColor: '#86EFAC' },
+  Medium: { backgroundColor: '#FEF3C7', textColor: '#92400E', borderColor: '#FCD34D' },
+  High: { backgroundColor: '#FEE2E2', textColor: '#991B1B', borderColor: '#FCA5A5' },
+};
+for (const [label, tokens] of Object.entries(expectedSeverityColors)) {
+  check(JSON.stringify(severityColors.DISTRESS_SEVERITY_COLORS[label]) === JSON.stringify(tokens), `${label} distress severity tokens are authoritative`);
+}
 const cases = [
   [0, 'Failed'], [9.99, 'Failed'], [10, 'Very Poor'], [24.99, 'Very Poor'],
   [25, 'Poor'], [39.99, 'Poor'], [40, 'Fair'], [54.99, 'Fair'],
@@ -55,9 +79,14 @@ const engineSource = await fs.readFile('src/lib/pci-engine.ts', 'utf8');
 const samplingSource = await fs.readFile('src/app/sampling.tsx', 'utf8');
 const migrationSource = await fs.readFile('supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
 const sourceFiles = await Promise.all((await fs.readdir('src', { recursive: true })).filter(path => /\.(ts|tsx)$/.test(path)).map(path => fs.readFile(`src/${path}`, 'utf8')));
+const centralizedConditionScreens = ['prototype.tsx', 'dashboard.tsx', 'pci-results.tsx', 'maintenance-plan.tsx', 'settings.tsx', 'workspace.tsx'];
+const conditionScreenSources = await Promise.all(centralizedConditionScreens.map(path => fs.readFile(`src/app/${path}`, 'utf8')));
 check(prototypeSource.includes('SAMPLE_UNIT_GUIDANCE'), 'Prototype renders centralized 230 ± 93 m² guidance');
 check(engineSource.includes('getPciConditionCategory'), 'Prototype computation uses centralized classification');
 check(!sourceFiles.some(source => /\bSatisfactory\b|\bSerious\b/.test(source)), 'Old PCI condition labels are absent from application source');
+check(conditionScreenSources.every(source => /pci-classification/.test(source)), 'Every condition-color screen imports the centralized PCI classification');
+check(!prototypeSource.includes('severityBackground') && !prototypeSource.includes('displayedResult.ratingColor'), 'Prototype has no duplicated severity palette or static condition badge color');
+check(!conditionScreenSources.some(source => /\$\{condition\.color\}22/.test(source)), 'Condition screens do not synthesize contradictory soft colors');
 check(!/supabase|workflowAction|\.upload\(/i.test(prototypeSource), 'Public prototype performs no Supabase write');
 check(/sample_type === 'additional'/.test(samplingSource) && /Random/.test(samplingSource), 'Random and additional sample units remain distinct');
 check((migrationSource.match(/not between 137 and 323/g) || []).length === 2, 'Both sampling RPCs enforce inclusive 137–323 m² boundaries');

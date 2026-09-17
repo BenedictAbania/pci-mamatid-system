@@ -13,9 +13,14 @@ async function moduleFrom(path) {
 }
 const access = await moduleFrom('src/lib/access.ts');
 for (const role of ['admin', 'reviewer', 'encoder', 'viewer']) {
-  check(access.canAccess(role, '/workspace'), `${role} overview`);
+  check(access.homeForRole(role) === (role === 'admin' ? '/dashboard' : '/workspace'), `${role} lands on the correct dashboard`);
+  check(access.canAccess(role, '/workspace') === (role !== 'admin'), `${role} role workspace access`);
   check(access.canAccess(role, '/users') === (role === 'admin'), `${role} user management`);
-  check(access.canAccess(role, '/field-inspections') === (role !== 'viewer'), `${role} field access`);
+  check(access.canAccess(role, '/road-network') === (role === 'admin' || role === 'reviewer'), `${role} road inventory access`);
+  check(access.canAccess(role, '/sampling') === (role === 'reviewer'), `${role} sample planning access`);
+  check(access.canAccess(role, '/field-inspections') === (role === 'reviewer' || role === 'encoder'), `${role} assigned inspection access`);
+  check(access.canAccess(role, '/pci-results') === (role === 'admin' || role === 'reviewer' || role === 'viewer'), `${role} approved/result access`);
+  check(!access.canAccess(role, '/inspections'), `${role} cannot use the legacy inspection CRUD route`);
   check(!access.canAccess(role, '/unlisted-route'), 'unknown routes denied');
 }
 check(!access.canAccess(null, '/workspace'), 'anonymous denied');
@@ -32,6 +37,17 @@ check(pci.possibleSampleUnits(2300).count === 10, 'Layout estimate');
 check(pci.rankPriorities([{ id: 'a', pci: 40, safety: false, highSeverity: 0, affectedArea: 10 }, { id: 'b', pci: 40, safety: true, highSeverity: 1, affectedArea: 1 }])[0].id === 'b', 'Safety tie break');
 const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
 check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
+const fieldSource = await fs.readFile('src/app/field-inspections.tsx', 'utf8');
+check(fieldSource.includes('Preliminary Result — Pending ASTM/Engineering Validation'), 'Authenticated sample preview is explicitly preliminary');
+check(fieldSource.includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
+check(fieldSource.includes('Inspection date cannot be in the future.'), 'Encoder form rejects future inspection dates');
+const workspaceSource = await fs.readFile('src/app/workspace.tsx', 'utf8');
+check(workspaceSource.includes('Official Section PCI Pending Engineering Validation'), 'Missing section aggregation is explicitly pending');
+check(!workspaceSource.includes('Section PCI is represented by the mean'), 'No unresolved section PCI formula is asserted');
+const dashboardSource = await fs.readFile('src/lib/dashboard.ts', 'utf8');
+check(dashboardSource.includes("'section_results'"), 'Dashboard condition summaries use persisted section results');
+const reportsSource = await fs.readFile('src/app/reports.tsx', 'utf8');
+check(reportsSource.includes('Verification Status'), 'Reports disclose result verification status');
 
 const db = new PGlite();
 const awaitableRollback = await fs.readFile('supabase/rollback/20260916_authenticated_workflow.sql', 'utf8');

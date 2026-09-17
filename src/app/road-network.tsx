@@ -39,13 +39,14 @@ const emptySectionForm = {
 
 export default function RoadNetworkScreen() {
   const palette = useAdminPalette();
-  const { user } = useAuth();
+  const { role, user } = useAuth();
   const { width } = useWindowDimensions();
 
-  const { data, loading, refresh } = useWorkflow();
+  const { data, error: loadError, loading, refresh } = useWorkflow();
 
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [branchForm, setBranchForm] = useState(emptyBranchForm);
   const [sectionForm, setSectionForm] = useState(emptySectionForm);
   const [modal, setModal] = useState<'branch' | 'section' | null>(null);
@@ -54,8 +55,8 @@ export default function RoadNetworkScreen() {
 
   if (!data) {
     return (
-      <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle="Manage road branches, section dimensions, and sampling requirements." title="Road Network">
-        <View />
+      <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle={role === 'admin' ? 'Manage road branches and section dimensions.' : 'Review road and section inventory before confirming a sampling plan.'} title="Road / Section Inventory">
+        {loadError ? <Notice error>{loadError} Use Refresh to try again.</Notice> : <View />}
       </AdminShell>
     );
   }
@@ -84,6 +85,7 @@ export default function RoadNetworkScreen() {
       ? { id: branch.id, name: branch.name, description: branch.description ?? '', location: branch.location ?? '', administrative_status: branch.administrative_status ?? 'active' }
       : emptyBranchForm);
     setError('');
+    setMessage('');
     setModal('branch');
   }
 
@@ -102,10 +104,15 @@ export default function RoadNetworkScreen() {
       notes: section.notes ?? '',
     } : { ...emptySectionForm, branch_id: branches[0]?.id ?? '' });
     setError('');
+    setMessage('');
     setModal('section');
   }
 
   async function submitBranch() {
+    if (role !== 'admin') {
+      setError('Only a system administrator can manage road branches.');
+      return;
+    }
     if (!user || !branchForm.name.trim()) {
       setError('Branch name is required.');
       return;
@@ -116,10 +123,12 @@ export default function RoadNetworkScreen() {
     }
     setSaving(true);
     setError('');
+    setMessage('');
     try {
       await saveBranch(branchForm, user.id);
       setModal(null);
       await refresh();
+      setMessage(`Road branch ${branchForm.id ? 'updated' : 'created'} successfully.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Branch could not be saved.');
     } finally {
@@ -128,6 +137,10 @@ export default function RoadNetworkScreen() {
   }
 
   async function submitSection() {
+    if (role !== 'admin') {
+      setError('Only a system administrator can manage road sections.');
+      return;
+    }
     if (!user || !sectionForm.branch_id || !sectionForm.name.trim()) {
       setError('Road branch and section name are required.');
       return;
@@ -150,10 +163,12 @@ export default function RoadNetworkScreen() {
     }
     setSaving(true);
     setError('');
+    setMessage('');
     try {
       await saveSection(sectionForm, user.id);
       setModal(null);
       await refresh();
+      setMessage(`Road section ${sectionForm.id ? 'updated' : 'created'} successfully.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Road section could not be saved.');
     } finally {
@@ -162,20 +177,34 @@ export default function RoadNetworkScreen() {
   }
 
   async function deleteSection(section: SectionRecord) {
+    if (role !== 'admin') {
+      setError('Only a system administrator can manage road sections.');
+      return;
+    }
     if (!await confirmAction('Delete road section?', `${section.name} and its dependent records may be affected.`)) return;
     try {
+      setError('');
+      setMessage('');
       await removeSection(section.id);
       await refresh();
+      setMessage('Road section removed successfully.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Road section could not be deleted.');
     }
   }
 
   async function deleteBranch(branch: BranchRecord) {
+    if (role !== 'admin') {
+      setError('Only a system administrator can manage road branches.');
+      return;
+    }
     if (!await confirmAction('Delete road branch?', 'A branch with road sections cannot be removed.')) return;
     try {
+      setError('');
+      setMessage('');
       await removeBranch(branch.id);
       await refresh();
+      setMessage('Road branch removed successfully.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Road branch could not be deleted.');
     }
@@ -183,14 +212,15 @@ export default function RoadNetworkScreen() {
 
   return (
     <AdminShell
-      action={<View style={styles.actions}><AdminButton icon="plus" label="Add branch" onPress={() => openBranch()} palette={palette} tone="secondary" /><AdminButton disabled={!branches.length} icon="plus" label="Add section" onPress={() => openSection()} palette={palette} /></View>}
+      action={role === 'admin' ? <View style={styles.actions}><AdminButton icon="plus" label="Add branch" onPress={() => openBranch()} palette={palette} tone="secondary" /><AdminButton disabled={!branches.length} icon="plus" label="Add section" onPress={() => openSection()} palette={palette} /></View> : undefined}
       loading={loading}
       onRefresh={refresh}
       onSearchChange={setQuery}
       searchValue={query}
-      subtitle="Manage road branches, section dimensions, and sampling requirements."
-      title="Road Network">
+      subtitle={role === 'admin' ? 'Manage road branches and section dimensions.' : 'Review road and section inventory before confirming a sampling plan.'}
+      title="Road / Section Inventory">
       {error ? <Notice error>{error}</Notice> : null}
+      {message ? <Notice>{message}</Notice> : null}
 
       <View style={[styles.summaryGrid, isPhone && styles.stack]}>
         <SummaryCard icon="git-branch" label="Road Branches" value={branches.length} palette={palette} />
@@ -205,12 +235,12 @@ export default function RoadNetworkScreen() {
               <View key={branch.id} style={[styles.branchCard, { backgroundColor: palette.panelAlt, borderColor: palette.border }]}>
                 <View style={[styles.itemIcon, { backgroundColor: palette.blueSoft }]}><Feather color={palette.blue} name="git-branch" size={19} /></View>
                 <View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: palette.text }]}>{branch.name}</Text><Text numberOfLines={3} style={[styles.itemMeta, { color: palette.muted }]}>{branch.location || 'Location not recorded'} · {branch.administrative_status} · {sections.filter((section) => section.branch_id === branch.id).length} sections{branch.description ? `\n${branch.description}` : ''}</Text></View>
-                <Pressable accessibilityLabel={`Edit ${branch.name}`} onPress={() => openBranch(branch)} style={styles.smallIcon}><Feather color={palette.muted} name="edit-2" size={16} /></Pressable>
-                <Pressable accessibilityLabel={`Delete ${branch.name}`} onPress={() => void deleteBranch(branch)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable>
+                {role === 'admin' ? <><Pressable accessibilityLabel={`Edit ${branch.name}`} onPress={() => openBranch(branch)} style={styles.smallIcon}><Feather color={palette.muted} name="edit-2" size={16} /></Pressable>
+                <Pressable accessibilityLabel={`Delete ${branch.name}`} onPress={() => void deleteBranch(branch)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable></> : null}
               </View>
             ))}
           </View>
-        ) : <AdminEmpty icon="git-branch" message="Add the first road branch to begin organizing sections." palette={palette} />}
+        ) : <AdminEmpty icon="git-branch" message={role === 'admin' ? 'Add the first road branch to begin organizing sections.' : 'No road branches are available in your authorized scope.'} palette={palette} />}
       </AdminPanel>
 
       <AdminPanel palette={palette} title="Road sections" subtitle={`${filteredSections.length} matching section${filteredSections.length === 1 ? '' : 's'}`}>
@@ -226,14 +256,14 @@ export default function RoadNetworkScreen() {
                 <DataPoint label="Width" value={formatNumber(section.width_meters, ' m')} palette={palette} />
                 <DataPoint label="Area" value={formatNumber(section.area_sqm, ' m²')} palette={palette} />
                 <DataPoint label="PCI" value={formatNumber(latestPci)} palette={palette} />
-                <View style={styles.rowActions}><Pressable accessibilityLabel={`Edit ${section.name}`} onPress={() => openSection(section)} style={styles.smallIcon}><Feather color={palette.blue} name="edit-2" size={16} /></Pressable><Pressable accessibilityLabel={`Delete ${section.name}`} onPress={() => void deleteSection(section)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable></View>
+                {role === 'admin' ? <View style={styles.rowActions}><Pressable accessibilityLabel={`Edit ${section.name}`} onPress={() => openSection(section)} style={styles.smallIcon}><Feather color={palette.blue} name="edit-2" size={16} /></Pressable><Pressable accessibilityLabel={`Delete ${section.name}`} onPress={() => void deleteSection(section)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable></View> : null}
               </View>
             )})}
           </View>
-        ) : <AdminEmpty icon="map" message={query ? 'No road sections match your search.' : 'No road sections have been added yet.'} palette={palette} />}
+        ) : <AdminEmpty icon="map" message={query ? 'No road sections match your search.' : role === 'admin' ? 'No road sections have been added yet.' : 'No road sections are available in your authorized scope.'} palette={palette} />}
       </AdminPanel>
 
-      <Modal animationType="fade" onRequestClose={() => setModal(null)} transparent visible={modal !== null}>
+      <Modal animationType="fade" onRequestClose={() => setModal(null)} transparent visible={role === 'admin' && modal !== null}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { backgroundColor: palette.panel, borderColor: palette.border }]}>
             <View style={styles.modalHeader}><View><Text style={[styles.modalTitle, { color: palette.text }]}>{modal === 'branch' ? `${branchForm.id ? 'Edit' : 'Add'} road branch` : `${sectionForm.id ? 'Edit' : 'Add'} road section`}</Text><Text style={[styles.modalSubtitle, { color: palette.muted }]}>Changes are saved directly to the secured project database.</Text></View><Pressable accessibilityLabel="Close dialog" onPress={() => setModal(null)}><Feather color={palette.muted} name="x" size={21} /></Pressable></View>

@@ -15,12 +15,13 @@
  */
 
 import { getPciConditionCategory, PCI_CONDITION_SCALE, type PciConditionCategory } from './pci-classification';
+import type { DistressSeverity } from './severity-colors';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type Severity = 'Low' | 'Medium' | 'High';
+export type Severity = DistressSeverity;
 
 export type MeasurementUnit = 'm\u00B2' | 'm' | 'No.';
 

@@ -26,6 +26,7 @@ const emptyDashboard: DashboardData = {
   sections: [],
   inspections: [],
   profiles: [],
+  results: [],
 };
 
 const monthLabels = [
@@ -157,25 +158,34 @@ export default function AdminDashboard() {
     [data.profiles]
   );
 
-  const assessedSections = data.sections.filter((section) => section.pci_score !== null);
-  const averagePci = assessedSections.length
-    ? assessedSections.reduce((sum, section) => sum + Number(section.pci_score), 0) /
-      assessedSections.length
+  const assessedResults = useMemo(() => {
+    const latestResultBySection = new Map<string, DashboardData['results'][number]>();
+    data.results.forEach((result) => {
+      if (!latestResultBySection.has(result.section_id) || latestResultBySection.get(result.section_id)!.published_at < result.published_at) latestResultBySection.set(result.section_id, result);
+    });
+    return [...latestResultBySection.values()];
+  }, [data.results]);
+  const averagePci = assessedResults.length
+    ? assessedResults.reduce((sum, result) => sum + Number(result.pci), 0) /
+      assessedResults.length
     : null;
-  const maintenanceSections = data.sections.filter((section) => section.pci_score !== null && Number(section.pci_score) < 55).length;
+  const maintenanceSections = assessedResults.filter((result) => Number(result.pci) < 55).length;
 
   const conditionGroups = useMemo(() => {
     const grouped = new Map<string, number>();
-    data.sections.forEach((section) => {
-      if (section.pci_score !== null) {
-        const condition = getPciCondition(Number(section.pci_score));
-        grouped.set(condition, (grouped.get(condition) ?? 0) + 1);
-      }
+    assessedResults.forEach((result) => {
+      const condition = getPciCondition(Number(result.pci));
+      grouped.set(condition, (grouped.get(condition) ?? 0) + 1);
     });
     return PCI_CONDITION_SCALE
       .filter(({ rating }) => grouped.has(rating))
-      .map(({ rating, color }) => ({ label: rating, count: grouped.get(rating) ?? 0, color }));
-  }, [data.sections]);
+      .map(({ rating, range, color, darkColor }) => ({
+        label: rating,
+        range,
+        count: grouped.get(rating) ?? 0,
+        color: colorScheme === 'dark' ? darkColor : color,
+      }));
+  }, [assessedResults, colorScheme]);
 
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -198,7 +208,7 @@ export default function AdminDashboard() {
           section?.name,
           section ? branchById.get(section.branch_id) : '',
           inspection.unit_number,
-          inspection.status,
+          inspection.workflow_state,
           inspection.surveyed_by ? profileById.get(inspection.surveyed_by) : '',
         ]
           .join(' ')
@@ -221,7 +231,7 @@ export default function AdminDashboard() {
         return {
           id: `inspection-${inspection.id}`,
           icon: 'clipboard' as const,
-          title: `Inspection ${titleCase(inspection.status)}`,
+          title: `Inspection ${titleCase(inspection.workflow_state)}`,
           detail: `${section?.name ?? `Unit ${inspection.unit_number}`}${
             inspection.surveyed_by
               ? ` · ${profileById.get(inspection.surveyed_by) ?? 'Inspector'}`
@@ -266,7 +276,7 @@ export default function AdminDashboard() {
   const workflowCounts = useMemo(() => {
     const counts = { planned: 0, draft: 0, submitted: 0, returned: 0, approved: 0, published: 0 };
     data.inspections.forEach(i => {
-      if (i.status in counts) counts[i.status as keyof typeof counts]++;
+      if (i.workflow_state in counts) counts[i.workflow_state as keyof typeof counts]++;
     });
     return counts;
   }, [data.inspections]);
@@ -306,9 +316,10 @@ export default function AdminDashboard() {
       {!loading && (
         <>
           <View style={styles.metricGrid}>
-            <MetricCard color={palette.blue} icon="map" label="Total Road Sections" palette={palette} softColor={palette.blueSoft} value={data.sections.length.toLocaleString()} />
-            <MetricCard color={palette.green} icon="clipboard" label="Total Inspections" palette={palette} softColor={palette.greenSoft} value={data.inspections.length.toLocaleString()} />
-            <MetricCard color={palette.amber} icon="pie-chart" label="Avg. PCI (All Roads)" palette={palette} softColor={palette.amberSoft} value={averagePci === null ? '—' : averagePci.toFixed(1)} />
+            <MetricCard color={palette.blue} icon="git-branch" label="Road Branches" palette={palette} softColor={palette.blueSoft} value={data.branches.length.toLocaleString()} />
+            <MetricCard color={palette.blue} icon="map" label="Road Sections" palette={palette} softColor={palette.blueSoft} value={data.sections.length.toLocaleString()} />
+            <MetricCard color={palette.green} icon="clipboard" label="Sample Units" palette={palette} softColor={palette.greenSoft} value={data.inspections.length.toLocaleString()} />
+            <MetricCard color={palette.amber} icon="pie-chart" label="Avg. Official Section PCI" palette={palette} softColor={palette.amberSoft} value={averagePci === null ? '—' : averagePci.toFixed(1)} />
             <MetricCard color={palette.red} icon="alert-triangle" label="Sections Needing Maintenance" palette={palette} softColor={palette.redSoft} value={maintenanceSections.toLocaleString()} />
           </View>
 
@@ -336,7 +347,7 @@ export default function AdminDashboard() {
           </Panel>
 
           <View style={[styles.panelGrid, { marginTop: 16 }, isNarrow && styles.stack]}>
-            <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle="Based on assessed road sections" title="Road Condition Distribution">
+            <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle="Based only on persisted published section results" title="Road Condition Distribution">
               {conditionGroups.length ? (
                 <View style={[styles.conditionChart, isPhone && styles.conditionChartPhone]}>
                   {Platform.OS === 'web' ? (
@@ -344,11 +355,11 @@ export default function AdminDashboard() {
                       style={[
                         styles.donut,
                         {
-                          backgroundImage: buildConicGradient(conditionGroups, assessedSections.length),
+                          backgroundImage: buildConicGradient(conditionGroups, assessedResults.length),
                         } as never,
                       ]}>
                       <View style={[styles.donutCenter, { backgroundColor: palette.panel }]}>
-                        <Text style={[styles.donutValue, { color: palette.text }]}>{assessedSections.length}</Text>
+                        <Text style={[styles.donutValue, { color: palette.text }]}>{assessedResults.length}</Text>
                         <Text style={[styles.donutLabel, { color: palette.muted }]}>Sections</Text>
                       </View>
                     </View>
@@ -359,7 +370,7 @@ export default function AdminDashboard() {
                           key={group.label}
                           style={{
                             backgroundColor: group.color,
-                            width: `${(group.count / assessedSections.length) * 100}%` as DimensionValue,
+                            width: `${(group.count / assessedResults.length) * 100}%` as DimensionValue,
                           }}
                         />
                       ))}
@@ -369,7 +380,7 @@ export default function AdminDashboard() {
                     {conditionGroups.map((group) => (
                       <View key={group.label} style={styles.legendRow}>
                         <View style={[styles.legendDot, { backgroundColor: group.color }]} />
-                        <Text style={[styles.legendLabel, { color: palette.text }]}>{group.label}</Text>
+                        <Text style={[styles.legendLabel, { color: palette.text }]}>{group.label} · {group.range}</Text>
                         <Text style={[styles.legendValue, { color: palette.text }]}>{group.count}</Text>
                       </View>
                     ))}
@@ -551,7 +562,7 @@ function InspectionList({
                 <Text style={[styles.inspectionRoad, { color: palette.text }]}>
                   {section?.name ?? `Unit ${inspection.unit_number}`}
                 </Text>
-                <StatusPill palette={palette} status={inspection.status} />
+                <StatusPill palette={palette} status={inspection.workflow_state} />
               </View>
               <Text style={[styles.inspectionMeta, { color: palette.muted }]}>
                 {section ? branchById.get(section.branch_id) : 'Road section unavailable'} ·{' '}
@@ -598,7 +609,7 @@ function InspectionList({
                 : 'Unassigned'}
             </Text>
             <View style={styles.tableCellStatus}>
-              <StatusPill palette={palette} status={inspection.status} />
+              <StatusPill palette={palette} status={inspection.workflow_state} />
             </View>
           </View>
         );
@@ -612,18 +623,18 @@ function StatusPill({
   status,
 }: {
   palette: Palette;
-  status: DashboardInspection['status'];
+  status: DashboardInspection['workflow_state'];
 }) {
-  const color = status === 'approved'
+  const color = ['approved', 'published'].includes(status)
     ? palette.green
-    : status === 'rejected'
+    : status === 'returned'
       ? palette.red
       : status === 'submitted'
         ? palette.blue
         : palette.amber;
-  const backgroundColor = status === 'approved'
+  const backgroundColor = ['approved', 'published'].includes(status)
     ? palette.greenSoft
-    : status === 'rejected'
+    : status === 'returned'
       ? palette.redSoft
       : status === 'submitted'
         ? palette.blueSoft

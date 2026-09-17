@@ -45,10 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState('');
   const generation = useRef(0);
   const sessionRef = useRef<Session | null>(null);
+  const profileRef = useRef<Profile | null>(null);
+  const loadingProfileFor = useRef<string | null>(null);
 
   const fetchProfile = useCallback(async (userId: string) => {
     const request = ++generation.current;
-    setProfile(null); setError(''); setIsLoading(true);
+    loadingProfileFor.current = userId;
+    setError(''); setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -59,11 +62,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw new Error('Your profile could not be loaded. Retry or contact an administrator.');
       if (!isRole(data?.role)) throw new Error('Your account has no supported LAKAD role.');
       if (data.is_active === false) throw new Error('Your account is deactivated. Contact an administrator.');
-      if (request === generation.current) setProfile(data as Profile);
+      if (request === generation.current) {
+        profileRef.current = data as Profile;
+        setProfile(data as Profile);
+      }
     } catch (error) {
-      if (request === generation.current) setError(error instanceof Error ? error.message : 'Session unavailable.');
+      if (request === generation.current) {
+        profileRef.current = null;
+        setProfile(null);
+        setError(error instanceof Error ? error.message : 'Session unavailable.');
+      }
     } finally {
-      if (request === generation.current) setIsLoading(false);
+      if (request === generation.current) {
+        loadingProfileFor.current = null;
+        setIsLoading(false);
+      }
     }
   }, []);
   const refreshProfile = useCallback(async () => {
@@ -73,36 +86,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let live = true;
     let authEventReceived = false;
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      if (!live || authEventReceived) return;
-      sessionRef.current = initialSession;
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      if (initialSession?.user) void fetchProfile(initialSession.user.id);
-      else setIsLoading(false);
-    }).catch(() => { if (live) { setError('Unable to check your session.'); setIsLoading(false); } });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      authEventReceived = true;
-      ++generation.current;
+    const applySession = (nextSession: Session | null, forceProfileRefresh = false) => {
+      const nextUserId = nextSession?.user.id ?? null;
+      const currentProfile = profileRef.current;
+
       sessionRef.current = nextSession;
-      setProfile(null);
-      setError('');
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
-      if (nextSession?.user) {
-        setIsLoading(true);
-        setTimeout(() => { if (live && sessionRef.current === nextSession) void fetchProfile(nextSession.user.id); }, 0);
-      }
-      else {
+
+      if (!nextUserId) {
+        ++generation.current;
+        loadingProfileFor.current = null;
+        profileRef.current = null;
         setProfile(null);
+        setError('');
         setIsLoading(false);
+        return;
       }
+
+      if (!forceProfileRefresh && currentProfile?.id === nextUserId) {
+        setIsLoading(false);
+        return;
+      }
+
+      if (!forceProfileRefresh && loadingProfileFor.current === nextUserId) return;
+
+      if (currentProfile?.id !== nextUserId) {
+        ++generation.current;
+        profileRef.current = null;
+        setProfile(null);
+      }
+      loadingProfileFor.current = nextUserId;
+      setIsLoading(true);
+      setTimeout(() => {
+        if (live && sessionRef.current?.user.id === nextUserId) void fetchProfile(nextUserId);
+      }, 0);
+    };
+
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (!live || authEventReceived) return;
+      applySession(initialSession);
+    }).catch(() => { if (live && !authEventReceived) { setError('Unable to check your session.'); setIsLoading(false); } });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      authEventReceived = true;
+      // Supabase can emit SIGNED_IN again when a tab regains focus and emits
+      // TOKEN_REFRESHED during normal renewal. Keep an already resolved role
+      // instead of blanking it and bouncing the router through a loading state.
+      applySession(nextSession, event === 'USER_UPDATED');
     });
 
     // This ref is a request sequence counter, not a DOM element.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { live = false; ++generation.current; subscription.unsubscribe(); };
+    return () => { live = false; ++generation.current; loadingProfileFor.current = null; subscription.unsubscribe(); };
   }, [fetchProfile]);
 
   return (
