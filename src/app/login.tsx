@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { Image, ImageBackground } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -97,8 +98,6 @@ function BrandMark({ compact = false, inverse = false }: BrandMarkProps) {
     </View>
   );
 }
-
-import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -221,7 +220,7 @@ export default function LoginScreen() {
           accessibilityRole="button"
           hitSlop={8}
           onPress={toggleColorScheme}
-          style={({ pressed, hovered }) => [
+          style={({ pressed, hovered }: any) => [
             styles.themeButton,
             {
               backgroundColor: hovered ? (isDark ? '#1E293B' : '#E2E8F0') : colors.themeButton,
@@ -248,7 +247,9 @@ export default function LoginScreen() {
               {
                 backgroundColor: colors.card,
                 borderColor: colors.border,
-                shadowColor: isDark ? '#000000' : '#31598F',
+                ...(Platform.OS === 'web'
+                  ? { boxShadow: `0 14px 35px ${isDark ? 'rgba(0,0,0,0.20)' : 'rgba(49,89,143,0.10)'}` }
+                  : { shadowColor: isDark ? '#000000' : '#31598F' }),
                 width: loginCardWidth,
               },
             ]}>
@@ -285,7 +286,9 @@ export default function LoginScreen() {
                   { backgroundColor: colors.input, borderColor: colors.border },
                   focusedField === 'email' && {
                     borderColor: colors.focus,
-                    shadowColor: colors.focus,
+                    ...(Platform.OS === 'web'
+                      ? { boxShadow: `0 0 3px ${colors.focus}` }
+                      : { shadowColor: colors.focus }),
                   },
                 ]}>
                 <Feather color={colors.icon} name="mail" size={20} />
@@ -320,7 +323,9 @@ export default function LoginScreen() {
                   { backgroundColor: colors.input, borderColor: colors.border },
                   focusedField === 'password' && {
                     borderColor: colors.focus,
-                    shadowColor: colors.focus,
+                    ...(Platform.OS === 'web'
+                      ? { boxShadow: `0 0 3px ${colors.focus}` }
+                      : { shadowColor: colors.focus }),
                   },
                 ]}>
                 <Feather color={colors.icon} name="lock" size={20} />
@@ -362,7 +367,7 @@ export default function LoginScreen() {
               accessibilityState={{ busy: loading, disabled: loading }}
               disabled={loading}
               onPress={() => void handleLogin()}
-              style={({ pressed, hovered }) => [
+              style={({ pressed, hovered }: any) => [
                 styles.submitButton,
                 {
                   backgroundColor: pressed ? colors.primaryPressed : hovered ? colors.focus : colors.primary,
@@ -384,7 +389,7 @@ export default function LoginScreen() {
               accessibilityLabel="How Automated PCI Works"
               accessibilityRole="button"
               onPress={() => router.push('/prototype')}
-              style={({ pressed, hovered }) => [
+              style={({ pressed, hovered }: any) => [
                 styles.prototypeButton,
                 {
                   backgroundColor: pressed ? '#F1F5F9' : hovered ? '#F8FAFC' : '#FFFFFF',
@@ -565,10 +570,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'absolute',
     right: 24,
-    shadowColor: '#0F172A',
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 7,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 7px rgba(15,23,42,0.08)' },
+      default: { shadowColor: '#0F172A', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.08, shadowRadius: 7 },
+    }),
     top: Platform.OS === 'web' ? 24 : 42,
     width: 44,
     zIndex: 10,
@@ -584,9 +589,10 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
     paddingHorizontal: 42,
     paddingTop: 38,
-    shadowOffset: { height: 14, width: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 35,
+    ...Platform.select({
+      web: {},
+      default: { shadowOffset: { height: 14, width: 0 }, shadowOpacity: 0.1, shadowRadius: 35 },
+    }),
   },
   loginCardCompact: {
     borderRadius: 18,
@@ -645,9 +651,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 58,
     paddingLeft: 16,
-    shadowOffset: { height: 0, width: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
+    ...Platform.select({
+      web: {},
+      default: { shadowOffset: { height: 0, width: 0 }, shadowOpacity: 0.2, shadowRadius: 3 },
+    }),
   },
   textInput: {
     flex: 1,
@@ -669,10 +676,10 @@ const styles = StyleSheet.create({
     height: 56,
     justifyContent: 'center',
     marginTop: 7,
-    shadowColor: '#2563EB',
-    shadowOffset: { height: 5, width: 0 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
+    ...Platform.select({
+      web: { boxShadow: '0 5px 10px rgba(37,99,235,0.22)' },
+      default: { shadowColor: '#2563EB', shadowOffset: { height: 5, width: 0 }, shadowOpacity: 0.22, shadowRadius: 10 },
+    }),
   },
   submitButtonText: {
     color: '#FFFFFF',

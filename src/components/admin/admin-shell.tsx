@@ -18,13 +18,16 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
+import { canAccess, roleLabels } from '@/lib/access';
 
 export type AdminPalette = ReturnType<typeof createPalette>;
 
 const navigation = [
+  { label: 'Overview & Reports', icon: 'pie-chart', route: '/workspace' },
+  { label: 'Field & Review', icon: 'edit-3', route: '/field-inspections' },
+  { label: 'Sample Planning', icon: 'layers', route: '/sampling' },
   { label: 'Dashboard', icon: 'grid', route: '/dashboard' },
-  { label: 'Road Network', icon: 'map', route: '/road-network' },
-  { label: 'Inspections', icon: 'clipboard', route: '/inspections' },
+  { label: 'Road / Section Inventory', icon: 'map', route: '/road-network' },
   { label: 'PCI Results', icon: 'trending-up', route: '/pci-results' },
   { label: 'Maintenance Plan', icon: 'tool', route: '/maintenance-plan' },
   { label: 'Users & Roles', icon: 'users', route: '/users' },
@@ -58,7 +61,7 @@ export function useAdminPalette() {
 }
 
 function getName(fullName?: string, email?: string) {
-  return fullName?.trim() || email?.split('@')[0] || 'Administrator';
+  return fullName?.trim() || email?.split('@')[0] || 'LAKAD User';
 }
 
 function getInitials(name: string) {
@@ -67,7 +70,17 @@ function getInitials(name: string) {
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
-    .join('') || 'AD';
+    .join('') || 'LU';
+}
+
+function getNavigationLabel(route: string, fallback: string, role: 'admin' | 'reviewer' | 'encoder' | 'viewer') {
+  if (route === '/field-inspections') {
+    return role === 'reviewer' ? 'Inspection Review' : 'Field Inspections';
+  }
+  if (route === '/workspace') {
+    return role === 'viewer' ? 'Approved Results' : 'Overview & Reports';
+  }
+  return fallback;
 }
 
 export function AdminShell({
@@ -100,12 +113,12 @@ export function AdminShell({
   const isPhone = width < 650;
   const name = getName(profile?.full_name, user?.email);
 
-  if (role !== 'admin') {
+  if (!role || !canAccess(role, pathname)) {
     return (
       <View style={[styles.restrictedScreen, { backgroundColor: palette.background }]}>
         <View style={[styles.restrictedCard, { backgroundColor: palette.panel, borderColor: palette.border }]}>
           <Feather color={palette.red} name="shield" size={34} />
-          <Text style={[styles.restrictedTitle, { color: palette.text }]}>Administrator access required</Text>
+          <Text style={[styles.restrictedTitle, { color: palette.text }]}>Access denied</Text>
           <Text style={[styles.restrictedText, { color: palette.muted }]}>Your signed-in role cannot access this workspace.</Text>
           <AdminButton label="Sign out" onPress={() => void supabase.auth.signOut()} palette={palette} />
         </View>
@@ -138,12 +151,12 @@ export function AdminShell({
               <Feather color="#C8DDFF" name="shield" size={18} />
               <View style={styles.adminCardCopy}>
                 <Text numberOfLines={1} style={styles.adminName}>{name}</Text>
-                <Text style={styles.adminRole}>System Administrator</Text>
+                <Text style={styles.adminRole}>{roleLabels[role]}</Text>
               </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.navList} showsVerticalScrollIndicator={false}>
-              {navigation.map((item) => {
+              {navigation.filter(item => canAccess(role, item.route)).map((item) => {
                 const active = pathname.startsWith(item.route);
                 return (
                   <Pressable
@@ -154,7 +167,7 @@ export function AdminShell({
                     }}
                     style={[styles.navItem, active && styles.navItemActive]}>
                     <Feather color={active ? '#FFFFFF' : '#C9D9F5'} name={item.icon} size={18} />
-                    <Text style={active ? styles.navTextActive : styles.navText}>{item.label}</Text>
+                    <Text style={active ? styles.navTextActive : styles.navText}>{getNavigationLabel(item.route, item.label, role)}</Text>
                   </Pressable>
                 );
               })}
@@ -212,7 +225,7 @@ export function AdminShell({
               <View style={styles.avatar}><Text style={styles.avatarText}>{getInitials(name)}</Text></View>
               <View>
                 <Text numberOfLines={1} style={[styles.accountName, { color: palette.text }]}>{name}</Text>
-                <Text style={[styles.accountRole, { color: palette.muted }]}>System Administrator</Text>
+                <Text style={[styles.accountRole, { color: palette.muted }]}>{roleLabels[role]}</Text>
               </View>
             </View>
           ) : null}
@@ -221,7 +234,7 @@ export function AdminShell({
         <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
           <View style={[styles.pageHeading, isPhone && styles.pageHeadingPhone]}>
             <View style={styles.pageHeadingCopy}>
-              <Text style={[styles.eyebrow, { color: palette.blue }]}>ADMINISTRATION</Text>
+              <Text style={[styles.eyebrow, { color: palette.blue }]}>{roleLabels[role]}</Text>
               <Text style={[styles.pageTitle, isPhone && styles.pageTitlePhone, { color: palette.text }]}>{title}</Text>
               <Text style={[styles.pageSubtitle, { color: palette.muted }]}>{subtitle}</Text>
             </View>

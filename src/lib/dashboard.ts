@@ -26,7 +26,7 @@ export type DashboardInspection = {
   id: string;
   section_id: string;
   unit_number: number;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  workflow_state: 'planned' | 'draft' | 'submitted' | 'returned' | 'approved' | 'published';
   surveyed_by: string | null;
   surveyed_at: string | null;
   submitted_at: string | null;
@@ -36,11 +36,21 @@ export type DashboardInspection = {
   created_at: string;
 };
 
+export type DashboardSectionResult = {
+  id: string;
+  section_id: string;
+  pci: number;
+  condition: string;
+  published_at: string;
+  created_at: string;
+};
+
 export type DashboardData = {
   branches: DashboardBranch[];
   sections: DashboardSection[];
   inspections: DashboardInspection[];
   profiles: DashboardProfile[];
+  results: DashboardSectionResult[];
 };
 
 const PAGE_SIZE = 1000;
@@ -65,7 +75,7 @@ async function selectAllRows<T>(table: string, columns: string): Promise<T[]> {
 }
 
 export async function loadDashboardData(): Promise<DashboardData> {
-  const [branches, sections, inspections, profiles] = await Promise.all([
+  const [branches, sections, inspections, profiles, results] = await Promise.all([
     selectAllRows<DashboardBranch>('branches', 'id, name, created_at'),
     selectAllRows<DashboardSection>(
       'sections',
@@ -73,9 +83,10 @@ export async function loadDashboardData(): Promise<DashboardData> {
     ),
     selectAllRows<DashboardInspection>(
       'sample_units',
-      'id, section_id, unit_number, status, surveyed_by, surveyed_at, submitted_at, reviewed_at, pci_score, condition_label, created_at'
+      'id, section_id, unit_number, workflow_state, surveyed_by, surveyed_at, submitted_at, reviewed_at, pci_score, condition_label, created_at'
     ),
     selectAllRows<DashboardProfile>('profiles', 'id, full_name, role, created_at'),
+    selectAllRows<DashboardSectionResult>('section_results', 'id, section_id, pci, condition, published_at, created_at'),
   ]);
 
   return {
@@ -83,5 +94,6 @@ export async function loadDashboardData(): Promise<DashboardData> {
     sections,
     inspections,
     profiles,
+    results,
   };
 }

@@ -1,78 +1,74 @@
 import { Feather } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
-import {
-  BranchRecord,
-  DistressRecord,
-  DistressTypeRecord,
-  InspectionRecord,
-  loadPciData,
-  ProfileRecord,
-  SectionRecord,
-} from '@/lib/admin-data';
-import { formatDate, formatNumber, titleCase } from '@/lib/admin-utils';
+import { Notice, useWorkflow } from '@/components/workflow/shared';
+import { formatDate, formatNumber } from '@/lib/admin-utils';
+import { getPciCondition, getPciConditionCategory } from '@/lib/pci-classification';
+import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
+import { useAppTheme } from '@/providers/ThemeProvider';
 
 export default function PciResultsScreen() {
   const palette = useAdminPalette();
+  const { colorScheme } = useAppTheme();
   const { width } = useWindowDimensions();
-  const [inspections, setInspections] = useState<InspectionRecord[]>([]);
-  const [sections, setSections] = useState<SectionRecord[]>([]);
-  const [branches, setBranches] = useState<BranchRecord[]>([]);
-  const [profiles, setProfiles] = useState<ProfileRecord[]>([]);
-  const [distresses, setDistresses] = useState<DistressRecord[]>([]);
-  const [distressTypes, setDistressTypes] = useState<DistressTypeRecord[]>([]);
+  const { data, loading, error, refresh } = useWorkflow();
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const isCompact = width < 1080;
-
-  const refresh = useCallback(async () => {
-    try {
-      const result = await loadPciData();
-      setError('');
-      setInspections(result.inspections);
-      setSections(result.sections);
-      setBranches(result.branches);
-      setProfiles(result.profiles);
-      setDistresses(result.distresses);
-      setDistressTypes(result.distressTypes);
-      setSelectedId((current) => current ?? result.inspections.find((item) => item.pci_score !== null)?.id ?? null);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'PCI results could not be loaded.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const isDark = colorScheme === 'dark';
 
   useEffect(() => {
-    // Initial synchronization with the remote data source.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
-  }, [refresh]);
+    if (data?.computations?.length && !selectedId) {
+      const verified = data.computations.find(c => c.verification === 'verified' && c.output_snapshot);
+      // Select the first verified result after the remote register arrives.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (verified) setSelectedId(verified.id);
+    }
+  }, [data, selectedId]);
 
-  const sectionById = useMemo(() => new Map(sections.map((item) => [item.id, item])), [sections]);
-  const branchById = useMemo(() => new Map(branches.map((item) => [item.id, item.name])), [branches]);
-  const profileById = useMemo(() => new Map(profiles.map((item) => [item.id, item.full_name])), [profiles]);
-  const typeById = useMemo(() => new Map(distressTypes.map((item) => [item.id, item])), [distressTypes]);
-  const computed = inspections.filter((item) => item.pci_score !== null);
-  const filtered = computed.filter((inspection) => {
-    const section = sectionById.get(inspection.section_id);
-    return `${section?.name ?? ''} ${section ? branchById.get(section.branch_id) : ''} ${inspection.condition_label ?? ''} ${inspection.unit_number}`.toLowerCase().includes(query.trim().toLowerCase());
+  if (!data) {
+    return (
+      <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle="Review computed pavement condition scores and recorded distress evidence." title="PCI Results">
+        {error ? <Notice error>{error} Use Refresh to try again.</Notice> : <View />}
+      </AdminShell>
+    );
+  }
+
+  const { samples = [], sections = [], branches = [], computations = [], distresses = [], types = [] } = data;
+
+  const sectionById = new Map(sections.map((item) => [item.id, item]));
+  const branchById = new Map(branches.map((item) => [item.id, item.name]));
+  const typeById = new Map(types.map((item: any) => [item.id, item]));
+  const sampleById = new Map(samples.map((item) => [item.id, item]));
+
+  const computed = computations.filter(c => c.verification === 'verified' && c.output_snapshot !== null);
+  const pendingCount = computations.filter(c => c.verification === 'pending' || c.output_snapshot === null).length;
+  const filtered = computed.filter((c) => {
+    const sample = sampleById.get(c.sample_unit_id);
+    const section = sectionById.get(sample?.section_id || '');
+    return `${section?.name ?? ''} ${section ? branchById.get(section.branch_id) : ''} ${c.output_snapshot ? getPciCondition(Number(c.output_snapshot.pci)) : ''} ${sample?.unit_number}`.toLowerCase().includes(query.trim().toLowerCase());
   });
-  const selected = inspections.find((item) => item.id === selectedId) ?? null;
-  const selectedDistresses = selected ? distresses.filter((item) => item.sample_unit_id === selected.id) : [];
-  const average = computed.length ? computed.reduce((sum, item) => sum + Number(item.pci_score), 0) / computed.length : null;
-  const best = computed.length ? Math.max(...computed.map((item) => Number(item.pci_score))) : null;
-  const lowest = computed.length ? Math.min(...computed.map((item) => Number(item.pci_score))) : null;
+
+  const selected = computed.find((item) => item.id === selectedId) ?? null;
+  const selectedSample = selected ? sampleById.get(selected.sample_unit_id) : null;
+  const selectedSection = selectedSample ? sectionById.get(selectedSample.section_id) : null;
+
+  const selectedDistresses = selectedSample ? distresses.filter((item) => item.sample_unit_id === selectedSample.id) : [];
+
+  const average = computed.length ? computed.reduce((sum, item) => sum + (item.output_snapshot?.pci ?? 0), 0) / computed.length : null;
+  const best = computed.length ? Math.max(...computed.map((item) => item.output_snapshot?.pci ?? 0)) : null;
+  const lowest = computed.length ? Math.min(...computed.map((item) => item.output_snapshot?.pci ?? 0)) : null;
 
   return (
-    <AdminShell loading={loading} onRefresh={() => void refresh()} onSearchChange={setQuery} searchValue={query} subtitle="Review computed pavement condition scores and recorded distress evidence." title="PCI Results">
-      {error ? <Notice message={error} palette={palette} /> : null}
+    <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle="Review computed pavement condition scores and recorded distress evidence." title="PCI Results">
+      {error ? <Notice error>{error}</Notice> : null}
+      {pendingCount ? <Notice>{pendingCount} submitted computation{pendingCount === 1 ? ' is' : 's are'} preliminary and excluded here until ASTM/engineering verification is recorded.</Notice> : null}
+
       <View style={[styles.metrics, isCompact && styles.stack]}>
-        <Metric icon="activity" label="Computed Samples" palette={palette} value={computed.length.toLocaleString()} />
+        <Metric icon="activity" label="Verified Calculations" palette={palette} value={computed.length.toLocaleString()} />
         <Metric icon="pie-chart" label="Average PCI" palette={palette} value={average === null ? '—' : average.toFixed(1)} />
         <Metric icon="arrow-up" label="Highest PCI" palette={palette} value={formatNumber(best)} />
         <Metric icon="arrow-down" label="Lowest PCI" palette={palette} value={formatNumber(lowest)} />
@@ -80,27 +76,68 @@ export default function PciResultsScreen() {
 
       <View style={[styles.workspace, isCompact && styles.stack]}>
         <AdminPanel palette={palette} style={styles.resultsPanel} subtitle={`${filtered.length} computed result${filtered.length === 1 ? '' : 's'}`} title="Results register">
-          {filtered.length ? filtered.map((inspection) => {
-            const section = sectionById.get(inspection.section_id);
-            const active = selectedId === inspection.id;
+          {filtered.length ? filtered.map((c) => {
+            const sample = sampleById.get(c.sample_unit_id);
+            const section = sectionById.get(sample?.section_id || '');
+            const active = selectedId === c.id;
+            const conditionVisual = scoreVisual(c.output_snapshot?.pci ?? 0, isDark);
             return (
-              <Pressable key={inspection.id} onPress={() => setSelectedId(inspection.id)} style={[styles.resultRow, { backgroundColor: active ? palette.blueSoft : palette.panel, borderColor: active ? palette.blue : palette.border }]}>
-                <View style={[styles.scoreCircle, { backgroundColor: scoreColor(Number(inspection.pci_score)) }]}><Text style={styles.scoreText}>{Number(inspection.pci_score).toFixed(0)}</Text></View>
-                <View style={styles.resultCopy}><Text style={[styles.resultTitle, { color: palette.text }]}>{section?.name ?? 'Unknown road section'} · Unit {inspection.unit_number}</Text><Text style={[styles.resultMeta, { color: palette.muted }]}>{section ? branchById.get(section.branch_id) : ''} · {formatDate(inspection.pci_computed_at ?? inspection.updated_at)}</Text></View>
-                <View style={styles.conditionCopy}><Text style={[styles.condition, { color: palette.text }]}>{inspection.condition_label ?? 'Unclassified'}</Text><Text style={[styles.resultMeta, { color: palette.muted }]}>{inspection.status ? titleCase(inspection.status) : ''}</Text></View>
+              <Pressable key={c.id} onPress={() => setSelectedId(c.id)} style={[styles.resultRow, { backgroundColor: active ? palette.blueSoft : palette.panel, borderColor: active ? palette.blue : palette.border }]}>
+                <View style={[styles.scoreCircle, { backgroundColor: conditionVisual.backgroundColor }]}><Text style={[styles.scoreText, { color: conditionVisual.foregroundColor }]}>{(c.output_snapshot?.pci ?? 0).toFixed(0)}</Text></View>
+                <View style={styles.resultCopy}>
+                  <Text style={[styles.resultTitle, { color: palette.text }]}>{section?.name ?? 'Unknown road section'} · Unit {sample?.unit_number}</Text>
+                  <Text style={[styles.resultMeta, { color: palette.muted }]}>{section ? branchById.get(section.branch_id) : ''} · {formatDate(c.created_at)}</Text>
+                </View>
+                <View style={styles.conditionCopy}>
+                  <Text style={[styles.condition, { color: palette.text }]}>{c.output_snapshot ? getPciCondition(Number(c.output_snapshot.pci)) : 'Unclassified'}</Text>
+                  <Text style={[styles.resultMeta, { color: palette.muted }]}>Verified · {sample?.workflow_state ?? 'unknown status'}</Text>
+                </View>
                 <Feather color={palette.muted} name="chevron-right" size={18} />
               </Pressable>
             );
-          }) : <AdminEmpty icon="activity" message={query ? 'No computed PCI results match your search.' : 'PCI results will appear after sample-unit computations are completed.'} palette={palette} />}
+          }) : <AdminEmpty icon="activity" message={query ? 'No verified PCI results match your search.' : pendingCount ? 'Submitted calculations are still preliminary and pending ASTM/engineering validation.' : 'PCI results will appear after a verified calculation is available.'} palette={palette} />}
         </AdminPanel>
 
         <AdminPanel palette={palette} style={styles.detailPanel} subtitle="Selected sample-unit evidence" title="Result details">
-          {selected ? (
+          {selected && selectedSample && selected.output_snapshot ? (
             <View style={styles.details}>
-              <View style={styles.scoreHero}><View style={[styles.largeScore, { backgroundColor: scoreColor(Number(selected.pci_score)) }]}><Text style={styles.largeScoreValue}>{formatNumber(selected.pci_score)}</Text><Text style={styles.largeScoreLabel}>PCI</Text></View><View style={styles.scoreHeroCopy}><Text style={[styles.detailTitle, { color: palette.text }]}>{selected.condition_label ?? 'Unclassified'}</Text><Text style={[styles.resultMeta, { color: palette.muted }]}>{sectionById.get(selected.section_id)?.name ?? 'Unknown section'} · Unit {selected.unit_number}</Text></View></View>
-              <View style={styles.detailGrid}><Detail label="Total deduct value" palette={palette} value={formatNumber(selected.total_deduct_value)} /><Detail label="Corrected deduct value" palette={palette} value={formatNumber(selected.corrected_deduct_value)} /><Detail label="Surveyor" palette={palette} value={selected.surveyed_by ? profileById.get(selected.surveyed_by) ?? 'Unknown' : 'Unassigned'} /><Detail label="Computed" palette={palette} value={formatDate(selected.pci_computed_at)} /></View>
+              <View style={styles.scoreHero}>
+                <View style={[styles.largeScore, { backgroundColor: scoreVisual(selected.output_snapshot.pci, isDark).backgroundColor }]}>
+                  <Text style={[styles.largeScoreValue, { color: scoreVisual(selected.output_snapshot.pci, isDark).foregroundColor }]}>{formatNumber(selected.output_snapshot.pci)}</Text>
+                  <Text style={[styles.largeScoreLabel, { color: scoreVisual(selected.output_snapshot.pci, isDark).foregroundColor }]}>PCI</Text>
+                </View>
+                <View style={styles.scoreHeroCopy}>
+                  <Text style={[styles.detailTitle, { color: palette.text }]}>{getPciCondition(Number(selected.output_snapshot.pci))}</Text>
+                  <Text style={[styles.resultMeta, { color: palette.muted }]}>{selectedSection?.name ?? 'Unknown section'} · Unit {selectedSample.unit_number}</Text>
+                </View>
+              </View>
+
+              <View style={styles.detailGrid}>
+                <Detail label="Total deduct value" palette={palette} value={formatNumber(selected.output_snapshot.total_deduct_value)} />
+                <Detail label="Corrected DV" palette={palette} value={formatNumber(selected.output_snapshot.max_corrected_deduct_value)} />
+                <Detail label="Verification" palette={palette} value="Verified" />
+                <Detail label="Reviewer status" palette={palette} value={selectedSample.workflow_state} />
+                <Detail label="Computed" palette={palette} value={formatDate(selected.created_at)} />
+              </View>
+
               <Text style={[styles.sectionLabel, { color: palette.text }]}>Recorded distresses</Text>
-              {selectedDistresses.length ? selectedDistresses.map((distress) => <View key={distress.id} style={[styles.distressRow, { borderBottomColor: palette.border }]}><View style={[styles.distressIcon, { backgroundColor: palette.amberSoft }]}><Feather color={palette.amber} name="alert-triangle" size={16} /></View><View style={styles.resultCopy}><Text style={[styles.resultTitle, { color: palette.text }]}>{typeById.get(distress.distress_type_id)?.name ?? 'Unknown distress'}</Text><Text style={[styles.resultMeta, { color: palette.muted }]}>{titleCase(distress.severity ?? 'Not specified')} · {formatNumber(distress.quantity)} {distress.unit_of_measure}</Text></View><Text style={[styles.deduct, { color: palette.text }]}>DV {formatNumber(distress.deduct_value)}</Text></View>) : <AdminEmpty icon="alert-triangle" message="No distress records are attached to this sample unit." palette={palette} />}
+
+              {selectedDistresses.length ? selectedDistresses.map((distress) => {
+                const severity = normalizeDistressSeverity(distress.severity);
+                const severityColors = severity ? getDistressSeverityColors(severity) : null;
+                return (
+                  <View key={distress.id} style={[styles.distressRow, { borderBottomColor: palette.border }]}>
+                    <View style={[styles.distressIcon, { backgroundColor: severityColors?.backgroundColor ?? palette.panelAlt, borderColor: severityColors?.borderColor ?? palette.border }]}><Feather color={severityColors?.textColor ?? palette.muted} name="alert-triangle" size={16} /></View>
+                    <View style={styles.resultCopy}>
+                      <Text style={[styles.resultTitle, { color: palette.text }]}>{typeById.get(distress.distress_type_id)?.name ?? 'Unknown distress'}</Text>
+                      <View style={styles.distressMetaRow}>
+                        {severity && severityColors ? <View style={[styles.severityBadge, { backgroundColor: severityColors.backgroundColor, borderColor: severityColors.borderColor }]}><Text style={[styles.severityText, { color: severityColors.textColor }]}>{severity}</Text></View> : <Text style={[styles.resultMeta, { color: palette.muted }]}>Not specified</Text>}
+                        <Text style={[styles.resultMeta, { color: palette.muted }]}>{formatNumber(distress.quantity)} {distress.unit_of_measure}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }) : <AdminEmpty icon="alert-triangle" message="No distress records are attached to this sample unit." palette={palette} />}
             </View>
           ) : <AdminEmpty icon="mouse-pointer" message="Select a computed result to inspect its PCI components." palette={palette} />}
         </AdminPanel>
@@ -109,12 +146,12 @@ export default function PciResultsScreen() {
   );
 }
 
-function scoreColor(score: number) {
-  if (score >= 85) return '#16A765';
-  if (score >= 70) return '#2878F0';
-  if (score >= 55) return '#F0AE32';
-  if (score >= 40) return '#F47B20';
-  return '#E52535';
+function scoreVisual(score: number, isDark: boolean) {
+  const category = getPciConditionCategory(score);
+  return {
+    backgroundColor: isDark ? category.darkColor : category.color,
+    foregroundColor: isDark ? category.darkForegroundColor : category.foregroundColor,
+  };
 }
 
 function Metric({ icon, label, palette, value }: { icon: keyof typeof Feather.glyphMap; label: string; palette: ReturnType<typeof useAdminPalette>; value: string }) {
@@ -125,12 +162,8 @@ function Detail({ label, palette, value }: { label: string; palette: ReturnType<
   return <View style={[styles.detail, { backgroundColor: palette.panelAlt }]}><Text style={[styles.detailLabel, { color: palette.muted }]}>{label}</Text><Text numberOfLines={1} style={[styles.detailValue, { color: palette.text }]}>{value}</Text></View>;
 }
 
-function Notice({ message, palette }: { message: string; palette: ReturnType<typeof useAdminPalette> }) {
-  return <View style={[styles.notice, { backgroundColor: palette.redSoft, borderColor: palette.red }]}><Feather color={palette.red} name="alert-circle" size={17} /><Text style={[styles.noticeText, { color: palette.text }]}>{message}</Text></View>;
-}
-
 const styles = StyleSheet.create({
-  metrics: { flexDirection: 'row', gap: 13 },
+  metrics: { flexDirection: 'row', gap: 13, marginBottom: 16 },
   stack: { flexDirection: 'column' },
   metric: { alignItems: 'center', borderRadius: 12, borderWidth: 1, flex: 1, flexDirection: 'row', gap: 11, minHeight: 90, padding: 15 },
   metricIcon: { alignItems: 'center', borderRadius: 21, height: 42, justifyContent: 'center', width: 42 },
@@ -141,7 +174,7 @@ const styles = StyleSheet.create({
   detailPanel: { flex: 0.85 },
   resultRow: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 11, marginBottom: 8, minHeight: 66, padding: 10 },
   scoreCircle: { alignItems: 'center', borderRadius: 22, height: 44, justifyContent: 'center', width: 44 },
-  scoreText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  scoreText: { fontSize: 15, fontWeight: '900' },
   resultCopy: { flex: 1, minWidth: 0 },
   resultTitle: { fontSize: 12.5, fontWeight: '700' },
   resultMeta: { fontSize: 10.5, marginTop: 3 },
@@ -150,8 +183,8 @@ const styles = StyleSheet.create({
   details: { gap: 14 },
   scoreHero: { alignItems: 'center', flexDirection: 'row', gap: 14 },
   largeScore: { alignItems: 'center', borderRadius: 44, height: 88, justifyContent: 'center', width: 88 },
-  largeScoreValue: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' },
-  largeScoreLabel: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
+  largeScoreValue: { fontSize: 25, fontWeight: '900' },
+  largeScoreLabel: { fontSize: 9, fontWeight: '700' },
   scoreHeroCopy: { flex: 1 },
   detailTitle: { fontSize: 20, fontWeight: '900' },
   detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
@@ -160,8 +193,8 @@ const styles = StyleSheet.create({
   detailValue: { fontSize: 12, fontWeight: '700', marginTop: 4 },
   sectionLabel: { fontSize: 13, fontWeight: '800', marginTop: 3 },
   distressRow: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', gap: 9, minHeight: 58 },
-  distressIcon: { alignItems: 'center', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
-  deduct: { fontSize: 11, fontWeight: '800' },
-  notice: { alignItems: 'center', borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: 8, padding: 11 },
-  noticeText: { flex: 1, fontSize: 12 },
+  distressIcon: { alignItems: 'center', borderRadius: 18, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
+  distressMetaRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 3 },
+  severityBadge: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+  severityText: { fontSize: 10.5, fontWeight: '800' },
 });

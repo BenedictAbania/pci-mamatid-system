@@ -1,0 +1,189 @@
+import { PGlite } from '@electric-sql/pglite';
+import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
+import fs from 'node:fs/promises';
+import ts from 'typescript';
+
+let checks = 0;
+const check = (value, message) => { assert.ok(value, message); checks++; };
+async function moduleFrom(path) {
+  const source = await fs.readFile(path, 'utf8');
+  const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
+}
+const access = await moduleFrom('src/lib/access.ts');
+for (const role of ['admin', 'reviewer', 'encoder', 'viewer']) {
+  check(access.homeForRole(role) === (role === 'admin' ? '/dashboard' : '/workspace'), `${role} lands on the correct dashboard`);
+  check(access.canAccess(role, '/workspace') === (role !== 'admin'), `${role} role workspace access`);
+  check(access.canAccess(role, '/users') === (role === 'admin'), `${role} user management`);
+  check(access.canAccess(role, '/road-network') === (role === 'admin' || role === 'reviewer'), `${role} road inventory access`);
+  check(access.canAccess(role, '/sampling') === (role === 'reviewer'), `${role} sample planning access`);
+  check(access.canAccess(role, '/field-inspections') === (role === 'reviewer' || role === 'encoder'), `${role} assigned inspection access`);
+  check(access.canAccess(role, '/pci-results') === (role === 'admin' || role === 'reviewer' || role === 'viewer'), `${role} approved/result access`);
+  check(!access.canAccess(role, '/inspections'), `${role} cannot use the legacy inspection CRUD route`);
+  check(!access.canAccess(role, '/unlisted-route'), 'unknown routes denied');
+}
+check(!access.canAccess(null, '/workspace'), 'anonymous denied');
+const pci = await moduleFrom('src/lib/pci-service.ts');
+const type = { id: 'x', default_unit_of_measure: 'm²', severity_required: true, allowed_severities: ['low'], is_active: true };
+const measurement = { distress_type_id: 'x', severity: 'low', quantity: 10, unit_of_measure: 'm²', location_m: 10 };
+pci.validateMeasurement(measurement, type, 230, 46, []); checks++;
+for (const changes of [{ quantity: 0 }, { quantity: -2 }, { quantity: NaN }, { quantity: 231 }, { severity: 'high' }, { unit_of_measure: 'm' }, { location_m: 47 }]) {
+  assert.throws(() => pci.validateMeasurement({ ...measurement, ...changes }, type, 230, 46, [])); checks++;
+}
+assert.throws(() => pci.validateMeasurement(measurement, type, 230, 46, [measurement])); checks++;
+check(pci.pendingCalculation({ area_sqm: 230, edition: 'ASTM D6433-07', revision: 1, measurements: [] }).output === null, 'No fake PCI 100 for empty data');
+check(pci.possibleSampleUnits(2300).count === 10, 'Layout estimate');
+check(pci.rankPriorities([{ id: 'a', pci: 40, safety: false, highSeverity: 0, affectedArea: 10 }, { id: 'b', pci: 40, safety: true, highSeverity: 1, affectedArea: 1 }])[0].id === 'b', 'Safety tie break');
+const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
+check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
+const fieldSource = await fs.readFile('src/app/field-inspections.tsx', 'utf8');
+check(fieldSource.includes('Preliminary Result — Pending ASTM/Engineering Validation'), 'Authenticated sample preview is explicitly preliminary');
+check(fieldSource.includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
+check(fieldSource.includes('Inspection date cannot be in the future.'), 'Encoder form rejects future inspection dates');
+const workspaceSource = await fs.readFile('src/app/workspace.tsx', 'utf8');
+check(workspaceSource.includes('Official Section PCI Pending Engineering Validation'), 'Missing section aggregation is explicitly pending');
+check(!workspaceSource.includes('Section PCI is represented by the mean'), 'No unresolved section PCI formula is asserted');
+const dashboardSource = await fs.readFile('src/lib/dashboard.ts', 'utf8');
+check(dashboardSource.includes("'section_results'"), 'Dashboard condition summaries use persisted section results');
+const reportsSource = await fs.readFile('src/app/reports.tsx', 'utf8');
+check(reportsSource.includes('Verification Status'), 'Reports disclose result verification status');
+
+const db = new PGlite();
+const awaitableRollback = await fs.readFile('supabase/rollback/20260916_authenticated_workflow.sql', 'utf8');
+await db.exec(await fs.readFile('tests/schema-fixture.sql', 'utf8'));
+await db.exec(await fs.readFile('supabase/migrations/20260916_authenticated_workflow.sql', 'utf8'));
+const alignmentMigration = await fs.readFile('supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
+const alignmentRollback = await fs.readFile('supabase/rollback/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
+await db.exec(alignmentMigration);
+const ids = Object.fromEntries(['admin', 'reviewer', 'encoder', 'viewer', 'other'].map((name, index) => [name, `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`]));
+for (const [name, id] of Object.entries(ids)) {
+  await db.query('insert into auth.users values($1,$2)', [id, `${name}@example.test`]);
+  await db.query('insert into profiles(id,full_name,role) values($1,$2,$3)', [id, name, name === 'other' ? 'encoder' : name]);
+}
+async function as(name) {
+  await db.exec('reset role');
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)", [ids[name] ?? '']);
+  await db.exec(`set role ${name === 'anon' ? 'anon' : 'authenticated'}`);
+}
+async function rejected(task, expected) { await assert.rejects(task, expected); checks++; }
+await as('admin');
+const branch = (await db.query("insert into branches(name) values('TEST ONLY ROAD') returning id")).rows[0].id;
+check((await db.query("select pg_get_functiondef('lakad_private.plan_samples(uuid,jsonb)'::regprocedure) body")).rows[0].body.includes('137 and 323'), 'Alignment migration updates plan validation');
+const samplingSecurity = (await db.query("select prosecdef, proconfig from pg_proc where oid='lakad_private.plan_samples(uuid,jsonb)'::regprocedure")).rows[0];
+check(samplingSecurity.prosecdef === true && samplingSecurity.proconfig?.includes('search_path=\"\"'), 'Sampling RPC remains security definer with empty search path');
+check((await db.query("select has_function_privilege('anon','public.lakad_plan_samples(uuid,jsonb)','execute') allowed")).rows[0].allowed === false, 'Anonymous sampling RPC execution remains revoked');
+check((await db.query("select has_function_privilege('authenticated','public.lakad_plan_samples(uuid,jsonb)','execute') allowed")).rows[0].allowed === true, 'Authenticated public sampling wrapper remains executable');
+check((await db.query("select has_function_privilege('authenticated','lakad_private.plan_samples(uuid,jsonb)','execute') allowed")).rows[0].allowed === false, 'Private sampling implementation remains non-executable by authenticated clients');
+await db.exec('reset role');
+await db.exec(alignmentRollback);
+check((await db.query("select pg_get_functiondef('lakad_private.plan_samples(uuid,jsonb)'::regprocedure) body")).rows[0].body.includes('135 and 315'), 'Alignment rollback restores previous validation');
+await db.exec(alignmentMigration);
+await as('admin');
+const section = (await db.query("insert into sections(branch_id,name,length_meters,width_meters,area_sqm) values($1,'TEST ONLY SECTION',460,5,2300) returning id", [branch])).rows[0].id;
+await rejected(() => db.query("select lakad_plan_samples($1,$2)", [section, {}]), /engineer/i);
+await as('reviewer');
+async function testPlanBoundary(area, accepted) {
+  await db.exec('begin');
+  try {
+    const target = (await db.query("insert into sections(branch_id,name,length_meters,width_meters,area_sqm) values($1,$2,400,5,$3) returning id", [branch, `BOUNDARY PLAN ${area}`, area])).rows[0].id;
+    const task = () => db.query('select lakad_plan_samples($1,$2)', [target, { total: 1, required: 1, inspector: ids.encoder, reviewer: ids.reviewer, start: '0 m', end: '400 m', rationale: 'MANUSCRIPT BOUNDARY TEST' }]);
+    if (accepted) { await task(); checks++; } else await rejected(task, /137–323/);
+  } finally { await db.exec('rollback'); }
+}
+async function testAdditionalBoundary(area, accepted) {
+  await db.exec('begin');
+  try {
+    const target = (await db.query("insert into sections(branch_id,name,length_meters,width_meters,area_sqm,total_sample_units,homogeneous_confirmed_by,homogeneous_confirmed_at) values($1,$2,400,1,400,1,$3,now()) returning id", [branch, `BOUNDARY ADDITIONAL ${area}`, ids.reviewer])).rows[0].id;
+    const task = () => db.query('select lakad_additional_sample($1,$2)', [target, { unit: 1, start_m: 0, end_m: area, inspector: ids.encoder, rationale: 'MANUSCRIPT BOUNDARY TEST' }]);
+    if (accepted) { await task(); checks++; } else await rejected(task, /137–323/);
+  } finally { await db.exec('rollback'); }
+}
+for (const [area, accepted] of [[136.99, false], [137, true], [230, true], [323, true], [323.01, false]]) {
+  await testPlanBoundary(area, accepted);
+  await testAdditionalBoundary(area, accepted);
+}
+await db.query('select lakad_plan_samples($1,$2)', [section, { total: 10, required: 2, inspector: ids.encoder, reviewer: ids.reviewer, start: '0 m', end: '460 m', rationale: 'TEST FIXTURE — not an engineering recommendation' }]); checks++;
+const samples = (await db.query('select * from sample_units')).rows;
+check(samples.length === 2 && samples.every(s => s.workflow_state === 'planned'), 'random units created');
+const sample = samples[0].id;
+await rejected(() => db.query("select lakad_save_distress_type(null,$1)", [{ code: 'T-01', name: 'TEST ONLY DISTRESS', default_unit_of_measure: 'm²', severity_required: true, allowed_severities: ['low'], is_active: true }]), /Administrator/);
+await rejected(() => db.query("insert into distress_types(code,name,default_unit_of_measure) values('BYPASS','BYPASS TEST','m²')"), /row-level security/);
+await as('admin');
+const distress = (await db.query("select lakad_save_distress_type(null,$1) id", [{ code: 'T-01', name: 'TEST ONLY DISTRESS', description: 'Fictional test fixture', default_unit_of_measure: 'm²', severity_required: true, allowed_severities: ['low', 'medium', 'high'], is_active: true }])).rows[0].id; checks++;
+await rejected(() => db.query("select lakad_save_distress_type(null,$1)", [{ code: 'T-02', name: 'INVALID UNIT', default_unit_of_measure: 'feet', severity_required: true, allowed_severities: ['low'], is_active: true }]), /supported measurement unit/);
+await rejected(() => db.query('select lakad_manage_account($1,$2,$3)', [ids.admin, 'viewer', true]), /own access/i);
+await as('other');
+check((await db.query('select * from sample_units')).rows.length === 0, 'unassigned encoder cannot read');
+await rejected(() => db.query('select lakad_inspection_action($1,$2)', [sample, 'start']), /outside your assignment/i);
+await as('viewer');
+check((await db.query('select * from sample_units')).rows.length === 0, 'viewer cannot read drafts');
+check((await db.query('select * from sections')).rows.length === 0, 'viewer cannot read unpublished inventory');
+await rejected(() => db.query("insert into deduct_value_points(density_percent) values(10)"), /row-level security|permission denied/i);
+await rejected(() => db.query('select * from lakad_accounts()'), /Administrator/);
+await rejected(() => db.query('select lakad_manage_account($1,$2,$3)', [ids.encoder, 'admin', true]), /Administrator/);
+await as('encoder');
+check((await db.query("select * from distress_types")).rows.length > 0, "encoder can read distress types");
+await rejected(() => db.query("insert into sample_units(section_id,unit_number) values($1,999)", [section]), /row-level security|permission denied/i);
+await db.query('select lakad_inspection_action($1,$2)', [sample, 'start']); checks++;
+const invoke = (action, payload = {}) => db.query('select lakad_inspection_action($1,$2,$3)', [sample, action, payload]);
+await rejected(() => invoke('submit'), /Add distresses/);
+await rejected(() => invoke('distress', { distress_type_id: distress, quantity: -1, severity: 'low' }), /positive/);
+await invoke('distress', { distress_type_id: distress, quantity: 5, severity: 'low', location_m: 5 }); checks++;
+await rejected(() => invoke('distress', { distress_type_id: distress, quantity: 5, severity: 'low' }), /Duplicate/);
+await rejected(() => invoke('distress', { distress_type_id: distress, quantity: 500, severity: 'high' }), /boundary/);
+await rejected(() => invoke('save', { revision: 999, surveyed_at: '2026-01-01' }), /changed/);
+await invoke('save', { surveyed_at: '2026-01-01', notes: 'Test notes', latitude: '', longitude: '' }); checks++;
+await db.query("insert into storage.objects(bucket_id,name) values('sample-unit-photos',$1)", [`${sample}/test.jpg`]); checks++;
+await invoke('photo', { path: `${sample}/test.jpg`, caption: 'Test evidence' }); checks++;
+await invoke('submit'); checks++;
+await rejected(() => invoke('save', { surveyed_at: '2026-01-01' }), /read-only/);
+await rejected(() => db.query("insert into storage.objects(bucket_id,name) values('sample-unit-photos',$1)", [`${sample}/late.jpg`]), /row-level security/);
+await rejected(() => invoke('approve'), /independent/);
+await as('reviewer');
+await rejected(() => invoke('return'), /comments/);
+await rejected(() => invoke('approve'), /pending verification/);
+await invoke('return', { comments: 'Please verify measured area.' }); checks++;
+await as('encoder');
+await invoke('save', { surveyed_at: '2026-01-02', notes: 'Corrected', latitude: '', longitude: '' });
+await invoke('submit'); checks++;
+check((await db.query('select * from inspection_computations')).rows.length === 2, 'submitted snapshots retained');
+await rejected(() => db.query("update inspection_computations set verification='verified'"), /permission denied/);
+await as('admin');
+await db.query('select lakad_manage_account($1,$2,$3)', [ids.encoder, 'encoder', false]);
+await as('encoder');
+check((await db.query('select * from sample_units')).rows.length === 0, 'deactivated account loses data access');
+await rejected(() => invoke('submit'), /Active authenticated/);
+await as('admin');
+await db.query('select lakad_manage_account($1,$2,$3)', [ids.encoder, 'encoder', true]);
+// Trusted fixture insertion simulates a future verified service; NEVER applied to Supabase.
+await db.exec('reset role');
+await db.query("update inspection_computations set verification='verified',reference_id='TEST-NOT-ASTM',algorithm_version='fixture',output_snapshot=$2 where id=(select computation_id from sample_units where id=$1)", [sample, { pci: 60, condition: 'TEST ONLY', iterations: [], total_deduct_value: 40, max_corrected_deduct_value: 40 }]);
+await as('reviewer');
+await invoke('approve', { comments: 'Test fixture approval' });
+await invoke('publish'); checks++;
+await as('viewer');
+check((await db.query('select * from sample_units')).rows.length === 1, 'viewer sees only verified approved/published sample');
+await rejected(() => invoke('return', { comments: 'Denied' }), /independent/);
+await as('admin');
+check((await db.query('delete from sections where id=$1 returning id', [section]).catch(e => ({ denied: /sample units/.test(e.message) }))).denied, 'inventory delete cannot cascade inspection history');
+await db.exec('reset role');
+const rls = (await db.query("select tablename,rowsecurity from pg_tables where schemaname='public'")).rows;
+check(rls.every(table => table.rowsecurity), 'RLS enabled on every public table');
+await rejected(() => db.exec(awaitableRollback), /Rollback refused/);
+await db.exec('rollback');
+await as('admin');
+await db.query("insert into deduct_value_points(density_percent) values(10)"); checks++;
+await db.query("delete from deduct_value_points where density_percent=10"); checks++;
+await as('anon');
+await rejected(() => db.query('select * from sample_units'), /permission denied/i);
+await rejected(() => db.query('select lakad_inspection_action($1,$2)', [sample, 'start']), /permission denied/i);
+await db.close();
+const empty = new PGlite();
+await empty.exec(await fs.readFile('tests/schema-fixture.sql', 'utf8'));
+await empty.exec(await fs.readFile('supabase/migrations/20260916_authenticated_workflow.sql', 'utf8'));
+await empty.exec(alignmentMigration);
+await empty.exec(awaitableRollback); checks++;
+check((await empty.query("select count(*)::integer n from information_schema.columns where table_schema='public' and column_name='workflow_state'")).rows[0].n === 0, 'Unused migration rolls back cleanly');
+await empty.close();
+console.log(`Passed ${checks} domain, role, workflow, RLS and Storage-policy checks. No hosted database changed.`);

@@ -3,27 +3,30 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
 import {
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    useWindowDimensions,
-    View,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 
 import {
-    ALTERNATE_SAMPLE,
-    ASPHALT_DISTRESSES,
-    computePCI,
-    CONDITION_RATINGS,
-    DEFAULT_SAMPLE,
-    DEFAULT_SAMPLE_AREA,
-    generateUID,
-    type DistressEntry,
-    type PCIResult,
-    type Severity,
+  ALTERNATE_SAMPLE,
+  ASPHALT_DISTRESSES,
+  computePCI,
+  CONDITION_RATINGS,
+  DEFAULT_SAMPLE,
+  DEFAULT_SAMPLE_AREA,
+  generateUID,
+  type DistressEntry,
+  type PCIResult,
+  type Severity,
 } from '@/lib/pci-engine';
+import { getPciConditionCategory, getPciConditionVisual } from '@/lib/pci-classification';
+import { SAMPLE_UNIT_GUIDANCE } from '@/lib/pci-service';
+import { getDistressSeverityColors } from '@/lib/severity-colors';
 
 const heroImage = require('../../assets/images/lakad_hero_bg.jpg');
 const logoImage = require('../../assets/images/LAKAD.png');
@@ -128,14 +131,14 @@ function SectionHeading({
   );
 }
 
-function ThemeSwitch({ isDark, onPress }: { isDark: boolean; onPress: () => void }) {
+function ThemeSwitch({ iconColor, isDark, onPress }: { iconColor: string; isDark: boolean; onPress: () => void }) {
   return (
     <View style={styles.themeControls}>
-      <Feather color="#071957" name="sun" size={17} />
+      <Feather color={iconColor} name="sun" size={17} />
       <Pressable accessibilityLabel="Toggle color theme" onPress={onPress} style={styles.toggleTrack}>
         <View style={[styles.toggleThumb, isDark && styles.toggleThumbDark]} />
       </Pressable>
-      <Feather color="#071957" name="moon" size={17} />
+      <Feather color={iconColor} name="moon" size={17} />
     </View>
   );
 }
@@ -151,7 +154,7 @@ function InputShell({ children, palette, suffix }: { children: ReactNode; palett
   );
 }
 
-function Notes({ palette }: { palette: Palette }) {
+function Notes({ compact, palette, stacked }: { compact: boolean; palette: Palette; stacked: boolean }) {
   const notes = [
     'This prototype uses sample data only.',
     'Deduct Values are illustrative unless supplied by the verified PCI engine.',
@@ -162,13 +165,13 @@ function Notes({ palette }: { palette: Palette }) {
   ];
 
   return (
-    <View style={[styles.notesBox, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
+    <View style={[styles.notesBox, stacked && styles.notesBoxStacked, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
       <Feather color={palette.primary} name="info" size={24} />
       <View style={styles.notesContent}>
         <Text style={[styles.notesTitle, { color: palette.text }]}>Notes</Text>
-        <View style={styles.notesGrid}>
+        <View style={[styles.notesGrid, compact && styles.notesGridCompact]}>
           {notes.map((note) => (
-            <View key={note} style={styles.noteItem}>
+            <View key={note} style={[styles.noteItem, compact && styles.noteItemCompact]}>
               <Text style={[styles.noteBullet, { color: palette.secondary }]}>•</Text>
               <Text style={[styles.noteText, { color: palette.secondary }]}>{note}</Text>
             </View>
@@ -179,8 +182,8 @@ function Notes({ palette }: { palette: Palette }) {
   );
 }
 
-function RatingGauge({ palette, result }: { palette: Palette; result: PCIResult }) {
-  const resultColor = result.rating === 'Fair' ? '#FFB400' : result.ratingColor;
+function RatingGauge({ isDark, palette, result }: { isDark: boolean; palette: Palette; result: PCIResult }) {
+  const resultColor = getPciConditionVisual(getPciConditionCategory(result.pci), isDark).accentColor;
   const progressDegrees = Math.round((Math.max(0, Math.min(100, result.pci)) / 100) * 270);
   const gaugeStyle = {
     backgroundImage: `conic-gradient(from 225deg, ${resultColor} 0deg ${progressDegrees}deg, ${palette.track} ${progressDegrees}deg 270deg, transparent 270deg 360deg)`,
@@ -206,6 +209,8 @@ export default function PrototypePage() {
   const palette = isDark ? palettes.dark : palettes.light;
   const isDesktop = width >= 1180;
   const isTablet = width >= 760;
+  const isPhone = width < 600;
+  const isNarrowPhone = width < 390;
 
   const [sampleArea, setSampleArea] = useState(String(DEFAULT_SAMPLE_AREA));
   const [entries, setEntries] = useState<DistressEntry[]>([...DEFAULT_SAMPLE]);
@@ -294,6 +299,8 @@ export default function PrototypePage() {
 
   const computedRows = result?.distresses ?? entries.map((entry) => ({ ...entry, density: 0, deductValue: 0 }));
   const displayedResult = result ?? initialResult;
+  const displayedCondition = getPciConditionCategory(displayedResult.pci);
+  const displayedConditionVisual = getPciConditionVisual(displayedCondition, isDark);
 
   return (
     <View style={[styles.page, { backgroundColor: palette.page }]}>
@@ -303,31 +310,31 @@ export default function PrototypePage() {
         <View style={[styles.contour, styles.contourThree, { borderColor: palette.border }]} />
       </View>
 
-      <View style={[styles.header, { backgroundColor: isDark ? '#0E1B35' : '#FFFFFF', borderBottomColor: palette.border }]}>
-        <View style={styles.headerLeft}>
-          <Brand />
-          <View style={[styles.prototypeBadge, { backgroundColor: palette.blueSoft }]}>
-            <Text style={[styles.prototypeBadgeText, { color: palette.text }]}>Prototype</Text>
+      <View style={[styles.header, isPhone && styles.headerMobile, { backgroundColor: isDark ? '#0E1B35' : '#FFFFFF', borderBottomColor: palette.border }]}>
+        <View style={[styles.headerLeft, isPhone && styles.headerLeftMobile]}>
+          <Brand compact={isPhone} inverse={isDark} />
+          <View style={[styles.prototypeBadge, isPhone && styles.prototypeBadgeMobile, isNarrowPhone && styles.prototypeBadgeNarrow, { backgroundColor: palette.blueSoft }]}>
+            <Text style={[styles.prototypeBadgeText, isPhone && styles.prototypeBadgeTextMobile, { color: palette.text }]}>Prototype</Text>
           </View>
         </View>
-        <View style={styles.headerRight}>
-          <ThemeSwitch isDark={isDark} onPress={() => setIsDark((current) => !current)} />
-          <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }) => [styles.backButton, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ scale: 1.02 }], backgroundColor: '#3B82F6' }] as any}>
+        <View style={[styles.headerRight, isPhone && styles.headerRightMobile]}>
+          <ThemeSwitch iconColor={palette.text} isDark={isDark} onPress={() => setIsDark((current) => !current)} />
+          <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }: any) => [styles.backButton, isPhone && styles.backButtonMobile, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ scale: 1.02 }], backgroundColor: '#3B82F6' }] as any}>
             <Feather color="#FFFFFF" name="arrow-left" size={17} />
             <Text style={styles.backButtonText}>Sign In</Text>
           </Pressable>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={[styles.hero, isPhone && styles.heroMobile]}>
           <Image contentFit="cover" contentPosition={{ left: '50%', top: '68%' }} source={heroImage} style={styles.heroBackdropTexture} />
-          <View style={styles.heroOverlay}>
+          <View style={[styles.heroOverlay, isPhone && styles.heroOverlayMobile]}>
             <View style={styles.heroLeft}>
-              <Text style={styles.heroTitle}>PCI Calculation Prototype</Text>
-              <Text style={styles.heroSubtitle}>Try the PCI computation process step by step using sample asphalt-pavement data.</Text>
+              <Text style={[styles.heroTitle, isPhone && styles.heroTitleMobile]}>PCI Calculation Prototype</Text>
+              <Text style={[styles.heroSubtitle, isPhone && styles.heroSubtitleMobile]}>Try the PCI computation process step by step using sample asphalt-pavement data.</Text>
             </View>
-            {isTablet ? (
+            {isDesktop ? (
               <View style={styles.heroRight}>
                 <View style={styles.quoteWrap}>
                   <Text style={styles.quote}>“Where Data Meets the Road”</Text>
@@ -340,8 +347,8 @@ export default function PrototypePage() {
           </View>
         </View>
 
-        <View style={[styles.main, !isDesktop && styles.mainCompact]}>
-          <View style={[styles.warning, { backgroundColor: palette.warningSurface, borderColor: palette.warningBorder }]}>
+        <View style={[styles.main, !isDesktop && styles.mainCompact, isPhone && styles.mainMobile]}>
+          <View style={[styles.warning, isPhone && styles.warningMobile, { backgroundColor: palette.warningSurface, borderColor: palette.warningBorder }]}>
             <View style={styles.warningIcon}>
               <Text style={styles.warningIconText}>!</Text>
             </View>
@@ -351,21 +358,39 @@ export default function PrototypePage() {
             </View>
           </View>
 
-          <View style={styles.stepper}>
-            {['Sample Unit', 'Distress Data', 'Density and Deduct Values', 'Total Deduct Value', 'CDV Correction', 'PCI and Rating'].map((label, index) => {
-              const complete = isComputed && index < 5;
-              const active = isComputed ? index === 5 : index < 2;
-              return (
-                <View key={label} style={[styles.stepItem, !isDesktop && styles.stepItemCompact]}>
-                  <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
-                    {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
+          {isPhone ? (
+            <ScrollView horizontal contentContainerStyle={styles.stepperMobile} showsHorizontalScrollIndicator={false}>
+              {['Sample Unit', 'Distress Data', 'Density and Deduct Values', 'Total Deduct Value', 'CDV Correction', 'PCI and Rating'].map((label, index) => {
+                const complete = isComputed && index < 5;
+                const active = isComputed ? index === 5 : index < 2;
+                return (
+                  <View key={label} style={styles.stepItemMobile}>
+                    <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
+                      {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
+                    </View>
+                    <Text numberOfLines={2} style={[styles.stepLabel, styles.stepLabelMobile, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
+                    {index < 5 ? <View style={[styles.stepLine, styles.stepLineMobile, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
                   </View>
-                  <Text numberOfLines={1} style={[styles.stepLabel, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
-                  {index < 5 ? <View style={[styles.stepLine, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={styles.stepper}>
+              {['Sample Unit', 'Distress Data', 'Density and Deduct Values', 'Total Deduct Value', 'CDV Correction', 'PCI and Rating'].map((label, index) => {
+                const complete = isComputed && index < 5;
+                const active = isComputed ? index === 5 : index < 2;
+                return (
+                  <View key={label} style={[styles.stepItem, !isDesktop && styles.stepItemCompact]}>
+                    <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
+                      {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
+                    </View>
+                    <Text numberOfLines={1} style={[styles.stepLabel, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
+                    {index < 5 ? <View style={[styles.stepLine, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           {error ? (
             <View style={styles.errorBanner}>
@@ -374,9 +399,9 @@ export default function PrototypePage() {
             </View>
           ) : null}
 
-          <View style={[styles.workspace, !isDesktop && styles.workspaceCompact]}>
-            <View style={[styles.leftColumn, !isDesktop && styles.columnCompact]}>
-              <Card palette={palette} style={styles.sampleCard}>
+          <View style={[styles.workspace, !isDesktop && styles.workspaceCompact, !isTablet && styles.workspaceMobile]}>
+            <View style={[styles.leftColumn, !isDesktop && styles.leftColumnCompact, !isTablet && styles.columnMobile]}>
+              <Card palette={palette} style={[styles.sampleCard, isDesktop && { height: 227 }]}>
                 <SectionHeading icon="sample" number={1} palette={palette} subtitle="Enter the sample unit details for the PCI computation." title="Sample Unit Information" />
                 <Text style={[styles.fieldLabel, { color: palette.text }]}>Sample Unit Area (Asphalt)</Text>
                 <InputShell palette={palette} suffix="m²">
@@ -389,11 +414,11 @@ export default function PrototypePage() {
                 </InputShell>
                 <View style={[styles.infoBox, { backgroundColor: palette.cardSoft }]}>
                   <Feather color={palette.primary} name="info" size={18} />
-                  <Text style={[styles.infoText, { color: palette.secondary }]}>Recommended asphalt sample-unit area: approximately{`\n`}225 ± 90 m² or 2,500 ± 1,000 ft² under ASTM D6433-07.</Text>
+                  <Text style={[styles.infoText, { color: palette.secondary }]}>{SAMPLE_UNIT_GUIDANCE}</Text>
                 </View>
               </Card>
 
-              <Card palette={palette} style={styles.distressCard}>
+              <Card palette={palette} style={[styles.distressCard, isDesktop && { height: 331 }]}>
                 <SectionHeading icon="distress" number={2} palette={palette} subtitle="Select an asphalt distress, set its details, and add it to the list." title="Distress Data" />
                 <Text style={[styles.fieldLabel, { color: palette.text }]}>Asphalt Distress Type</Text>
                 <Pressable
@@ -422,43 +447,45 @@ export default function PrototypePage() {
                   </ScrollView>
                 ) : null}
 
-                <View style={styles.inlineField}>
-                  <Text style={[styles.inlineLabel, { color: palette.text }]}>Severity Level</Text>
+                <View style={[styles.inlineField, isPhone && styles.inlineFieldMobile]}>
+                  <Text style={[styles.inlineLabel, isPhone && styles.inlineLabelMobile, { color: palette.text }]}>Severity Level</Text>
                   <View style={[styles.segmented, { borderColor: palette.border }]}>
                     {(['Low', 'Medium', 'High'] as const).map((severity) => {
                       const selected = selectedSeverity === severity;
+                      const severityColors = getDistressSeverityColors(severity);
                       return (
                         <Pressable
                           key={severity}
                           onPress={() => setSelectedSeverity(severity)}
-                          style={[styles.segment, { borderColor: palette.border }, selected && { backgroundColor: palette.primary }]}>
-                          <Text style={[styles.segmentText, { color: selected ? '#FFFFFF' : palette.text }]}>{severity}</Text>
+                          style={[styles.segment, { borderColor: selected ? severityColors.borderColor : palette.border }, selected && { backgroundColor: severityColors.backgroundColor }]}>
+                          <Text style={[styles.segmentText, { color: selected ? severityColors.textColor : palette.text }]}>{severity}</Text>
                         </Pressable>
                       );
                     })}
                   </View>
                 </View>
 
-                <View style={styles.inlineField}>
-                  <Text style={[styles.inlineLabel, { color: palette.text }]}>Measured Quantity</Text>
+                <View style={[styles.inlineField, isPhone && styles.inlineFieldMobile]}>
+                  <Text style={[styles.inlineLabel, isPhone && styles.inlineLabelMobile, { color: palette.text }]}>Measured Quantity</Text>
                   <View style={styles.quantityInput}>
                     <InputShell palette={palette} suffix={selectedDistress.unit}>
                       <TextInput keyboardType="numeric" onChangeText={setQuantity} placeholder="0" placeholderTextColor={palette.muted} style={[styles.textInput, { color: palette.text }]} value={quantity} />
                     </InputShell>
                   </View>
                 </View>
-                <Text style={[styles.quantityHelp, { color: palette.secondary }]}>Enter the measured area, length, or number of the distress.</Text>
-                <Pressable onPress={handleAdd} style={({ pressed }) => [styles.addButton, { backgroundColor: palette.primary }, pressed && styles.buttonPressed]}>
+                <Text style={[styles.quantityHelp, isPhone && styles.quantityHelpMobile, { color: palette.secondary }]}>Enter the measured area, length, or number of the distress.</Text>
+                <Pressable onPress={handleAdd} style={({ pressed, hovered }: any) => [styles.addButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}>
                   <View style={styles.addIcon}><Feather color={palette.primary} name="plus" size={15} /></View>
                   <Text style={styles.addButtonText}>Add to List</Text>
                 </Pressable>
               </Card>
             </View>
 
-            <View style={[styles.centerColumn, !isDesktop && styles.columnCompact]}>
-              <Card palette={palette} style={styles.densityCard}>
+            <View style={[styles.centerColumn, !isDesktop && styles.centerColumnCompact, !isTablet && styles.columnMobile]}>
+              <Card palette={palette} style={[styles.densityCard, isDesktop && { height: 227 }]}>
                 <SectionHeading icon="density" number={3} palette={palette} subtitle="List of distresses and their computed density and deduct values." title="Density and Deduct Values" />
-                <View style={[styles.table, { borderColor: palette.border }]}>
+                <ScrollView contentContainerStyle={styles.tableScrollContent} horizontal nestedScrollEnabled showsHorizontalScrollIndicator={!isDesktop} style={styles.tableViewport}>
+                <View style={[styles.table, { borderColor: palette.border, width: isDesktop ? '100%' : 760 }]}>
                   <View style={[styles.tableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
                     <Text style={[styles.cellHeader, styles.numberCol, { color: palette.text }]}>#</Text>
                     <Text style={[styles.cellHeader, styles.distressCol, { color: palette.text }]}>Distress Type</Text>
@@ -469,15 +496,14 @@ export default function PrototypePage() {
                     <Text style={[styles.cellHeader, styles.dvCol, { color: palette.text }]}>Deduct Value</Text>
                     <Text style={[styles.cellHeader, styles.actionCol, { color: palette.text }]}>Action</Text>
                   </View>
-                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 240 }}>
                     {computedRows.map((entry, index) => {
-                      const severityBackground = entry.severity === 'Low' ? '#D9F5E5' : entry.severity === 'Medium' ? '#FFF0C9' : '#FFD9D5';
-                      const severityColor = entry.severity === 'Low' ? '#075E2E' : entry.severity === 'Medium' ? '#975300' : '#B20A0A';
+                      const severityColors = getDistressSeverityColors(entry.severity);
                       return (
                         <View key={entry.uid} style={[styles.tableRow, { borderBottomColor: palette.border }]}>
                           <Text style={[styles.cell, styles.numberCol, { color: palette.text }]}>{index + 1}</Text>
                           <Text numberOfLines={1} style={[styles.cell, styles.distressCol, { color: palette.text }]}>{entry.distressName}</Text>
-                          <View style={styles.severityCol}><View style={[styles.severityBadge, { backgroundColor: severityBackground }]}><Text style={[styles.severityBadgeText, { color: severityColor }]}>{entry.severity}</Text></View></View>
+                          <View style={styles.severityCol}><View style={[styles.severityBadge, { backgroundColor: severityColors.backgroundColor, borderColor: severityColors.borderColor }]}><Text style={[styles.severityBadgeText, { color: severityColors.textColor }]}>{entry.severity}</Text></View></View>
                           <Text style={[styles.cell, styles.quantityCol, { color: palette.text }]}>{entry.quantity}</Text>
                           <Text style={[styles.cell, styles.unitCol, { color: palette.text }]}>{entry.unit}</Text>
                           <Text style={[styles.cell, styles.densityCol, { color: palette.text }]}>{isComputed ? `${entry.density.toFixed(2)}%` : '—'}</Text>
@@ -490,10 +516,11 @@ export default function PrototypePage() {
                     })}
                   </ScrollView>
                 </View>
+                </ScrollView>
               </Card>
 
-              <View style={[styles.centerBottom, !isDesktop && styles.centerBottomCompact]}>
-                <Card palette={palette} style={styles.totalCard}>
+              <View style={[styles.centerBottom, isDesktop && { height: 331 }, !isTablet && styles.centerBottomCompact]}>
+                <Card palette={palette} style={[styles.totalCard, !isTablet && styles.cardAuto]}>
                   <SectionHeading icon="total" number={4} palette={palette} subtitle="Sum of the individual deduct values for the sample unit." title="Total Deduct Value" />
                   <View style={[styles.formulaPanel, { backgroundColor: palette.cardSoft }]}>
                     <Text style={[styles.formulaLabel, { color: palette.text }]}>Individual Deduct Values</Text>
@@ -511,11 +538,11 @@ export default function PrototypePage() {
                   </View>
                 </Card>
 
-                <Card palette={palette} style={styles.cdvCard}>
+                <Card palette={palette} style={[styles.cdvCard, !isTablet && styles.cardAuto]}>
                   <SectionHeading icon="correction" number={5} palette={palette} subtitle="Apply ASTM D6433-07 correction procedure (illustrative)." title="CDV Correction" />
-                  <View style={[styles.cdvStats, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
+                  <View style={[styles.cdvStats, isPhone && styles.cdvStatsMobile, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
                     <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Highest DV:</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.highestDV}</Text></View>
-                    <View style={[styles.cdvStatWide, { borderLeftColor: palette.border }]}>
+                    <View style={[styles.cdvStatWide, isPhone && styles.cdvStatWideMobile, { borderLeftColor: palette.border, borderTopColor: palette.border }]}>
                       <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Calculated allowable deducts (m):</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.allowableDeducts.toFixed(2)}</Text></View>
                       <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Actual available deducts:</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.actualDeducts}</Text></View>
                       <View style={styles.cdvNote}><Feather color={palette.primary} name="info" size={14} /><Text style={[styles.cdvNoteText, { color: palette.secondary }]}>Therefore, all four DVs are retained.</Text></View>
@@ -526,11 +553,12 @@ export default function PrototypePage() {
                     <Text style={[styles.detailToggleText, { color: palette.text }]}>View CDV Correction Details</Text>
                   </Pressable>
                   {showDetails ? (
-                    <View style={[styles.cdvTable, { borderColor: palette.border }]}>
+                    <ScrollView contentContainerStyle={styles.cdvTableScrollContent} horizontal nestedScrollEnabled showsHorizontalScrollIndicator={isPhone} style={styles.cdvTableViewport}>
+                    <View style={[styles.cdvTable, { borderColor: palette.border, width: isPhone ? 500 : '100%' }]}>
                       <View style={[styles.cdvTableRow, styles.cdvTableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
                         <Text style={[styles.cdvHead, styles.iterCol, { color: palette.text }]}>Iteration</Text><Text style={[styles.cdvHead, styles.adjustedCol, { color: palette.text }]}>Adjusted Deduct Values</Text><Text style={[styles.cdvHead, styles.qCol, { color: palette.text }]}>q</Text><Text style={[styles.cdvHead, styles.tdvCol, { color: palette.text }]}>TDV</Text><Text style={[styles.cdvHead, styles.cdvCol, { color: palette.text }]}>CDV (Illustrative)</Text>
                       </View>
-                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 200 }}>
                         {displayedResult.cdvIterations.map((iteration) => (
                           <View key={iteration.iteration} style={[styles.cdvTableRow, { borderBottomColor: palette.border }]}>
                             <Text style={[styles.cdvCell, styles.iterCol, { color: palette.text }]}>{iteration.iteration}</Text><Text style={[styles.cdvCell, styles.adjustedCol, { color: palette.text }]}>{iteration.adjustedDVs.join(', ')}</Text><Text style={[styles.cdvCell, styles.qCol, { color: palette.text }]}>{iteration.q}</Text><Text style={[styles.cdvCell, styles.tdvCol, { color: palette.text }]}>{iteration.tdv}</Text><Text style={[styles.cdvCell, styles.cdvCol, styles.boldCell, { color: palette.text }]}>{iteration.cdv}</Text>
@@ -538,6 +566,7 @@ export default function PrototypePage() {
                         ))}
                       </ScrollView>
                     </View>
+                    </ScrollView>
                   ) : null}
                   <View style={[styles.maxCdv, { backgroundColor: palette.cardSoft }]}><Text style={[styles.maxCdvLabel, { color: palette.text }]}>Maximum CDV (Illustrative)</Text><Text style={[styles.maxCdvValue, { color: palette.text }]}>{displayedResult.maxCDV}</Text></View>
                   <Text style={[styles.cdvFootnote, { color: palette.secondary }]}>CDV is obtained through the ASTM D6433-07 correction procedure using the applicable q and TDV values. The CDV values shown are illustrative and should be generated by the verified ASTM PCI engine.</Text>
@@ -545,21 +574,21 @@ export default function PrototypePage() {
               </View>
             </View>
 
-            <View style={[styles.rightColumn, !isDesktop && styles.columnCompact]}>
+            <View style={[styles.rightColumn, !isDesktop && styles.rightColumnCompact, !isTablet && styles.columnMobile]}>
               <Card palette={palette} style={styles.ratingCard}>
                 <SectionHeading icon="rating" number={6} palette={palette} subtitle="Final PCI value and corresponding condition rating." title="PCI and Condition Rating" />
-                <RatingGauge palette={palette} result={displayedResult} />
+                <RatingGauge isDark={isDark} palette={palette} result={displayedResult} />
                 <View style={styles.ratingSummary}>
                   <Text style={[styles.conditionLabel, { color: palette.text }]}>Condition Rating</Text>
-                  <View style={styles.ratingBadge}><Text style={styles.ratingBadgeText}>{isComputed ? displayedResult.rating.toUpperCase() : 'PENDING'}</Text></View>
+                  <View style={[styles.ratingBadge, { backgroundColor: isComputed ? displayedConditionVisual.backgroundColor : palette.cardSoft, borderColor: isComputed ? displayedConditionVisual.borderColor : palette.border }]}><Text style={[styles.ratingBadgeText, { color: isComputed ? displayedConditionVisual.foregroundColor : palette.muted }]}>{isComputed ? displayedResult.rating.toUpperCase() : 'PENDING'}</Text></View>
                   <Text style={[styles.ratingDescription, { color: palette.secondary }]}>{isComputed ? displayedResult.ratingDescription : 'Compute the sample to display its pavement condition.'}</Text>
                 </View>
                 <View style={[styles.legend, { borderColor: palette.border }]}>
                   <View style={styles.legendHeading}><Feather color={palette.primary} name="info" size={17} /><Text style={[styles.legendTitle, { color: palette.text }]}>PCI Condition Rating Legend</Text></View>
                   {CONDITION_RATINGS.map((rating) => (
-                    <View key={rating.rating} style={[styles.legendRow, { backgroundColor: `${rating.color}22` }]}>
-                      <View style={styles.legendName}><View style={[styles.legendDot, { backgroundColor: rating.color }]} /><Text style={[styles.legendText, { color: palette.text }]}>{rating.rating}</Text></View>
-                      <Text style={[styles.legendRange, { color: palette.text }]}>{rating.minPCI} – {rating.maxPCI}</Text>
+                    <View key={rating.rating} style={[styles.legendRow, { backgroundColor: getPciConditionVisual(rating, isDark).backgroundColor, borderColor: getPciConditionVisual(rating, isDark).borderColor }]}>
+                      <View style={styles.legendName}><View style={[styles.legendDot, { backgroundColor: getPciConditionVisual(rating, isDark).accentColor }]} /><Text style={[styles.legendText, { color: getPciConditionVisual(rating, isDark).foregroundColor }]}>{rating.rating}</Text></View>
+                      <Text style={[styles.legendRange, { color: getPciConditionVisual(rating, isDark).foregroundColor }]}>{rating.range}</Text>
                     </View>
                   ))}
                 </View>
@@ -568,18 +597,18 @@ export default function PrototypePage() {
           </View>
 
           <View style={[styles.bottomRow, !isDesktop && styles.bottomRowCompact]}>
-            <Notes palette={palette} />
-            <View style={[styles.actions, !isDesktop && styles.actionsCompact]}>
-              <Pressable onPress={handleReset} style={({ pressed, hovered }) => [styles.secondaryButton, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.cardSoft : palette.card, borderColor: hovered ? palette.muted : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.text} name="rotate-ccw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Reset Demonstration</Text></Pressable>
-              <Pressable onPress={handleTryAnother} style={({ pressed, hovered }) => [styles.secondaryButton, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.blueSoft : palette.card, borderColor: hovered ? palette.primary : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.primary} name="refresh-cw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Try Another Example</Text></Pressable>
-              <Pressable onPress={handleCompute} style={({ pressed, hovered }) => [styles.computeButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}><Feather color="#FFFFFF" name="cpu" size={20} /><Text style={styles.computeButtonText}>Compute PCI</Text></Pressable>
+            <Notes compact={isPhone} palette={palette} stacked={!isDesktop} />
+            <View style={[styles.actions, !isDesktop && styles.actionsCompact, isPhone && styles.actionsMobile]}>
+              <Pressable onPress={handleReset} style={({ pressed, hovered }: any) => [styles.secondaryButton, isPhone && styles.actionButtonMobile, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.cardSoft : palette.card, borderColor: hovered ? palette.muted : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.text} name="rotate-ccw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Reset Demonstration</Text></Pressable>
+              <Pressable onPress={handleTryAnother} style={({ pressed, hovered }: any) => [styles.secondaryButton, isPhone && styles.actionButtonMobile, { backgroundColor: pressed ? palette.cardSoft : hovered ? palette.blueSoft : palette.card, borderColor: hovered ? palette.primary : palette.border, transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }] }] as any}><Feather color={palette.primary} name="refresh-cw" size={21} /><Text style={[styles.secondaryButtonText, { color: palette.text }]}>Try Another Example</Text></Pressable>
+              <Pressable onPress={handleCompute} style={({ pressed, hovered }: any) => [styles.computeButton, isPhone && styles.actionButtonMobile, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}><Feather color="#FFFFFF" name="cpu" size={20} /><Text style={styles.computeButtonText}>Compute PCI</Text></Pressable>
             </View>
           </View>
         </View>
 
-        <View style={[styles.footer, { borderTopColor: palette.border, backgroundColor: isDark ? '#0A1730' : '#FFFFFF' }]}>
-          <View style={styles.footerBrand}><Image contentFit="contain" source={logoImage} style={styles.footerLogo} /><Text style={[styles.footerName, { color: palette.text }]}>LAKAD</Text><View style={[styles.footerDivider, { backgroundColor: palette.border }]} /><Text style={[styles.footerDescription, { color: palette.secondary }]}>Local Asphalt Konditioning Assessment and Data-Driven Prioritization</Text></View>
-          <View style={styles.footerRight}><Text style={[styles.footerText, { color: palette.secondary }]}>Where Data Meets the Road</Text><Text style={[styles.footerText, { color: palette.secondary }]}>v1.0 (Prototype)</Text></View>
+        <View style={[styles.footer, isPhone && styles.footerMobile, { borderTopColor: palette.border, backgroundColor: isDark ? '#0A1730' : '#FFFFFF' }]}>
+          <View style={[styles.footerBrand, isPhone && styles.footerBrandMobile]}><Image contentFit="contain" source={logoImage} style={styles.footerLogo} /><Text style={[styles.footerName, { color: palette.text }]}>LAKAD</Text>{!isNarrowPhone ? <View style={[styles.footerDivider, { backgroundColor: palette.border }]} /> : null}<Text style={[styles.footerDescription, isPhone && styles.footerDescriptionMobile, { color: palette.secondary }]}>Local Asphalt Konditioning Assessment and Data-Driven Prioritization</Text></View>
+          <View style={[styles.footerRight, isPhone && styles.footerRightMobile]}><Text style={[styles.footerText, { color: palette.secondary }]}>Where Data Meets the Road</Text><Text style={[styles.footerText, { color: palette.secondary }]}>v1.0 (Prototype)</Text></View>
         </View>
       </ScrollView>
     </View>
@@ -593,9 +622,12 @@ const styles = StyleSheet.create({
   contourOne: { height: 170, right: 0, top: 0, width: 270 },
   contourTwo: { height: 205, right: 18, top: 14, width: 320 },
   contourThree: { height: 245, right: 38, top: 28, width: 370 },
-  header: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', minHeight: 70, paddingVertical: 10, justifyContent: 'space-between', paddingHorizontal: 40, zIndex: 5 },
+  header: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 14, minHeight: 70, paddingVertical: 10, justifyContent: 'space-between', paddingHorizontal: 40, zIndex: 5 },
+  headerMobile: { alignItems: 'stretch', gap: 9, paddingHorizontal: 14, paddingVertical: 9 },
   headerLeft: { alignItems: 'center', flexDirection: 'row', gap: 22 },
+  headerLeftMobile: { justifyContent: 'space-between', width: '100%' },
   headerRight: { alignItems: 'center', flexDirection: 'row', gap: 28 },
+  headerRightMobile: { justifyContent: 'space-between', width: '100%' },
   brand: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   brandLogo: { height: 55, width: 55 },
   brandLogoCompact: { height: 52, width: 52 },
@@ -605,21 +637,29 @@ const styles = StyleSheet.create({
   brandTagCompact: { color: '#071957', fontSize: 9, fontWeight: '700' },
   brandInverse: { color: '#FFFFFF' },
   prototypeBadge: { borderRadius: 10, paddingHorizontal: 17, paddingVertical: 9 },
+  prototypeBadgeMobile: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  prototypeBadgeNarrow: { paddingHorizontal: 8, paddingVertical: 6 },
   prototypeBadgeText: { fontSize: 16, fontWeight: '800' },
+  prototypeBadgeTextMobile: { fontSize: 14 },
   themeControls: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   toggleTrack: { backgroundColor: '#0C3D83', borderRadius: 12, height: 20, justifyContent: 'center', paddingHorizontal: 2, width: 37 },
   toggleThumb: { backgroundColor: '#FFFFFF', borderRadius: 8, height: 16, width: 16 },
   toggleThumbDark: { alignSelf: 'flex-end' },
   backButton: { alignItems: 'center', backgroundColor: '#082B64', borderRadius: 6, boxShadow: '0 3px 8px rgba(11,46,100,0.18)', flexDirection: 'row', gap: 10, height: 40, justifyContent: 'center', paddingHorizontal: 18 },
+  backButtonMobile: { height: 36, minWidth: 100, paddingHorizontal: 14 },
   backButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
   buttonPressed: { opacity: 0.82 },
   scrollContent: { flexGrow: 1 },
   hero: { backgroundColor: '#062A58', minHeight: 160, overflow: 'hidden', position: 'relative', width: '100%', justifyContent: 'center', paddingVertical: 24 },
+  heroMobile: { minHeight: 150, paddingVertical: 22 },
   heroBackdropTexture: { height: '100%', opacity: 0.35, position: 'absolute', width: '100%' },
   heroOverlay: { alignItems: 'center', backgroundColor: 'rgba(2, 38, 82, 0.48)', flex: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 45 },
+  heroOverlayMobile: { paddingHorizontal: 18 },
   heroLeft: { flex: 1 },
   heroTitle: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', letterSpacing: -0.5, lineHeight: 41 },
+  heroTitleMobile: { fontSize: 28, lineHeight: 34 },
   heroSubtitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', lineHeight: 24 },
+  heroSubtitleMobile: { fontSize: 14, lineHeight: 20, marginTop: 5 },
   heroRight: { alignItems: 'center', flexDirection: 'row', gap: 28 },
   quoteWrap: { alignItems: 'center', minWidth: 320 },
   quote: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
@@ -627,34 +667,45 @@ const styles = StyleSheet.create({
   heroDivider: { backgroundColor: 'rgba(255,255,255,0.42)', height: 78, width: 1 },
   main: { gap: 11, paddingHorizontal: 36, paddingTop: 11, width: '100%' },
   mainCompact: { paddingHorizontal: 16 },
+  mainMobile: { gap: 10, paddingHorizontal: 10, paddingTop: 10 },
   warning: { alignItems: 'center', borderRadius: 8, borderWidth: 1, flexDirection: 'row', marginHorizontal: 7, minHeight: 56, paddingHorizontal: 15, paddingVertical: 8 },
+  warningMobile: { alignItems: 'flex-start', marginHorizontal: 0, paddingHorizontal: 11, paddingVertical: 10 },
   warningIcon: { alignItems: 'center', backgroundColor: '#FFA300', borderRadius: 16, height: 30, justifyContent: 'center', marginRight: 14, width: 30 },
   warningIconText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
   warningCopy: { flex: 1 },
   warningTitle: { fontSize: 14, fontWeight: '800', lineHeight: 19 },
   warningText: { fontSize: 12, lineHeight: 17 },
-  stepper: { alignItems: 'center', flexDirection: 'row', minHeight: 45, paddingHorizontal: 31 },
+  stepper: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', minHeight: 45, paddingHorizontal: 31 },
+  stepperMobile: { alignItems: 'center', flexDirection: 'row', minHeight: 66, paddingHorizontal: 5, paddingVertical: 4 },
   stepItem: { alignItems: 'center', flexDirection: 'row', flex: 1, minWidth: 0 },
   stepItemCompact: { flexBasis: 220, marginBottom: 8 },
+  stepItemMobile: { alignItems: 'center', flexDirection: 'row', minWidth: 170 },
   stepCircle: { alignItems: 'center', borderRadius: 22, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
   stepNumber: { fontSize: 17, fontWeight: '800' },
   stepLabel: { fontSize: 12, marginLeft: 10 },
+  stepLabelMobile: { lineHeight: 15, maxWidth: 94 },
   stepLabelActive: { fontWeight: '800' },
   stepLine: { flex: 1, height: 2, marginHorizontal: 15, minWidth: 12 },
+  stepLineMobile: { flex: 0, marginHorizontal: 10, minWidth: 24, width: 24 },
   errorBanner: { alignItems: 'center', backgroundColor: '#FEE2E2', borderRadius: 6, flexDirection: 'row', gap: 8, padding: 9 },
   errorText: { color: '#B91C1C', fontSize: 12, fontWeight: '700' },
   workspace: { alignItems: 'stretch', flexDirection: 'row', gap: 10 },
   workspaceCompact: { flexDirection: 'column', height: 'auto' },
+  workspaceMobile: { flexDirection: 'column' },
   leftColumn: { flex: 1.08, gap: 11, minWidth: 0 },
+  leftColumnCompact: { flexBasis: 'auto', flexGrow: 0, flexShrink: 0, width: '100%' },
   centerColumn: { flex: 2.12, gap: 11, minWidth: 0 },
+  centerColumnCompact: { flexBasis: 'auto', flexGrow: 0, flexShrink: 0, width: '100%' },
   rightColumn: { flex: 0.86, minWidth: 0 },
-  columnCompact: { flex: 0, width: '100%' },
-  centerBottom: { flexDirection: 'row', gap: 10, height: 331 },
+  rightColumnCompact: { flexBasis: 'auto', flexGrow: 0, flexShrink: 0, width: '100%' },
+  columnMobile: { width: '100%' },
+  centerBottom: { flexDirection: 'row', gap: 10, minHeight: 331 },
   centerBottomCompact: { flexDirection: 'column', height: 'auto' },
   card: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 12 },
-  sampleCard: { height: 227 },
-  distressCard: { height: 331, position: 'relative', zIndex: 4 },
-  densityCard: { height: 227 },
+  cardAuto: { flexBasis: 'auto', flexGrow: 0, flexShrink: 0, height: 'auto' },
+  sampleCard: { minHeight: 220 },
+  distressCard: { minHeight: 330, position: 'relative', zIndex: 4 },
+  densityCard: { minHeight: 220 },
   totalCard: { flex: 0.77, minWidth: 0, overflow: 'hidden' },
   cdvCard: { flex: 1.02, minWidth: 0, paddingHorizontal: 12 },
   ratingCard: { flex: 1 },
@@ -679,16 +730,21 @@ const styles = StyleSheet.create({
   selectOption: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
   selectOptionText: { fontSize: 12 },
   inlineField: { alignItems: 'center', flexDirection: 'row', marginTop: 10 },
+  inlineFieldMobile: { alignItems: 'stretch', flexDirection: 'column', gap: 7 },
   inlineLabel: { fontSize: 12, fontWeight: '700', width: 112 },
+  inlineLabelMobile: { width: 'auto' },
   segmented: { borderRadius: 5, borderWidth: 1, flex: 1, flexDirection: 'row', height: 39, overflow: 'hidden' },
   segment: { alignItems: 'center', borderRightWidth: 1, flex: 1, justifyContent: 'center' },
   segmentText: { fontSize: 12 },
   quantityInput: { flex: 1 },
   quantityHelp: { fontSize: 10, lineHeight: 14, marginLeft: 112, marginTop: 6 },
+  quantityHelpMobile: { marginLeft: 0 },
   addButton: { alignItems: 'center', borderRadius: 5, flexDirection: 'row', gap: 12, height: 43, justifyContent: 'center', marginTop: 12 },
   addIcon: { alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 9, height: 18, justifyContent: 'center', width: 18 },
   addButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
   table: { borderRadius: 6, borderWidth: 1, flex: 1, overflow: 'hidden' },
+  tableViewport: { flexGrow: 0, maxWidth: '100%', width: '100%' },
+  tableScrollContent: { flexGrow: 1 },
   tableHeader: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', height: 33, paddingHorizontal: 10 },
   tableRow: { alignItems: 'center', borderBottomWidth: 1, flex: 1, flexDirection: 'row', minHeight: 31, paddingHorizontal: 10 },
   cellHeader: { fontSize: 11, fontWeight: '700' },
@@ -703,7 +759,7 @@ const styles = StyleSheet.create({
   dvCol: { flex: 0.95 },
   actionCol: { flex: 0.58, textAlign: 'center' },
   deleteButton: { alignItems: 'center' },
-  severityBadge: { alignItems: 'center', borderRadius: 4, justifyContent: 'center', paddingVertical: 4, width: 60 },
+  severityBadge: { alignItems: 'center', borderRadius: 4, borderWidth: 1, justifyContent: 'center', paddingVertical: 4, width: 60 },
   severityBadgeText: { fontSize: 10 },
   formulaPanel: { borderRadius: 6, marginTop: 8, padding: 10 },
   formulaLabel: { fontSize: 11, marginBottom: 12 },
@@ -715,9 +771,11 @@ const styles = StyleSheet.create({
   formulaTotal: { alignItems: 'center', borderRadius: 5, height: 42, justifyContent: 'center', minWidth: 45 },
   formulaTotalText: { fontSize: 20, fontWeight: '800' },
   formulaHelp: { fontSize: 11, lineHeight: 17, marginTop: 13 },
-  cdvStats: { borderRadius: 6, borderWidth: 1, flexDirection: 'row', minHeight: 56, padding: 6 },
+  cdvStats: { borderRadius: 6, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', minHeight: 56, padding: 6 },
+  cdvStatsMobile: { alignItems: 'stretch', flexDirection: 'column' },
   cdvStat: { alignItems: 'center', flexDirection: 'row', gap: 9 },
   cdvStatWide: { borderLeftWidth: 1, flex: 1, marginLeft: 10, paddingLeft: 11 },
+  cdvStatWideMobile: { borderLeftWidth: 0, borderTopWidth: 1, marginLeft: 0, marginTop: 7, paddingLeft: 0, paddingTop: 7 },
   cdvLabel: { fontSize: 10 },
   cdvValue: { fontSize: 14, fontWeight: '800' },
   cdvNote: { alignItems: 'center', flexDirection: 'row', gap: 5, marginTop: 3 },
@@ -725,10 +783,12 @@ const styles = StyleSheet.create({
   detailToggle: { alignItems: 'center', borderRadius: 5, borderWidth: 1, flexDirection: 'row', gap: 8, height: 29, marginTop: 5, paddingHorizontal: 8 },
   detailToggleText: { fontSize: 10, fontWeight: '700' },
   cdvTable: { borderWidth: 1, flex: 1, overflow: 'hidden' },
-  cdvTableRow: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', minHeight: 18 },
-  cdvTableHeader: { minHeight: 23 },
-  cdvHead: { fontSize: 9, fontWeight: '700', textAlign: 'center' },
-  cdvCell: { fontSize: 9.5, textAlign: 'center' },
+  cdvTableViewport: { flexGrow: 0, maxWidth: '100%', width: '100%' },
+  cdvTableScrollContent: { flexGrow: 1 },
+  cdvTableRow: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', minHeight: 23 },
+  cdvTableHeader: { minHeight: 27 },
+  cdvHead: { fontSize: 10, fontWeight: '700', lineHeight: 12, paddingHorizontal: 3, textAlign: 'center' },
+  cdvCell: { fontSize: 10.5, paddingHorizontal: 3, textAlign: 'center' },
   iterCol: { flex: 0.7 },
   adjustedCol: { flex: 1.8 },
   qCol: { flex: 0.55 },
@@ -746,13 +806,13 @@ const styles = StyleSheet.create({
   gaugeOutOf: { fontSize: 18, lineHeight: 23 },
   ratingSummary: { alignItems: 'center', marginTop: -3 },
   conditionLabel: { fontSize: 11, fontWeight: '700' },
-  ratingBadge: { alignItems: 'center', backgroundColor: '#FFF0C9', borderColor: '#FFE09A', borderRadius: 5, borderWidth: 1, minHeight: 36, justifyContent: 'center', marginTop: 4, minWidth: 116, paddingHorizontal: 12, paddingVertical: 4 },
-  ratingBadgeText: { color: '#975300', fontSize: 18, fontWeight: '900', textAlign: 'center' },
+  ratingBadge: { alignItems: 'center', borderRadius: 5, borderWidth: 1, minHeight: 36, justifyContent: 'center', marginTop: 4, minWidth: 116, paddingHorizontal: 12, paddingVertical: 4 },
+  ratingBadgeText: { fontSize: 18, fontWeight: '900', textAlign: 'center' },
   ratingDescription: { fontSize: 11, lineHeight: 14, marginTop: 5, paddingHorizontal: 20, textAlign: 'center' },
   legend: { borderRadius: 6, borderWidth: 1, marginTop: 7, padding: 6 },
   legendHeading: { alignItems: 'center', flexDirection: 'row', gap: 9, marginBottom: 5 },
   legendTitle: { fontSize: 11, fontWeight: '800' },
-  legendRow: { alignItems: 'center', borderRadius: 4, flexDirection: 'row', height: 28, justifyContent: 'space-between', marginBottom: 1, paddingHorizontal: 14 },
+  legendRow: { alignItems: 'center', borderRadius: 4, borderWidth: 1, flexDirection: 'row', minHeight: 28, justifyContent: 'space-between', marginBottom: 2, paddingHorizontal: 14, paddingVertical: 5 },
   legendName: { alignItems: 'center', flexDirection: 'row', gap: 13 },
   legendDot: { borderRadius: 7, height: 14, width: 14 },
   legendText: { fontSize: 11 },
@@ -760,24 +820,33 @@ const styles = StyleSheet.create({
   bottomRow: { alignItems: 'center', flexDirection: 'row', gap: 22, minHeight: 74 },
   bottomRowCompact: { alignItems: 'stretch', flexDirection: 'column' },
   notesBox: { alignItems: 'flex-start', borderRadius: 7, borderWidth: 1, flex: 1.4, flexDirection: 'row', minHeight: 85, padding: 10 },
+  notesBoxStacked: { flexBasis: 'auto', flexGrow: 0 },
   notesContent: { flex: 1, marginLeft: 12 },
   notesTitle: { fontSize: 11, fontWeight: '800', marginBottom: 1 },
   notesGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  notesGridCompact: { flexDirection: 'column' },
   noteItem: { flexDirection: 'row', width: '50%' },
+  noteItemCompact: { width: '100%' },
   noteBullet: { fontSize: 11, lineHeight: 14, marginRight: 7 },
   noteText: { flex: 1, fontSize: 10, lineHeight: 14 },
   actions: { flex: 1, flexDirection: 'row', gap: 11, justifyContent: 'flex-end', transform: [{ translateY: -6 }] },
-  actionsCompact: { flexWrap: 'wrap' },
+  actionsCompact: { flexBasis: 'auto', flexGrow: 0, flexWrap: 'wrap' },
+  actionsMobile: { flexDirection: 'column', flexGrow: 0, transform: [{ translateY: 0 }], width: '100%' },
+  actionButtonMobile: { flexBasis: 44, flexGrow: 0, flexShrink: 0, minWidth: 0, width: '100%' },
   secondaryButton: { alignItems: 'center', borderRadius: 5, borderWidth: 1, flex: 1, flexDirection: 'row', gap: 11, height: 44, justifyContent: 'center', minWidth: 170, paddingHorizontal: 12 },
   secondaryButtonText: { fontSize: 11, fontWeight: '600' },
   computeButton: { alignItems: 'center', borderRadius: 5, flex: 0.95, flexDirection: 'row', gap: 12, height: 44, justifyContent: 'center', minWidth: 170, paddingHorizontal: 14 },
   computeButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-  footer: { alignItems: 'center', borderTopWidth: 1, flexDirection: 'row', height: 42, justifyContent: 'space-between', marginTop: 2, paddingHorizontal: 36 },
+  footer: { alignItems: 'center', borderTopWidth: 1, flexDirection: 'row', flexWrap: 'wrap', minHeight: 42, justifyContent: 'space-between', marginTop: 2, paddingHorizontal: 36, paddingVertical: 10 },
+  footerMobile: { flexDirection: 'column', gap: 8, paddingHorizontal: 12, paddingVertical: 14 },
   footerBrand: { alignItems: 'center', flexDirection: 'row' },
+  footerBrandMobile: { flexWrap: 'wrap', justifyContent: 'center' },
   footerLogo: { height: 20, width: 20 },
   footerName: { fontSize: 12, fontWeight: '900', marginLeft: 4 },
   footerDivider: { height: 16, marginHorizontal: 8, width: 1 },
   footerDescription: { fontSize: 10 },
+  footerDescriptionMobile: { marginVertical: 3, textAlign: 'center' },
   footerRight: { flexDirection: 'row', gap: 20 },
+  footerRightMobile: { justifyContent: 'center' },
   footerText: { fontSize: 10 },
 });
