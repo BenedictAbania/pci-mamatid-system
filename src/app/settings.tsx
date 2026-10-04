@@ -21,6 +21,7 @@ export default function SettingsScreen() {
 
   const [edition, setEdition] = useState('');
   const [referenceId, setReferenceId] = useState<string | null>(null);
+  const [canonical,setCanonical]=useState(false);
   const [referenceCode, setReferenceCode] = useState('');
   const [referenceName, setReferenceName] = useState('');
   const [referenceDescription, setReferenceDescription] = useState('');
@@ -43,6 +44,7 @@ export default function SettingsScreen() {
 
   const resetReference = () => {
     setReferenceId(null);
+    setCanonical(false);
     setReferenceCode('');
     setReferenceName('');
     setReferenceDescription('');
@@ -56,6 +58,7 @@ export default function SettingsScreen() {
     const reference = data?.types.find((item) => item.id === id);
     if (!reference) return;
     setReferenceId(reference.id);
+    setCanonical(!!reference.astm_code);
     setReferenceCode(reference.code || '');
     setReferenceName(reference.name);
     setReferenceDescription(reference.description || '');
@@ -96,7 +99,7 @@ export default function SettingsScreen() {
         <View style={styles.column}>
           <AdminPanel palette={palette} subtitle="Application configuration" title="System Settings">
             <View style={{ gap: 16 }}>
-              <AdminField label="ASTM Reference Edition" onChangeText={setEdition} palette={palette} value={edition} />
+              <Text style={{color:palette.text}}>Calculation edition: ASTM D6433-24 · provisional. Historical snapshots keep their saved edition.</Text>
 
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}>
@@ -148,9 +151,10 @@ export default function SettingsScreen() {
         <View style={[styles.columns, isCompact && styles.stack]}>
           <View style={styles.column}>
             <View style={{ gap: 13 }}>
-              <AdminField label="Reference Code" onChangeText={setReferenceCode} palette={palette} placeholder="e.g. AC-01" value={referenceCode} />
+              <AdminField editable={!canonical} label="Reference Code" onChangeText={setReferenceCode} palette={palette} placeholder="e.g. AC-01" value={referenceCode} />
               <AdminField label="Distress Name" onChangeText={setReferenceName} palette={palette} placeholder="Validated asphalt distress name" value={referenceName} />
               <AdminField label="Description" multiline onChangeText={setReferenceDescription} palette={palette} placeholder="Field identification guidance" value={referenceDescription} />
+              {canonical ? <Notice>Canonical D6433-24 units and severity sets are fixed: {referenceUnit} · {allowedSeverities.join(", ") || "No severity"}. Names, descriptions and active status may be maintained.</Notice> : <>
               <Choices label="Default Measurement Unit" onChange={setReferenceUnit} options={[{ label: 'Area (m²)', value: 'm²' }, { label: 'Length (m)', value: 'm' }, { label: 'Count (No.)', value: 'No.' }]} value={referenceUnit} />
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}><Text style={[styles.settingTitle, { color: palette.text }]}>Severity is required</Text><Text style={[styles.settingText, { color: palette.muted }]}>Require inspectors to classify the record using the allowed levels below.</Text></View>
@@ -162,6 +166,7 @@ export default function SettingsScreen() {
                 const selected = allowedSeverities.includes(severity);
                 return <Pressable accessibilityLabel={`${label} severity`} accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={severity} onPress={() => toggleSeverity(severity)} style={[styles.severityChoice, { backgroundColor: selected ? colors.backgroundColor : palette.panel, borderColor: selected ? colors.borderColor : palette.border }]}><Text style={{ color: selected ? colors.textColor : palette.text, fontWeight: '700' }}>{selected ? '✓ ' : ''}{label}</Text></Pressable>;
               })}</View></View> : null}
+              </>}
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}><Text style={[styles.settingTitle, { color: palette.text }]}>Active for field entry</Text><Text style={[styles.settingText, { color: palette.muted }]}>Inactive references remain attached to historical records but cannot be selected for new entries.</Text></View>
                 <Switch disabled={busy} onValueChange={setReferenceActive} value={referenceActive} trackColor={{ false: palette.border, true: palette.green }} />

@@ -315,6 +315,7 @@ export function AdminButton({
 }
 
 export function AdminField({
+  editable = true,
   keyboardType,
   label,
   multiline,
@@ -323,6 +324,7 @@ export function AdminField({
   placeholder,
   value,
 }: {
+  editable?: boolean;
   keyboardType?: 'default' | 'numeric' | 'email-address';
   label: string;
   multiline?: boolean;
@@ -335,6 +337,7 @@ export function AdminField({
     <View style={styles.fieldGroup}>
       <Text style={[styles.fieldLabel, { color: palette.text }]}>{label}</Text>
       <TextInput
+        editable={editable}
         keyboardType={keyboardType}
         multiline={multiline}
         onChangeText={onChangeText}

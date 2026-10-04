@@ -33,12 +33,12 @@ for (const changes of [{ quantity: 0 }, { quantity: -2 }, { quantity: NaN }, { q
 }
 assert.throws(() => pci.validateMeasurement(measurement, type, 230, 46, [measurement])); checks++;
 check(pci.pendingCalculation({ area_sqm: 230, edition: 'ASTM D6433-07', revision: 1, measurements: [] }).output === null, 'No fake PCI 100 for empty data');
-check(pci.possibleSampleUnits(2300).count === 10, 'Layout estimate');
+check(pci.possibleSampleUnits(2250).count === 10, 'Layout estimate');
 check(pci.rankPriorities([{ id: 'a', pci: 40, safety: false, highSeverity: 0, affectedArea: 10 }, { id: 'b', pci: 40, safety: true, highSeverity: 1, affectedArea: 1 }])[0].id === 'b', 'Safety tie break');
 const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
 check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
 const fieldSource = await fs.readFile('src/app/field-inspections.tsx', 'utf8');
-check(fieldSource.includes('Prototype — Pending ASTM/Engineering Validation'), 'Authenticated sample preview is explicitly preliminary');
+check(fieldSource.includes('PROVISIONAL_LABEL') && !fieldSource.includes('computePCI'), 'Authenticated sample preview is explicitly preliminary');
 check(fieldSource.includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
 check(fieldSource.includes('Inspection date cannot be in the future.'), 'Encoder form rejects future inspection dates');
 const workspaceSource = await fs.readFile('src/components/workflow/approved-reports.tsx', 'utf8');

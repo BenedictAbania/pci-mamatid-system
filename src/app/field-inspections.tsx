@@ -2,19 +2,18 @@ import { Image } from 'expo-image';
 import { PhotoCard } from '@/components/workflow/photo-card';
 import { PageControls } from '@/components/workflow/pagination';
 import * as ImagePicker from 'expo-image-picker';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { ASPHALT_DISTRESSES, computePCI, type DistressEntry, type MeasurementUnit, type PCIResult } from '@/lib/pci-engine';
-import { getPciCondition } from '@/lib/pci-classification';
 import { REFERENCE_PENDING, validateMeasurement, type CalculationOutput } from '@/lib/pci-service';
 import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
 import { supabase } from '@/lib/supabase';
-import { Photo, Sample, WorkflowData, workflowAction } from '@/lib/workflow-data';
+import { Photo, Sample, WorkflowData, workflowAction, calculateProvisional } from '@/lib/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
 
-const PRELIMINARY_RESULT_LABEL = 'Prototype — Pending ASTM/Engineering Validation';
+import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL, potholeQuantity, type PotholeDetails } from '@/lib/d6433-24/catalog';
+import type { SampleOutput } from '@/lib/d6433-24/sample';
 
 export default function FieldInspections() {
   const [selected, setSelected] = useState('');
@@ -55,6 +54,11 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
   const [latitude, setLatitude] = useState(sample.latitude?.toString() ?? '');
   const [longitude, setLongitude] = useState(sample.longitude?.toString() ?? '');
   const [noDistress, setNoDistress] = useState(sample.no_distress_confirmed);
+  const [measuredArea,setMeasuredArea]=useState(String(sample.area_sqm ?? ''));
+  const [orientation,setOrientation]=useState(sample.orientation_note ?? '');
+  const [fieldConfirmed,setFieldConfirmed]=useState(sample.field_rules_confirmed ?? false);
+  const [smallCount,setSmallCount]=useState('');
+  const [largeHoles,setLargeHoles]=useState<{diameter:string;depth:string;area:string}[]>([]);
   const [typeId, setTypeId] = useState('');
   const [severity, setSeverity] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -71,11 +75,13 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
   const distresses = data.distresses.filter(d => d.sample_unit_id === sample.id);
   const computation = data.computations.find(c => c.id === sample.computation_id);
   const photos = data.photos.filter(photo => photo.sample_unit_id === sample.id);
-  const preliminary = useMemo(() => buildPreliminaryResult(sample, data, distresses), [data, distresses, sample]);
-  const dirty = notes !== (sample.inspection_notes ?? '') || date !== (sample.surveyed_at?.slice(0, 10) ?? todayLocal()) || latitude !== (sample.latitude?.toString() ?? '') || longitude !== (sample.longitude?.toString() ?? '') || noDistress !== sample.no_distress_confirmed;
+  const dirty = measuredArea !== String(sample.area_sqm ?? '') || orientation !== (sample.orientation_note ?? '') || fieldConfirmed !== (sample.field_rules_confirmed ?? false) || notes !== (sample.inspection_notes ?? '') || date !== (sample.surveyed_at?.slice(0, 10) ?? todayLocal()) || latitude !== (sample.latitude?.toString() ?? '') || longitude !== (sample.longitude?.toString() ?? '') || noDistress !== sample.no_distress_confirmed;
   async function addDistress() {
     if (!type) throw new Error('Select an active distress type. An administrator must configure the catalog if it is empty.');
-    const measurement = { distress_type_id: typeId, severity: (severity || null) as 'low' | 'medium' | 'high' | null, quantity: Number(quantity), unit_of_measure: type.default_unit_of_measure ?? '', location_m: location === '' ? null : Number(location) };
+    const potholes: PotholeDetails | undefined=type.astm_code===13 ? {small_count:Number(smallCount),large_holes:largeHoles.map(h=>({diameter_mm:Number(h.diameter),depth_mm:Number(h.depth),area_sqm:Number(h.area)}))} : undefined;
+    if(type.astm_code===13 && (!smallCount.trim() || !severity))throw new Error('Enter the classified small pothole count (zero if none) and severity.');
+    const enteredQuantity=potholes ? potholeQuantity(potholes,severity as 'low'|'medium'|'high') : Number(quantity);
+    const measurement = { distress_type_id: typeId, severity: (severity || null) as 'low' | 'medium' | 'high' | null, quantity: enteredQuantity, potholes, unit_of_measure: type.default_unit_of_measure ?? '', location_m: location === '' ? null : Number(location) };
     validateMeasurement(measurement, type, Number(sample.area_sqm), sample.start_m !== null && sample.end_m !== null ? sample.end_m - sample.start_m : null, distresses.filter(d => d.id !== editingId).map(d => ({ ...d, location_m: d.measurement_details?.location_m ?? null })));
     await workflowAction(sample, 'distress', { ...measurement, id: editingId || null, notes: distressNotes });
   }
@@ -84,7 +90,7 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
     if (date > todayLocal()) throw new Error('Inspection date cannot be in the future.');
     if ((latitude === '') !== (longitude === '')) throw new Error('Enter both coordinates or leave both empty.');
     if (latitude && (!Number.isFinite(Number(latitude)) || Math.abs(Number(latitude)) > 90 || !Number.isFinite(Number(longitude)) || Math.abs(Number(longitude)) > 180)) throw new Error('Enter valid latitude and longitude.');
-    await workflowAction(sample, 'save', { notes, surveyed_at: date, latitude, longitude, no_distress_confirmed: noDistress });
+    await workflowAction(sample, 'save', { notes, surveyed_at: date, latitude, longitude, no_distress_confirmed: noDistress, area_sqm:Number(measuredArea),orientation_note:orientation,field_rules_confirmed:fieldConfirmed });
   }
   async function choosePhoto() {
     setPhotoSelectionError('');
@@ -129,6 +135,9 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
       {sample.workflow_state === 'planned' && sample.assigned_to === user?.id && role === 'encoder' && <AdminButton palette={p} disabled={busy} label="Start field inspection" onPress={() => void run(() => workflowAction(sample, 'start'))} />}
       {editable ? <View style={{ gap: 14 }}>
         <AdminField palette={p} label="Inspection date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+        <AdminField palette={p} label="Measured sample area (m², 135–315)" keyboardType="numeric" value={measuredArea} onChangeText={setMeasuredArea} />
+        <AdminField palette={p} label="Sample orientation / sketch description (§8.2)" multiline value={orientation} onChangeText={setOrientation} />
+        <Choices label="Field measurement and severity rules (Appendix X1)" value={fieldConfirmed ? "yes" : "no"} options={[{value:"no",label:"Needs checking"},{value:"yes",label:"I checked severity, SI units, patch exclusions and overlapping distress rules"}]} onChange={value=>setFieldConfirmed(value==="yes")} />
         <AdminField palette={p} label="General inspection notes" multiline value={notes} onChangeText={setNotes} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}><View style={{ flexGrow: 1, minWidth: 180 }}><AdminField palette={p} label="Latitude (optional)" value={latitude} onChangeText={setLatitude} /></View><View style={{ flexGrow: 1, minWidth: 180 }}><AdminField palette={p} label="Longitude (optional)" value={longitude} onChangeText={setLongitude} /></View></View>
         {!distresses.length && <Choices label="Observed distress" value={noDistress ? 'none' : 'present'} options={[{ value: 'present', label: 'Enter distress records below' }, { value: 'none', label: 'I inspected this unit: no distress' }]} onChange={value => setNoDistress(value === 'none')} />}
@@ -140,11 +149,11 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
       <View style={{ gap: 12 }}>{distresses.map(d => <View key={d.id} style={{ borderBottomWidth: 1, borderColor: p.border, paddingBottom: 12, gap: 7 }}>
         <View style={{ alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Text style={{ color: p.text, fontWeight: '700' }}>{data.types.find(t => t.id === d.distress_type_id)?.name ?? d.distress_type_id}</Text>{d.severity ? <SeverityBadge severity={d.severity} /> : <Text style={{ color: p.muted }}>Not applicable</Text>}</View>
         <Text style={{ color: p.muted }}>{d.quantity} {d.unit_of_measure} · Location {d.measurement_details?.location_m ?? 'not specified'} m · {d.notes || 'No notes'}</Text>
-        {editable && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><AdminButton palette={p} disabled={busy || dirty} tone="secondary" label="Edit measurement" onPress={() => { setEditingId(d.id); setTypeId(d.distress_type_id); setSeverity(d.severity ?? ''); setQuantity(String(d.quantity)); setLocation(d.measurement_details?.location_m?.toString() ?? ''); setDistressNotes(d.notes ?? ''); }} /><AdminButton palette={p} disabled={busy || dirty} tone="danger" label="Remove" onPress={() => setConfirmation(`remove:${d.id}`)} /></View>}
+        {editable && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><AdminButton palette={p} disabled={busy || dirty} tone="secondary" label="Edit measurement" onPress={() => { setEditingId(d.id); setTypeId(d.distress_type_id); setSeverity(d.severity ?? ''); setQuantity(String(d.quantity)); setLocation(d.measurement_details?.location_m?.toString() ?? ''); setDistressNotes(d.notes ?? ''); setSmallCount(String(d.measurement_details?.potholes?.small_count ?? d.quantity));setLargeHoles((d.measurement_details?.potholes?.large_holes ?? []).map(h=>({diameter:String(h.diameter_mm),depth:String(h.depth_mm),area:String(h.area_sqm)}))); }} /><AdminButton palette={p} disabled={busy || dirty} tone="danger" label="Remove" onPress={() => setConfirmation(`remove:${d.id}`)} /></View>}
       </View>)}</View>
       {!distresses.length && <Text style={{ color: p.muted, marginBottom: 12 }}>No distress records saved.</Text>}
       {editable && <View style={{ gap: 14, marginTop: 16 }}>
-        <Choices label="Asphalt distress type" value={typeId} options={data.types.filter(t => t.is_active).map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity(''); }} />
+        <Choices label="Asphalt distress type" value={typeId} options={data.types.filter(t => t.is_active && t.astm_edition === EDITION).map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity('');setSmallCount('');setLargeHoles([]); }} />
         {!data.types.length && <Notice>The live distress catalog is empty. Ask an administrator to configure engineer-validated distress names, units and severity requirements in Settings.</Notice>}
         {type && (type.severity_required ? <View style={{ gap: 8 }}><Text style={{ color: p.text, fontWeight: '700' }}>Severity</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{type.allowed_severities.map(value => {
           const label = normalizeDistressSeverity(value);
@@ -153,7 +162,17 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
           const selectedSeverity = severity === value;
           return <Pressable accessibilityLabel={`${label} severity`} accessibilityRole="radio" accessibilityState={{ selected: selectedSeverity }} key={value} onPress={() => setSeverity(value)} style={{ backgroundColor: selectedSeverity ? colors.backgroundColor : p.panel, borderColor: selectedSeverity ? colors.borderColor : p.border, borderRadius: 8, borderWidth: 1, minWidth: 88, paddingHorizontal: 14, paddingVertical: 11 }}><Text style={{ color: selectedSeverity ? colors.textColor : p.text, fontWeight: '700', textAlign: 'center' }}>{selectedSeverity ? '✓ ' : ''}{label}</Text></Pressable>;
         })}</View></View> : <Choices label="Severity" value={severity} options={[{ value: '', label: 'Not applicable' }]} onChange={setSeverity} />)}
-        <AdminField palette={p} label={`Measured quantity (${type?.default_unit_of_measure ?? 'select distress first'})`} keyboardType="numeric" value={quantity} onChangeText={setQuantity} />
+        {type?.astm_code === 13 ? <View style={{gap:12}}>
+          <Notice>Classify small holes using Table X1.1 and record diameter/depth evidence in the notes. Exactly 200, 450 or 750 mm requires engineering clarification. Large holes use measured area / 0.5 m²; equivalent counts may be fractional.</Notice>
+          <AdminField palette={p} label="Small potholes at this severity (whole count; zero if none)" value={smallCount} keyboardType="numeric" onChangeText={setSmallCount} />
+          {largeHoles.map((h,i)=><View key={i} style={{gap:8}}>
+            <AdminField palette={p} label="Large-hole diameter (>750 mm)" keyboardType="numeric" value={h.diameter} onChangeText={v=>setLargeHoles(rows=>rows.map((r,j)=>j===i?{...r,diameter:v}:r))} />
+            <AdminField palette={p} label="Maximum depth (mm; ≤25 medium, >25 high)" keyboardType="numeric" value={h.depth} onChangeText={v=>setLargeHoles(rows=>rows.map((r,j)=>j===i?{...r,depth:v}:r))} />
+            <AdminField palette={p} label="Measured hole area (m²)" keyboardType="numeric" value={h.area} onChangeText={v=>setLargeHoles(rows=>rows.map((r,j)=>j===i?{...r,area:v}:r))} />
+            <AdminButton palette={p} label="Remove this large hole" tone="secondary" onPress={()=>setLargeHoles(rows=>rows.filter((_,j)=>j!==i))} />
+          </View>)}
+          <AdminButton palette={p} label="Add measured large pothole" tone="secondary" onPress={()=>setLargeHoles(rows=>[...rows,{diameter:'',depth:'',area:''}])} />
+        </View> : <AdminField palette={p} label={`Measured quantity (${type?.default_unit_of_measure ?? 'select distress first'})`} keyboardType="numeric" value={quantity} onChangeText={setQuantity} />}
         <AdminField palette={p} label="Location from sample start, metres (optional)" keyboardType="numeric" value={location} onChangeText={setLocation} />
         <AdminField palette={p} label="Distress / location notes" value={distressNotes} onChangeText={setDistressNotes} multiline />
         <AdminButton palette={p} disabled={busy || dirty || !type} label={editingId ? 'Save measurement changes' : 'Add distress'} onPress={() => void run(addDistress)} />
@@ -171,7 +190,9 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
       </View>}
     </AdminPanel>
     <AdminPanel palette={p} title="PCI calculation & review" subtitle={computation ? `${computation.edition} · Input revision ${computation.input_revision}` : data.settings.active_edition}>
-      {computation?.verification === 'verified' && computation.output_snapshot ? <PciResultDetails data={data} distresses={distresses} label="Verified sample-unit calculation" result={computation.output_snapshot} sample={sample} verified /> : preliminary.result ? <><Notice>{PRELIMINARY_RESULT_LABEL}. This illustrative calculation is displayed only in the browser and is not saved or eligible for approval.</Notice><PciResultDetails data={data} distresses={distresses} label={PRELIMINARY_RESULT_LABEL} result={preliminary.result} sample={sample} /></> : <Notice>{REFERENCE_PENDING}. {preliminary.reason} No validated PCI is available.</Notice>}
+      {computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} label={computation.output_snapshot.status==='provisional' ? PROVISIONAL_LABEL : 'Saved calculation — see approved snapshot for historical evidence'} /> : <Notice>No D6433-24 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>}
+      {sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton palette={p} disabled={busy} label="Calculate provisional D6433-24 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
+
       {editable && <View style={{ marginTop: 16 }}><AdminButton palette={p} disabled={busy || dirty} label="Submit for engineer review" onPress={() => setConfirmation('submit')} /></View>}
       {reviewer && ['submitted', 'approved'].includes(sample.workflow_state) && <View style={{ gap: 12, marginTop: 16 }}>
         <AdminField palette={p} label="Engineer review comments (required when returning)" multiline value={comments} onChangeText={setComments} />
@@ -194,48 +215,14 @@ function SeverityBadge({ severity }: { severity: string }) {
   return <View style={{ backgroundColor: colors.backgroundColor, borderColor: colors.borderColor, borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ color: colors.textColor, fontSize: 11, fontWeight: '800' }}>{label}</Text></View>;
 }
 
-function buildPreliminaryResult(sample: Sample, data: WorkflowData, distresses: WorkflowData['distresses']): { result: PCIResult | null; reason: string } {
-  const area = Number(sample.area_sqm);
-  if (!Number.isFinite(area) || area <= 0) return { result: null, reason: 'A valid sample-unit area is required.' };
-  if (!distresses.length) return { result: null, reason: sample.no_distress_confirmed ? 'A verified adapter must confirm the no-distress result.' : 'Record a distress or confirm no distress before submission.' };
-
-  const entries: DistressEntry[] = [];
-  for (const distress of distresses) {
-    const catalog = data.types.find(type => type.id === distress.distress_type_id);
-    const reference = ASPHALT_DISTRESSES.find(type => normalizeName(type.name) === normalizeName(catalog?.name ?? ''));
-    const unit = normalizeMeasurementUnit(distress.unit_of_measure);
-    if (!catalog || !reference || !unit) return { result: null, reason: `The illustrative engine cannot map ${catalog?.name ?? 'a recorded distress'} to its reference definition.` };
-    entries.push({ uid: distress.id, distressId: reference.id, distressName: catalog.name, severity: normalizeDistressSeverity(distress.severity) ?? 'Medium', quantity: Number(distress.quantity), unit });
-  }
-
-  return { result: computePCI(entries, area), reason: '' };
-}
-
-function normalizeMeasurementUnit(unit: string): MeasurementUnit | null {
-  if (['m²', 'm2', 'sqm'].includes(unit)) return 'm²';
-  if (unit === 'm') return 'm';
-  if (['No.', 'count'].includes(unit)) return 'No.';
-  return null;
-}
-
-function normalizeName(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function PciResultDetails({ data, distresses, label, result, sample, verified = false }: { data: WorkflowData; distresses: WorkflowData['distresses']; label: string; result: PCIResult | CalculationOutput; sample: Sample; verified?: boolean }) {
-  const p = useAdminPalette();
-  const illustrative = 'distresses' in result;
-  const densities = illustrative ? result.distresses.map(item => item.density) : result.densities ?? [];
-  const deductValues = illustrative ? result.distresses.map(item => item.deductValue) : result.deduct_values ?? [];
-  const totalDeductValue = illustrative ? result.totalDeductValue : result.total_deduct_value;
-  const allowableDeducts = illustrative ? result.allowableDeducts : result.allowable_deducts;
-  const maximumCdv = illustrative ? result.maxCDV : result.max_corrected_deduct_value;
-  const condition = getPciCondition(Number(result.pci));
-  return <View style={{ gap: 12, marginTop: 14 }}>
-    <Text style={{ color: verified ? p.green : p.amber, fontSize: 15, fontWeight: '900' }}>{label}</Text>
-    <Text style={{ color: p.muted }}>Sample SU-{String(sample.unit_number).padStart(3, '0')} · {sample.area_sqm} m² · {sample.sample_type === 'additional' ? 'Additional' : 'Random'} · Reviewer status: {sample.workflow_state}</Text>
-    {distresses.map((distress, index) => <View key={distress.id} style={{ borderBottomColor: p.border, borderBottomWidth: 1, gap: 4, paddingBottom: 9 }}><Text style={{ color: p.text, fontWeight: '700' }}>{data.types.find(type => type.id === distress.distress_type_id)?.name ?? 'Recorded distress'} · {distress.severity ?? 'Not applicable'}</Text><Text style={{ color: p.muted }}>Quantity {distress.quantity} {distress.unit_of_measure} · Density {typeof densities[index] === 'number' ? densities[index].toFixed(2) : '—'}% · Deduct Value {deductValues[index] ?? '—'}</Text></View>)}
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}><ResultMetric label="TDV" value={formatMetric(totalDeductValue, 1)} /><ResultMetric label="Allowable deducts (m)" value={formatMetric(allowableDeducts, 2)} /><ResultMetric label="Maximum CDV" value={formatMetric(maximumCdv, 1)} /><ResultMetric label="PCI" value={formatMetric(result.pci, 0)} /><ResultMetric label="Condition" value={condition || '—'} /><ResultMetric label="Verification" value={verified ? 'Verified' : 'Pending'} /></View>
+function PciResultDetails({label,result}:{label:string;result:CalculationOutput & Partial<SampleOutput>}) {
+  const p=useAdminPalette();
+  return <View style={{gap:12,marginTop:14}}>
+    <Text style={{color:p.amber,fontWeight:'900'}}>{label}</Text>
+    {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{ASPHALT_CATALOG.find(d=>d.code===g.code)?.name} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Selected severity combination: density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(4)}</Text></View>)}
+    {!!result.severity_alternatives && <Text style={{color:p.muted}}>Evaluated {result.severity_alternatives.length} severity alternatives; displayed values are the selected maximum-PCI combination, not the original measurements.</Text>}
+    <View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}><ResultMetric label="TDV (before fractional trim)" value={formatMetric(result.total_deduct_value,4)} /><ResultMetric label="Allowable deducts (m)" value={result.iterations.length ? formatMetric(result.allowable_deducts,6) : 'Shortcut: not applicable'} /><ResultMetric label="Maximum CDV" value={formatMetric(result.max_corrected_deduct_value,4)} /><ResultMetric label="Provisional PCI" value={formatMetric(result.pci,2)} /><ResultMetric label="Saved condition" value={result.condition} /></View>
+    <Text style={{color:p.muted}}>Full precision is saved; displayed numbers are rounded. {result.reference_id ?? 'Legacy reference'} {result.reference_digest ?? ''}</Text>
   </View>;
 }
 
