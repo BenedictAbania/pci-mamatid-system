@@ -3,7 +3,7 @@ export const roleLabels: Record<Role, string> = { admin: 'System Administrator',
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && Object.hasOwn(roleLabels, value); }
 export function homeForRole(role: Role) { return role === 'admin' ? '/dashboard' : '/workspace'; }
 const routes: Record<string, readonly Role[]> = {
-  '/dashboard': ['admin'],
+  '/dashboard': ['admin', 'viewer'],
   '/workspace': ['reviewer', 'encoder', 'viewer'],
   '/field-inspections': ['reviewer', 'encoder'],
   '/sampling': ['reviewer'],
@@ -11,9 +11,9 @@ const routes: Record<string, readonly Role[]> = {
   // This legacy CRUD screen bypasses the authenticated workflow and is intentionally inaccessible.
   '/inspections': [],
   '/pci-results': ['admin', 'reviewer', 'viewer'],
-  '/maintenance-plan': ['admin'],
+  '/maintenance-plan': ['admin', 'reviewer', 'viewer'],
   '/users': ['admin'],
-  '/reports': ['admin'],
+  '/reports': ['admin', 'reviewer', 'viewer'],
   '/settings': ['admin'],
   '/rls-test': ['admin'],
 };

@@ -1,3 +1,4 @@
+import { PageControls } from '@/components/workflow/pagination';
 import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
@@ -7,10 +8,10 @@ import { callWorkflow } from '@/lib/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
 
 export default function Sampling() {
-  const state = useWorkflow();
+  const [sectionId, setSectionId] = useState('');
+  const state = useWorkflow(undefined, sectionId);
   const p = useAdminPalette();
   const { role, user } = useAuth();
-  const [sectionId, setSectionId] = useState('');
   const [inspector, setInspector] = useState('');
   const [reviewer, setReviewer] = useState(user?.id ?? '');
   const [total, setTotal] = useState('');
@@ -28,6 +29,8 @@ export default function Sampling() {
   const planned = state.data?.samples.filter(s => s.section_id === sectionId) ?? [];
   const input = (label: string, value: string, onChangeText: (text: string) => void) => <AdminField palette={p} label={label} value={value} onChangeText={onChangeText} />;
   return <AdminShell title="Sample-unit planning" subtitle="Engineer-defined homogeneous boundaries and traceable random / additional sample selection." loading={state.loading} onRefresh={() => void state.refresh()}>
+    <PageControls {...state.pagination} /><PageControls label="Assignees / catalog" {...state.referencesPagination} />
+    <Notice>Sections and assignee choices are paged. The unit preview shows up to 50 units; use Field Inspections for the paged register.</Notice>
     {!!state.error && <Notice error>{state.error}</Notice>}{!!state.message && <Notice>{state.message}</Notice>}
     <Notice>{SAMPLE_UNIT_GUIDANCE}</Notice>
     <Notice>Area-based counts are layout estimates, not automatic homogeneous sections. The ASTM required-inspection sampling procedure still needs a verified reference implementation. An engineer must supply and justify the required count; no statistical rule is invented.</Notice>
@@ -38,7 +41,7 @@ export default function Sampling() {
         <Text style={{ color: p.muted }}>{recommendation ? `Estimated ${recommendation.count} possible units at ${recommendation.areaPerUnit.toFixed(1)} m² each. ${recommendation.needsAdjustment ? 'Layout adjustment required.' : 'Engineer confirmation required.'}` : 'Enter valid section dimensions in Road Network first.'}</Text>
         {role === 'admin' && <Notice>Administrators manage the road inventory. A signed-in civil engineer confirms the boundaries, required count and final sampling plan.</Notice>}
         <Choices label="Assigned field inspector" value={inspector} options={state.data.profiles.filter(u => u.role === 'encoder' && u.is_active !== false).map(u => ({ value: u.id, label: u.full_name || u.id }))} onChange={setInspector} />
-        {!planned.length && <>
+        {!section.homogeneous_confirmed_by && <>
           <Choices label="Independent review engineer" value={reviewer} options={state.data.profiles.filter(u => u.role === 'reviewer' && u.is_active !== false).map(u => ({ value: u.id, label: u.full_name || u.id }))} onChange={setReviewer} />
           {input('Start location / chainage description', start, setStart)}{input('End location / chainage description', end, setEnd)}
           {input('Total possible sample units (engineer adjusted)', total, setTotal)}
@@ -51,7 +54,7 @@ export default function Sampling() {
             await callWorkflow('lakad_plan_samples', { target: sectionId, payload: { total: Number(total), required: Number(required), inspector, reviewer, start, end, rationale } });
           }, 'Plan confirmed. The database generated and recorded the random selection.')} />
         </>}
-        {!!planned.length && <>
+        {!!section.homogeneous_confirmed_by && <>
           <Notice>This plan is locked against boundary changes. Create a new section revision for a materially different layout.</Notice>
           {planned.sort((a, b) => a.unit_number - b.unit_number).map(s => <Text key={s.id} style={{ color: p.text }}>SU-{String(s.unit_number).padStart(3, '0')} · {s.sample_type === 'additional' ? 'Additional' : 'Random'} · {s.start_m}–{s.end_m} m · {s.workflow_state}</Text>)}
           <AdminButton palette={p} tone="secondary" label="Plan an additional sample" disabled={role !== 'reviewer'} onPress={() => setAdditional(!additional)} />

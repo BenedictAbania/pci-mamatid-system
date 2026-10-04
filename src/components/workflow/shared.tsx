@@ -1,10 +1,19 @@
+import { usePathname } from 'expo-router';
+import { useAuth } from '@/providers/AuthProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useAdminPalette } from '@/components/admin/admin-shell';
-import { loadWorkflow, WorkflowData } from '@/lib/workflow-data';
+import { loadWorkflow, type WorkflowPage, type WorkflowScope } from '@/lib/workflow-data';
 
-export function useWorkflow() {
-  const [data, setData] = useState<WorkflowData | null>(null);
+export function useWorkflow(sampleId?: string, sectionId?: string) {
+  const pathname = usePathname();
+  const { role } = useAuth();
+  const scope: WorkflowScope = pathname === '/settings' ? 'types' : ['/sampling', '/road-network'].includes(pathname) ? 'sections' : 'samples';
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const [referenceCursors, setReferenceCursors] = useState<(string | null)[]>([null]);
+  const after = cursors[cursors.length - 1];
+  const referenceAfter = referenceCursors[referenceCursors.length - 1];
+  const [data, setData] = useState<WorkflowPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -14,27 +23,35 @@ export function useWorkflow() {
     const request = ++requestSequence.current;
     setLoading(true);
     try {
-      const nextData = await loadWorkflow();
+      if (role === 'viewer') throw new Error('Viewers use published reports.');
+      const nextData = await loadWorkflow(scope, after, sampleId, sectionId, referenceAfter);
       if (request === requestSequence.current) { setData(nextData); setError(''); }
-    }
-    catch (reason) {
+    } catch (reason) {
       if (request === requestSequence.current) { setData(null); setError(reason instanceof Error ? reason.message : 'Unable to load live data.'); }
-    }
-    finally { if (request === requestSequence.current) setLoading(false); }
-  }, []);
+    } finally { if (request === requestSequence.current) setLoading(false); }
+  }, [scope, after, sampleId, sectionId, referenceAfter, role]);
   useEffect(() => {
-    // Initial synchronization with the remote data source.
+    // Synchronization with a selected, bounded workspace page.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    return () => { requestSequence.current += 1; };
+    // Request sequence counter, not a DOM ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { ++requestSequence.current; };
   }, [refresh]);
   async function run(task: () => Promise<unknown>, success = 'Saved successfully.') {
     setBusy(true); setError(''); setMessage('');
     try { await task(); await refresh(); setMessage(success); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Operation failed.'); }
+    catch (reason) { await refresh(); setError(reason instanceof Error ? reason.message : 'Operation failed.'); }
     finally { setBusy(false); }
   }
-  return { data, loading, busy, message, error, refresh, run, setError };
+  return { data, loading, busy, message, error, refresh, run, setError,
+    pagination: { page: cursors.length, hasNext: data?.hasNext ?? false, busy: loading || busy,
+      next: () => { if (data?.pageLastId) setCursors([...cursors, data.pageLastId]); },
+      previous: () => setCursors(cursors.slice(0, -1)) },
+    referencesPagination: { page: referenceCursors.length, hasNext: data?.referenceHasNext ?? false, busy: loading || busy,
+      next: () => { if (data?.referenceLastId) setReferenceCursors([...referenceCursors, data.referenceLastId]); },
+      previous: () => setReferenceCursors(referenceCursors.slice(0, -1)) },
+  };
 }
 export function Notice({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
   const p = useAdminPalette();

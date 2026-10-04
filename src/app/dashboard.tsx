@@ -1,3 +1,4 @@
+import { ApprovedReports } from '@/components/workflow/approved-reports';
 import { AdminShell } from '@/components/admin/admin-shell';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -94,7 +95,7 @@ function buildConicGradient(
   return `conic-gradient(${stops.join(', ')})`;
 }
 
-export default function AdminDashboard() {
+function AdminDashboard() {
   const { width } = useWindowDimensions();
   const { profile, role, user } = useAuth();
   const { colorScheme } = useAppTheme();
@@ -165,10 +166,7 @@ export default function AdminDashboard() {
     });
     return [...latestResultBySection.values()];
   }, [data.results]);
-  const averagePci = assessedResults.length
-    ? assessedResults.reduce((sum, result) => sum + Number(result.pci), 0) /
-      assessedResults.length
-    : null;
+  const averagePci = data.approvedSummary?.average ?? null;
   const maintenanceSections = assessedResults.filter((result) => Number(result.pci) < 55).length;
 
   const conditionGroups = useMemo(() => {
@@ -315,12 +313,13 @@ export default function AdminDashboard() {
 
       {!loading && (
         <>
+          <Text style={{ color: palette.muted, marginBottom: 12 }}>Inventory totals and average current approved PCI cover all records. Workflow, account, activity and section-chart previews show up to 50 records.</Text>
           <View style={styles.metricGrid}>
-            <MetricCard color={palette.blue} icon="git-branch" label="Road Branches" palette={palette} softColor={palette.blueSoft} value={data.branches.length.toLocaleString()} />
-            <MetricCard color={palette.blue} icon="map" label="Road Sections" palette={palette} softColor={palette.blueSoft} value={data.sections.length.toLocaleString()} />
-            <MetricCard color={palette.green} icon="clipboard" label="Sample Units" palette={palette} softColor={palette.greenSoft} value={data.inspections.length.toLocaleString()} />
-            <MetricCard color={palette.amber} icon="pie-chart" label="Avg. Official Section PCI" palette={palette} softColor={palette.amberSoft} value={averagePci === null ? '—' : averagePci.toFixed(1)} />
-            <MetricCard color={palette.red} icon="alert-triangle" label="Sections Needing Maintenance" palette={palette} softColor={palette.redSoft} value={maintenanceSections.toLocaleString()} />
+            <MetricCard color={palette.blue} icon="git-branch" label="Road Branches" palette={palette} softColor={palette.blueSoft} value={(data.totals?.branches ?? 0).toLocaleString()} />
+            <MetricCard color={palette.blue} icon="map" label="Road Sections" palette={palette} softColor={palette.blueSoft} value={(data.totals?.sections ?? 0).toLocaleString()} />
+            <MetricCard color={palette.green} icon="clipboard" label="Sample Units" palette={palette} softColor={palette.greenSoft} value={(data.totals?.samples ?? 0).toLocaleString()} />
+            <MetricCard color={palette.amber} icon="pie-chart" label="Avg. Current Approved Sample PCI" palette={palette} softColor={palette.amberSoft} value={averagePci === null ? '—' : averagePci.toFixed(1)} />
+            <MetricCard color={palette.red} icon="alert-triangle" label="Loaded Sections Needing Maintenance" palette={palette} softColor={palette.redSoft} value={maintenanceSections.toLocaleString()} />
           </View>
 
           <Panel palette={palette} title="Workflow Status" style={{ marginTop: 16 }}>
@@ -347,7 +346,7 @@ export default function AdminDashboard() {
           </Panel>
 
           <View style={[styles.panelGrid, { marginTop: 16 }, isNarrow && styles.stack]}>
-            <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle="Based only on persisted published section results" title="Road Condition Distribution">
+            <Panel palette={palette} style={!isNarrow ? styles.halfPanel : undefined} subtitle="Up to 50 current published section results; superseded calculations excluded" title="Road Condition Distribution">
               {conditionGroups.length ? (
                 <View style={[styles.conditionChart, isPhone && styles.conditionChartPhone]}>
                   {Platform.OS === 'web' ? (
@@ -770,3 +769,8 @@ const styles = StyleSheet.create({
   activityDetail: { fontSize: 10, marginTop: 3 },
   activityDate: { fontSize: 9, maxWidth: 78, textAlign: 'right' },
 });
+
+export default function Dashboard() {
+  const { role } = useAuth();
+  return role === 'viewer' ? <ApprovedReports title="Published PCI Dashboard" mode="overview" /> : <AdminDashboard />;
+}

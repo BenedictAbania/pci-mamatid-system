@@ -1,5 +1,6 @@
+import { PageControls } from '@/components/workflow/pagination';
 import { Feather } from '@expo/vector-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
 
 import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
@@ -24,6 +25,8 @@ export default function UsersScreen() {
   const palette = useAdminPalette();
   const { user } = useAuth();
   const { width } = useWindowDimensions();
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const cursor = cursors[cursors.length - 1];
   const [profiles, setProfiles] = useState<LakadAccount[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -35,24 +38,31 @@ export default function UsersScreen() {
   const [pending, setPending] = useState<{ account: LakadAccount; role: UserRole; active: boolean } | null>(null);
   const isPhone = width < 760;
 
+  const sequence = useRef(0);
   const refresh = useCallback(async () => {
+    const request = ++sequence.current;
     try {
+      setLoading(true);
       await ensureWorkflowReady();
-      const { data, error } = await supabase.rpc('lakad_accounts');
+      const { data, error } = await supabase.rpc('lakad_accounts_page', { page_after: cursor, page_size: 50 });
       if (error) throw new Error(error.message);
+      if (request !== sequence.current) return;
       setError('');
       setProfiles(data as LakadAccount[]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'User profiles could not be loaded.');
+      if (request === sequence.current) { setProfiles([]); setError(reason instanceof Error ? reason.message : 'User profiles could not be loaded.'); }
     } finally {
-      setLoading(false);
+      if (request === sequence.current) setLoading(false);
     }
-  }, []);
+  }, [cursor]);
 
   useEffect(() => {
     // Initial synchronization with the remote data source.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
+    // Request sequence counter, not a DOM ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { ++sequence.current; };
   }, [refresh]);
 
   const filtered = profiles.filter((profile) =>
@@ -103,6 +113,8 @@ export default function UsersScreen() {
 
   return (
     <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle="Review authenticated profiles and assign system responsibilities." title="Users & Roles">
+      <PageControls page={cursors.length} busy={loading} hasNext={profiles.length === 50} previous={() => setCursors(cursors.slice(0, -1))} next={() => { const last = profiles.at(-1); if (last) setCursors([...cursors, last.id]); }} />
+      <Notice message="Counts and search apply to this account page (up to 50 records)." palette={palette} tone="info" />
       {error ? <Notice message={error} palette={palette} tone="error" /> : null}
       {message ? <Notice message={message} palette={palette} tone="info" /> : null}
       <Notice message="Account changes use checked backend operations. Deactivation blocks database access while preserving inspection history." palette={palette} tone="info" />

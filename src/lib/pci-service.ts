@@ -1,5 +1,5 @@
 /** Official integration boundary. This module never imports the public demo curves. */
-export const REFERENCE_PENDING = 'Preliminary — ASTM reference data pending verification';
+export const REFERENCE_PENDING = 'Prototype — reference data pending verification';
 export const SAMPLE_UNIT_TARGET_AREA = 230;
 export const SAMPLE_UNIT_MIN_AREA = 137;
 export const SAMPLE_UNIT_MAX_AREA = 323;
