@@ -23,6 +23,7 @@ async function run() {
   await db.exec(await fs.readFile('supabase/migrations/20260916_authenticated_workflow.sql', 'utf8'));
   const alignmentMigration = await fs.readFile('supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
   await db.exec(alignmentMigration);
+  await db.exec(await fs.readFile('supabase/migrations/20261004151522_published_revisions_and_reports.sql', 'utf8'));
 
   const ids = {
     admin: '00000000-0000-4000-8000-000000000001',
@@ -128,7 +129,12 @@ async function run() {
   await db.query('select lakad_inspection_action($1, $2)', [su1, 'start']);
   checks++;
 
-  const invoke = (su, action, payload = {}) => db.query('select lakad_inspection_action($1, $2, $3)', [su, action, payload]);
+  const invoke = async (su, action, payload = {}) => {
+    await db.exec('reset role');
+    const row = (await db.query('select input_revision,action_version from sample_units where id=$1', [su])).rows[0];
+    await db.exec('set role authenticated');
+    return db.query('select lakad_inspection_action($1,$2,$3)', [su, action, { revision: row.input_revision, version: row.action_version, ...payload }]);
+  };
 
   await invoke(su1, 'distress', { distress_type_id: dIds['ALL'], severity: 'low', quantity: 5, location_m: 10 });
   await invoke(su1, 'distress', { distress_type_id: dIds['LON'], severity: 'medium', quantity: 8, location_m: 20 });
@@ -195,13 +201,18 @@ async function run() {
   await as('viewer');
 
   const viewerSU = (await db.query('select * from sample_units where id = $1', [su1])).rows;
-  check(viewerSU.length === 1, 'E.1: Viewer can read approved sample unit');
-  await rejected(() => invoke(su1, 'start'), /assigned inspector/i);
+  check(viewerSU.length === 0, 'E.1: Viewer cannot read internal inspection rows');
+  await rejected(() => invoke(su1, 'start'), /outside your assignment/i);
   check(true, 'E.2: Viewer cannot alter data');
 
   const viewerSU2 = (await db.query('select * from sample_units where id = $1', [su2])).rows;
   check(viewerSU2.length === 0, 'E.3: Viewer cannot read unapproved workflow data');
 
+  check((await db.query('select * from approved_results')).rows.length === 0, 'E.4: Unpublished approvals are excluded');
+  await as('reviewer');
+  await invoke(su1, 'publish');
+  await as('viewer');
+  check((await db.query('select * from approved_results')).rows.length === 1, 'E.5: Viewer reads only published approved snapshot');
   await db.close();
   console.log(`E2E tests passed! (${checks} checks)`);
 }

@@ -1,3 +1,4 @@
+import { PageControls } from '@/components/workflow/pagination';
 import { Feather } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -42,7 +43,7 @@ export default function RoadNetworkScreen() {
   const { role, user } = useAuth();
   const { width } = useWindowDimensions();
 
-  const { data, error: loadError, loading, refresh } = useWorkflow();
+  const { data, error: loadError, loading, refresh, pagination, referencesPagination } = useWorkflow();
 
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
@@ -212,7 +213,9 @@ export default function RoadNetworkScreen() {
 
   return (
     <AdminShell
-      action={role === 'admin' ? <View style={styles.actions}><AdminButton icon="plus" label="Add branch" onPress={() => openBranch()} palette={palette} tone="secondary" /><AdminButton disabled={!branches.length} icon="plus" label="Add section" onPress={() => openSection()} palette={palette} /></View> : undefined}
+      action={role === 'admin' ? <View style={styles.actions}>
+      <PageControls {...pagination} /><PageControls label="Branches / references" {...referencesPagination} />
+      <Notice>Inventory summaries and search apply to the loaded section and branch pages.</Notice><AdminButton icon="plus" label="Add branch" onPress={() => openBranch()} palette={palette} tone="secondary" /><AdminButton disabled={!branches.length} icon="plus" label="Add section" onPress={() => openSection()} palette={palette} /></View> : undefined}
       loading={loading}
       onRefresh={refresh}
       onSearchChange={setQuery}

@@ -53,7 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadingProfileFor.current = userId;
     setError(''); setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      const access = await supabase.rpc('lakad_session_access');
+      if (access.error || !isRole(access.data?.role)) throw new Error('Your access could not be loaded. Verify the published-revisions migration.');
+      if (!access.data.is_active) throw new Error('Your account is deactivated. Contact an administrator.');
+      const { data, error } = access.data.role === 'viewer'
+        ? { data: { id: userId, full_name: 'Decision-maker', role: 'viewer', is_active: true, created_at: '', updated_at: '' }, error: null }
+        : await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
@@ -131,10 +136,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       authEventReceived = true;
-      // Supabase can emit SIGNED_IN again when a tab regains focus and emits
-      // TOKEN_REFRESHED during normal renewal. Keep an already resolved role
-      // instead of blanking it and bouncing the router through a loading state.
-      applySession(nextSession, event === 'USER_UPDATED');
+      // Repeated SIGNED_IN events retain the resolved role; token renewal and
+      // user changes refresh active access, including deactivation/role changes.
+      applySession(nextSession, event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED');
     });
 
     // This ref is a request sequence counter, not a DOM element.

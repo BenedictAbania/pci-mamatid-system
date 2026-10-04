@@ -102,8 +102,8 @@ function unwrap<T>(data: T | null, error: { message: string } | null) {
 
 export async function loadRoadNetwork() {
   const [branchesResult, sectionsResult] = await Promise.all([
-    supabase.from('branches').select('*').order('name'),
-    supabase.from('sections').select('*').order('created_at', { ascending: false }),
+    supabase.from('branches').select('*').order('name').order('id').limit(50),
+    supabase.from('sections').select('*').order('created_at', { ascending: false }).order('id').limit(50),
   ]);
   return {
     branches: (unwrap(branchesResult.data, branchesResult.error) ?? []) as BranchRecord[],
@@ -179,10 +179,10 @@ export async function removeSection(id: string) {
 
 export async function loadInspections() {
   const [inspectionsResult, sectionsResult, branchesResult, profilesResult] = await Promise.all([
-    supabase.from('sample_units').select('*').order('created_at', { ascending: false }),
-    supabase.from('sections').select('*').order('name'),
-    supabase.from('branches').select('*').order('name'),
-    supabase.from('profiles').select('*').order('full_name'),
+    supabase.from('sample_units').select('*').order('created_at', { ascending: false }).order('id').limit(50),
+    supabase.from('sections').select('*').order('name').order('id').limit(50),
+    supabase.from('branches').select('*').order('name').order('id').limit(50),
+    supabase.from('profiles').select('*').order('full_name').order('id').limit(50),
   ]);
   return {
     inspections: (unwrap(inspectionsResult.data, inspectionsResult.error) ?? []) as InspectionRecord[],
@@ -243,8 +243,8 @@ export async function removeInspection(id: string) {
 export async function loadPciData() {
   const [base, distressesResult, typesResult] = await Promise.all([
     loadInspections(),
-    supabase.from('distress_records').select('*').order('created_at', { ascending: false }),
-    supabase.from('distress_types').select('id, code, name, description, default_unit_of_measure, is_active').order('name'),
+    supabase.from('distress_records').select('*').order('created_at', { ascending: false }).order('id').limit(50),
+    supabase.from('distress_types').select('id, code, name, description, default_unit_of_measure, is_active').order('name').order('id').limit(50),
   ]);
   return {
     ...base,
@@ -254,7 +254,7 @@ export async function loadPciData() {
 }
 
 export async function loadProfiles() {
-  const { data, error } = await supabase.from('profiles').select('*').order('full_name');
+  const { data, error } = await supabase.from('profiles').select('*').order('full_name').order('id').limit(50);
   return (unwrap(data, error) ?? []) as ProfileRecord[];
 }
 

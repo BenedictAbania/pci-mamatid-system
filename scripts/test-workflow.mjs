@@ -38,15 +38,15 @@ check(pci.rankPriorities([{ id: 'a', pci: 40, safety: false, highSeverity: 0, af
 const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
 check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
 const fieldSource = await fs.readFile('src/app/field-inspections.tsx', 'utf8');
-check(fieldSource.includes('Preliminary Result — Pending ASTM/Engineering Validation'), 'Authenticated sample preview is explicitly preliminary');
+check(fieldSource.includes('Prototype — Pending ASTM/Engineering Validation'), 'Authenticated sample preview is explicitly preliminary');
 check(fieldSource.includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
 check(fieldSource.includes('Inspection date cannot be in the future.'), 'Encoder form rejects future inspection dates');
-const workspaceSource = await fs.readFile('src/app/workspace.tsx', 'utf8');
-check(workspaceSource.includes('Official Section PCI Pending Engineering Validation'), 'Missing section aggregation is explicitly pending');
+const workspaceSource = await fs.readFile('src/components/workflow/approved-reports.tsx', 'utf8');
+check(workspaceSource.includes('Section aggregation remains pending engineering validation.'), 'Missing section aggregation is explicitly pending');
 check(!workspaceSource.includes('Section PCI is represented by the mean'), 'No unresolved section PCI formula is asserted');
 const dashboardSource = await fs.readFile('src/lib/dashboard.ts', 'utf8');
-check(dashboardSource.includes("'section_results'"), 'Dashboard condition summaries use persisted section results');
-const reportsSource = await fs.readFile('src/app/reports.tsx', 'utf8');
+check(dashboardSource.includes("'lakad_section_reports'"), 'Dashboard condition summaries use persisted section results');
+const reportsSource = await fs.readFile('src/lib/approved-results.ts', 'utf8');
 check(reportsSource.includes('Verification Status'), 'Reports disclose result verification status');
 
 const db = new PGlite();
@@ -56,6 +56,7 @@ await db.exec(await fs.readFile('supabase/migrations/20260916_authenticated_work
 const alignmentMigration = await fs.readFile('supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
 const alignmentRollback = await fs.readFile('supabase/rollback/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
 await db.exec(alignmentMigration);
+await db.exec(await fs.readFile('supabase/migrations/20261004151522_published_revisions_and_reports.sql', 'utf8'));
 const ids = Object.fromEntries(['admin', 'reviewer', 'encoder', 'viewer', 'other'].map((name, index) => [name, `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`]));
 for (const [name, id] of Object.entries(ids)) {
   await db.query('insert into auth.users values($1,$2)', [id, `${name}@example.test`]);
@@ -126,7 +127,12 @@ await as('encoder');
 check((await db.query("select * from distress_types")).rows.length > 0, "encoder can read distress types");
 await rejected(() => db.query("insert into sample_units(section_id,unit_number) values($1,999)", [section]), /row-level security|permission denied/i);
 await db.query('select lakad_inspection_action($1,$2)', [sample, 'start']); checks++;
-const invoke = (action, payload = {}) => db.query('select lakad_inspection_action($1,$2,$3)', [sample, action, payload]);
+const invoke = async (action, payload = {}) => {
+  await db.exec('reset role');
+  const row = (await db.query('select input_revision,action_version from sample_units where id=$1', [sample])).rows[0];
+  await db.exec('set role authenticated');
+  return db.query('select lakad_inspection_action($1,$2,$3)', [sample, action, { revision: row.input_revision, version: row.action_version, ...payload }]);
+};
 await rejected(() => invoke('submit'), /Add distresses/);
 await rejected(() => invoke('distress', { distress_type_id: distress, quantity: -1, severity: 'low' }), /positive/);
 await invoke('distress', { distress_type_id: distress, quantity: 5, severity: 'low', location_m: 5 }); checks++;
@@ -163,8 +169,9 @@ await as('reviewer');
 await invoke('approve', { comments: 'Test fixture approval' });
 await invoke('publish'); checks++;
 await as('viewer');
-check((await db.query('select * from sample_units')).rows.length === 1, 'viewer sees only verified approved/published sample');
-await rejected(() => invoke('return', { comments: 'Denied' }), /independent/);
+check((await db.query('select * from sample_units')).rows.length === 0, 'viewer cannot read internal sample rows');
+check((await db.query('select * from approved_results')).rows.length === 1, 'viewer sees only a published approved snapshot');
+await rejected(() => invoke('return', { comments: 'Denied' }), /outside your assignment/);
 await as('admin');
 check((await db.query('delete from sections where id=$1 returning id', [section]).catch(e => ({ denied: /sample units/.test(e.message) }))).denied, 'inventory delete cannot cascade inspection history');
 await db.exec('reset role');

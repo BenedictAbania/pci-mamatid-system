@@ -37,7 +37,7 @@ function RootLayoutNav() {
     }
   }, [isLoading, isLoginRoute, isPublicRoute, role, router, session]);
 
-  if (pathname !== '/prototype' && ((!isPublicRoute && isLoading) || (!session && !isPublicRoute) || (session && isLoginRoute && !error))) {
+  if ((pathname === '/prototype' && isLoading) || (pathname !== '/prototype' && ((!isPublicRoute && isLoading) || (!session && !isPublicRoute) || (session && isLoginRoute && !error)))) {
     return (
       <View
         style={[
@@ -49,7 +49,7 @@ function RootLayoutNav() {
     );
   }
 
-  if (pathname !== '/prototype' && session && !isLoading && (error || !canAccess(role, pathname))) {
+  if (session && !isLoading && (error || ((pathname !== '/prototype' || role === 'viewer') && !canAccess(role, pathname)))) {
     return <View style={[styles.loadingScreen, { backgroundColor: colorScheme === 'dark' ? '#071127' : '#F7FAFF', padding: 24, gap: 18 }]}>
       <Text style={{ color: colorScheme === 'dark' ? '#FFFFFF' : '#071A43', fontSize: 18, textAlign: 'center' }}>{error || 'You are not authorized to open this page.'}</Text>
       {error ? <Pressable onPress={() => void refreshProfile()}><Text style={styles.actionText}>Retry profile</Text></Pressable> : <Pressable onPress={() => role && router.replace(homeForRole(role))}><Text style={styles.actionText}>Back to my dashboard</Text></Pressable>}

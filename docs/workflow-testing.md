@@ -1,106 +1,44 @@
-# Workflow verification and handoff
+# Workflow verification and hosted acceptance
 
-## Local commands (Windows CMD)
+## Automated checks
 
-```bat
-cd /d "D:\My Projects\pci-mamatid-system"
-npm install
-npx tsc --noEmit
-npx eslint .
-node scripts/test-workflow.mjs
-npm run web
+```powershell
+npm.cmd ci
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd test
+npm.cmd run build:web
 ```
 
-The database tests run entirely in PGlite. They reconstruct the inspected legacy
-schema, apply the new migration, emulate all four authenticated roles, and use
-explicitly fictional fixtures. They do not connect to Supabase or send invitations.
-They cover route allowlists, input validation, empty-reference PCI, sampling,
-assignment isolation, draft/submission/return/resubmission, independent approval,
-pending-reference approval denial, deactivation, snapshot preservation, Storage RLS,
-protected inventory deletion, and guarded rollback. They do not replace a full
-Supabase Auth/Storage integration test.
+Individual suites: test:workflow, test:e2e, test:alignment and test:published. All use local fictional data; none connect to Supabase, invite real users or apply hosted migrations. test:e2e is a database/domain scenario, not a browser/device end-to-end run.
 
-## Migration (NOT applied)
+PGlite rebuilds tests/schema-fixture.sql and the appropriate repository migrations. The published suite applies all three migrations and covers:
+- Viewer zero-row access to internal tables, including own profile, raw calculations, review comments, audit and accounts; only minimal role/active bootstrap and published approved snapshots are readable.
+- Pending, returned and unpublished approvals excluded from Viewer reads and summaries; private evidence paths and mutation attempts blocked even with a permissive legacy Storage read policy.
+- Missing/stale revision/version rejected; return/resubmit without edits creates a new computation; overlapping approve/return requests with the same token allow only one action.
+- Approved inputs/computations/reports locked; a reasoned correction retains the current approval until atomic replacement; historical evidence remains stored.
+- Current sample summaries count only current approvals, stale/incomplete or duplicated section cohorts are excluded, and historical exports retain saved road/distress labels despite renaming and edits.
+- More than one page of current approvals; no repeated samples, bounded pages, server totals covering rows beyond the page; account/RPC clamps and global section priorities.
 
-`supabase/migrations/20260915103850_authenticated_workflow.sql` extends existing tables,
-adds scoped restrictive policies without dropping existing policies, and introduces
-authenticated transactional RPCs. The original eight tables retain RLS.
-New tables: lakad_settings, inspection_computations, inspection_history, lakad_audit,
-section_results. New tables have RLS and no browser write grants.
+PGlite queues requests on one connection. These tests verify stale-token behavior and transactional logic, **not** independent PostgreSQL connections waiting on a row lock. They do not exercise real Supabase JWT/Auth, PostgREST schema caching, signed URLs or physical devices. Hosted schema compatibility/backfill and query performance remain separate gates.
 
-The rollback file is manual-only. It refuses to remove used workflow data or account
-deactivation changes. Back up first. Rolling back restores the original broad legacy
-read policies; those must not be considered secure for the requested viewer scope.
+## Disposable Supabase acceptance matrix
 
-Do not apply, push, merge, deploy or change hosted configuration without permission.
-Before application, compare the current remote schema against the recorded baseline,
-back up, and verify the migration in a disposable full Supabase environment.
+Apply only the reviewed new migration to a matching disposable baseline as described in [authenticated-system.md](authenticated-system.md). Use fictional accounts and records; never run these write scenarios in PCI Automation production.
 
-## Manual role matrix (after migration authorization)
+1. **Viewer network boundary:** sign in and visit workspace/dashboard/results/reports/priorities and try direct staff routes and /prototype. Inspect network requests: they must not query internal tables/accounts. Using the same Viewer bearer token, query internal tables through REST; no rows may be returned, including their own profile. Account/admin/workflow RPC attempts fail. Unpublished approved feed rows and private photos are absent. Published curated data/downloads contain no Reviewer comments, audit or account fields.
+2. **Real two-session race:** open two Reviewer sessions assigned to one submitted fictional sample with a trusted test-only calculation. Record revision/version in both sessions. Start approve vs return simultaneously (then return vs return on another submission). Exactly one succeeds; the other receives the changed/refresh error. Assert one history transition and at most one current approved result. Repeat with separate API connections, checking row-lock waits and transaction rollback.
+3. **No-edit resubmission:** return the sample, resubmit as Encoder without changing measurements, and try the old Reviewer token. It must fail. Refresh and review the new computation. Missing tokens and tokens from an earlier revision fail too.
+4. **Correction:** publish a test-only approved result, request correction with a reason as its assigned Encoder, then save/edit/submit the new draft. Viewer current PCI and section priority continue to show the old approval until replacement approval. Before replacement publication, Viewer current reports exclude that sample while old published history remains accessible. Publish the replacement; staff/Viewer summaries count it once and the old approval is superseded. Rankings referring to the old calculation disappear until a trusted new section result exists.
+5. **History:** save/export the original published report. Rename its branch/section/distress catalog, change correction measurements and photo captions, and publish the replacement. Original CSV/print, calculation output, date, names and photo content must still match the saved snapshot. A legacy approval without captured labels must show unavailable context, not current labels. Approved photo overwrite/delete attempts fail, including during corrections. Test newly issued signed URLs and expiry.
+6. **Aggregation and paging:** seed over 100 fictional samples/accounts/catalog records/sections. Navigate forward/back, empty/final pages and search labels; no screen downloads the entire table. Current summary counts all eligible current samples even beyond page 50; Viewers exclude unpublished approvals. Section ranks continue globally across pages with the documented PCI/risk/area ordering and no duplicate sections. Test a cursor invalidated by concurrent replacement by refreshing to page 1.
+7. **Limits and lifecycle:** test assigned Encoder/Reviewer isolation, deactivation with an existing JWT, role changes/token refresh, missing migration, network errors and refresh after a stale action. A selected inspection above 500 measurements or 100 photos must fail closed. Verify photo picker/upload rejection and signed-URL read permission for JPEG/PNG/WebP evidence under the existing size limit.
+8. **Visual/device:** inspect 390px and 1440px web widths, light/dark, keyboard/focus, drawer navigation, loading/error/success states and CSV/print-to-PDF layout. Exercise authenticated sessions, persistence, picker and evidence on an actual Expo 57-compatible phone/development build. Production web export alone is not device readiness.
 
-1. Anonymous: `/` and `/login` show login; `/prototype` calculates temporary data
-   without writes/uploads. Direct authenticated routes redirect to login.
-2. Admin: inventory, accounts, settings, all inspection states and audit. Cannot
-   approve as a substitute for the assigned engineer or demote/deactivate self.
-3. Reviewer: define homogeneous boundaries, justify required sample count, confirm
-   a random sample plan, add justified additional units, review assigned submissions.
-4. Encoder: only assigned units. Start planned unit, save date/notes/coordinates,
-   enter configured distress/severity/unit and positive measurements, add photos.
-   Submit locks editing; returned comments remain visible; correction can resubmit.
-5. Viewer: only verified approved/published sample data and published section results.
-   No editing controls. Direct RPC attempts must also fail.
-6. Deactivate an encoder: existing JWT must lose database access immediately; profile
-   refresh must show the inactive-account message. Reactivate to restore access.
+Use a test-only trusted service to stage fictional verified calculations in this disposable backend, with reference_id/algorithm_version clearly marked TEST ONLY. The shipped illustrative engine and pending adapter must still show **prototype**, cannot be approved, and must not write an official result.
 
-Test blank data, missing migration, network failures, empty catalog, invalid dates,
-partial coordinates, duplicates, quantity outside sample area, stale revisions,
-missing return comments, wrong assignment and approval without verified calculations.
-Test JPEG/PNG/WebP under 5 MB, unsupported files, upload after submission, and
-cross-assignment reads of Storage paths. Inspect browser network requests on prototype.
+## Release boundaries
 
-Test at 390px and 1440px widths, light/dark themes, keyboard focus, form labels,
-navigation drawer, error/success/loading states, printable report layout and private
-photographs. Browser/device verification has not yet been performed in this turn.
+The new migration is included for review and has not been applied to the connected project. The existing two workflow migrations were observed applied on 4 October 2026; the old documentation saying otherwise has been corrected. No app, Auth configuration or Edge Function is deployed by this work. The protected admin-invite function still needs a separately authorized configuration/deployment and invitation test.
 
-## Engineering dependencies (intentionally not invented)
-
-- The connected distress catalog and DV reference table were empty on inspection.
-  Admins can configure validated distress names, units, and severity rules after the
-  migration is applied. No DV/CDV reference values are invented or seeded.
-- `pci-service.ts` defines the sample and section adapter contracts. It does not
-  implement an official calculation without verified licensed DV/CDV references.
-  Outputs remain null/pending; approval is blocked by the backend.
-- Automatic ASTM required-inspection recommendation is pending verification. The
-  layout estimate uses the manuscript-specified 230 ± 93 m² guidance for pavement
-  width below 7.30 m, and the engineer
-  supplies and records the required count and justification.
-- The section-results table/consumer UI is ready for trusted results, but verified
-  random/additional weighting and server-side publication are not implemented yet.
-- The manuscript says section PCI is the mean PCI of inspected sample units,
-  weighted by area where applicable. The meaning of “where applicable” remains an
-  engineering decision and is not inferred by the application.
-- Historical calculations must use immutable input snapshots, edition/reference ID
-  and algorithm version. Do not promote legacy illustrative or unverified scores.
-- In-app map currently opens stored coordinates in OpenStreetMap; it is not an
-  embedded GIS map. Official report printing and mobile evidence need visual QA.
-- User invitation is implemented as a protected `admin-invite` Edge Function. It
-  requires an active administrator token and a server-side service-role secret; the
-  function has not been deployed.
-
-## Current verification status
-
-Role-aware routing, settings payloads, authenticated workflow pages, road inventory,
-and reference-catalog management have been reconciled. Existing unrelated edits were
-preserved. The hosted project remains unchanged, so authenticated modules intentionally
-show a single migration-required notice instead of issuing repeated failing requests.
-
-Latest isolated run: 76 checks passed, including catalog administration, refusal to
-roll back used workflow data, and successful rollback on an unused schema. TypeScript
-and full ESLint checks pass. A web production export succeeds for all routes. Browser
-and physical-device visual verification remains manual because no browser surface was
-available to the automation session.
-
-The tracked `.env` contains only the Expo-public Supabase URL and anonymous client-key
-variables; their values were not printed or changed. No service-role variable is tracked.
-Supabase RLS remains the security boundary. Package installation reported 14 moderate
-dependency advisories; no automatic or breaking audit fix was applied.
+Engineering work remains: licensed DV/CDV provenance and validation, VerifiedPciAdapter implementation, independently validated sample and section calculations/weighting, and civil-engineer sign-off. Do not substitute a fixture or browser prototype for any of these.

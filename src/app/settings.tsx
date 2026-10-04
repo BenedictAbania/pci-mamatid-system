@@ -1,3 +1,4 @@
+import { PageControls } from '@/components/workflow/pagination';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -15,7 +16,7 @@ export default function SettingsScreen() {
   const palette = useAdminPalette();
   const { colorScheme, toggleColorScheme } = useAppTheme();
   const { width } = useWindowDimensions();
-  const { data, loading, busy, error, message, refresh, run } = useWorkflow();
+  const { data, loading, busy, error, message, refresh, run, pagination } = useWorkflow();
   const isCompact = width < 820;
 
   const [edition, setEdition] = useState('');
@@ -85,6 +86,7 @@ export default function SettingsScreen() {
 
   return (
     <AdminShell loading={loading} onRefresh={refresh} subtitle="Manage safe application preferences and workflow configurations." title="System Settings">
+      <PageControls {...pagination} />
       {error ? <Notice error>{error}</Notice> : null}
       {message ? <Notice>{message}</Notice> : null}
 
