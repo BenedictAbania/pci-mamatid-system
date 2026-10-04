@@ -3,15 +3,15 @@ import type { BranchRecord, DistressRecord, DistressTypeRecord, InspectionRecord
 import type { CalculationOutput, ReferenceDistress } from './pci-service';
 
 export type WorkflowState = 'planned' | 'draft' | 'submitted' | 'returned' | 'approved' | 'published';
-export type Sample = InspectionRecord & { workflow_state: WorkflowState; assigned_to: string | null; reviewer_id: string | null; input_revision: number; action_version: number; current_approved_computation_id: string | null; start_m: number | null; end_m: number | null; inspection_notes: string | null; no_distress_confirmed: boolean; computation_id: string | null };
+export type Sample = InspectionRecord & { workflow_state: WorkflowState; assigned_to: string | null; reviewer_id: string | null; input_revision: number; action_version: number; current_approved_computation_id: string | null; start_m: number | null; end_m: number | null; inspection_notes: string | null; no_distress_confirmed: boolean; orientation_note: string | null; field_rules_confirmed: boolean; computation_id: string | null };
 export type RoadSection = SectionRecord & { start_description: string | null; end_description: string | null; homogeneous_confirmed_by: string | null; latitude: number | null; longitude: number | null };
-export type Computation = { id: string; sample_unit_id: string; input_revision: number; edition: string; verification: 'pending' | 'verified'; reference_id: string | null; output_snapshot: CalculationOutput | null; created_at: string };
+export type Computation = { id: string; sample_unit_id: string; input_revision: number; edition: string; verification: 'pending' | 'verified'; reference_id: string | null; output_snapshot: (CalculationOutput & Partial<import("./d6433-24/sample.ts").SampleOutput>) | null; created_at: string };
 export type History = { id: string; sample_unit_id: string; actor_id: string; action: string; comments: string | null; revision: number; created_at: string };
 export type Photo = { id: string; sample_unit_id: string; photo_path: string; caption: string | null };
 export type SectionResult = { id: string; section_id: string; edition: string; pci: number; condition: string; safety: boolean; high_severity: number; affected_area: number; sample_computation_ids: string[]; method: string; weights: Record<string, number>; published_at: string };
 export type Settings = { active_edition: string; priority_safety: boolean; priority_area: boolean };
 export type CatalogType = DistressTypeRecord & ReferenceDistress;
-export type WorkflowData = { samples: Sample[]; sections: RoadSection[]; branches: BranchRecord[]; profiles: ProfileRecord[]; types: CatalogType[]; distresses: (DistressRecord & { measurement_details: { location_m?: number | null } })[]; computations: Computation[]; history: History[]; photos: Photo[]; results: SectionResult[]; settings: Settings; audit: { id: string; action: string; created_at: string }[] };
+export type WorkflowData = { samples: Sample[]; sections: RoadSection[]; branches: BranchRecord[]; profiles: ProfileRecord[]; types: CatalogType[]; distresses: (DistressRecord & { measurement_details: { location_m?: number | null; potholes?: import("./d6433-24/catalog.ts").PotholeDetails } })[]; computations: Computation[]; history: History[]; photos: Photo[]; results: SectionResult[]; settings: Settings; audit: { id: string; action: string; created_at: string }[] };
 
 export const WORKFLOW_PAGE_SIZE = 50;
 export type WorkflowScope = 'samples' | 'sections' | 'types';
@@ -33,6 +33,8 @@ export async function rows<T>(table: string, options: QueryOptions = {}): Promis
 export async function ensureWorkflowReady() {
   const { error } = await supabase.from('approved_results').select('id').limit(1);
   if (error) throw new Error('The published-revisions database migration is required: ' + error.message);
+  const reference = await supabase.from('distress_types').select('id,astm_code').limit(1);
+  if(reference.error)throw new Error('The D6433-24 review migration is required: '+reference.error.message);
 }
 /** Screen loads are bounded. Measurements/evidence load only on selection. */
 export async function loadWorkflow(scope: WorkflowScope = 'samples', after: string | null = null, sampleId?: string, sectionId?: string, referenceAfter: string | null = null): Promise<WorkflowPage> {
@@ -87,4 +89,15 @@ export function latestSectionResults(results: SectionResult[]) {
   const latest = new Map<string, SectionResult>();
   for (const row of results) if (!latest.has(row.section_id) || latest.get(row.section_id)!.published_at < row.published_at) latest.set(row.section_id, row);
   return [...latest.values()];
+}
+
+export async function calculateProvisional(kind: 'sample' | 'section', target: string) {
+  const {data,error}=await supabase.functions.invoke('calculate-pci',{body:{kind,target}});
+  if(error) {
+    const response=error.context; let message=error.message;
+    if(response instanceof Response) {try {message=(await response.json()).error ?? message;}catch { /* retain transport message */ }}
+    throw new Error(message);
+  }
+  if(data?.error)throw new Error(data.error);
+  return data as import('./d6433-24/sample.ts').SampleOutput | ReturnType<typeof import('./d6433-24/section.ts').calculateSection>;
 }

@@ -2,13 +2,14 @@
 
 ## Observed repository and hosted history
 
-On 4 October 2026, read-only inspection of **PCI Automation** confirmed the existing workflow tables/RLS and these applied migration entries. No schema or configuration was changed.
+On 4 October 2026, read-only inspection of **PCI Automation** confirmed the existing workflow tables/RLS and these applied migration entries. No schema or configuration was changed. The migration list was rechecked on 5 October and remained unchanged; both new review migrations are unapplied.
 
 | Repository migration | Hosted version / name |
 | --- | --- |
 | 20260916_authenticated_workflow.sql | 20260916112803 / authenticated_workflow |
 | 20260916140000_align_sample_unit_area_with_manuscript.sql | 20260916152749 / align_sample_unit_area_with_manuscript |
 | 20261004151522_published_revisions_and_reports.sql | New, review only; not applied |
+| 20261004162431_d6433_24_provisional_calculations.sql | New, review only; not applied |
 
 The old guide named a nonexistent 20260915103850 migration and said workflow was unapplied. Those statements were outdated. The repository's two existing filenames and the hosted history timestamps differ. **Do not run db push or migration repair against PCI Automation to resolve this automatically.** Inspect and reconcile history in a disposable clone first, without replaying existing migrations.
 
@@ -22,7 +23,7 @@ Reviewer approve/return requests must provide both revision and version. The tra
 
 An Encoder correction preserves the current approval while opening a new draft. Replacement approval supersedes the prior approval within the same transaction. Saved reports use the approved snapshot, including road/catalog names captured at submission. Backfill accepts only independently approved verified current calculations with valid output; missing legacy label context stays unavailable. Unverified legacy scores are never promoted.
 
-Raw section_results remain internal. The curated section-report RPC requires Reviewer approval and the complete set of distinct current approved constituent computations (all published for a Viewer), freezes road context for newly inserted results, and returns global priority rank without approver account fields. Existing section label context is unavailable. There is still no validated section computation/publication service in this repository.
+Raw section_results remain internal. The curated section-report RPC requires Reviewer approval and the complete set of distinct current approved constituent computations (all published for a Viewer), freezes road context for newly inserted results, and returns global priority rank without approver account fields. Existing section label context is unavailable. The D6433-24 migration adds a provisional section computation store; it is separate from this published feed. There is still no engineering-validated section publication service.
 
 ## Disposable-project procedure before application
 
@@ -34,7 +35,7 @@ Raw section_results remain internal. The curated section-report RPC requires Rev
    npx.cmd supabase link --project-ref <DISPOSABLE_PROJECT_REF>
    npx.cmd supabase migration list
    ```
-   This repository's filename/history mismatch requires explicit baseline reconciliation in that disposable checkout. Keep production history unchanged. For a controlled first rehearsal, review and execute only 20261004151522_published_revisions_and_reports.sql in the disposable project's SQL editor. It is transactional and intended to run once.
+   This repository's filename/history mismatch requires explicit baseline reconciliation in that disposable checkout. Keep production history unchanged. For a controlled first rehearsal, review and execute only 20261004151522_published_revisions_and_reports.sql in the disposable project's SQL editor. Then review and execute 20261004162431_d6433_24_provisional_calculations.sql. Both are transactional and intended to run once, in that order.
 4. Add only fictional test accounts/data and a private sample-unit-photos bucket. Configure roles/assignments under trusted administration. Point .env.local to that disposable project. A test-only trusted calculation may populate explicitly fictional verified outputs; it must never be used to label an official result.
 5. Run every hosted acceptance case in [workflow-testing.md](workflow-testing.md), including separate sessions, raw REST reads, signed Storage access, migration backfill and snapshot exports. Inspect RLS/grants/functions, not just visible navigation. Verify representative nonempty legacy approvals and production-scale query plans against sanitized fixtures.
 6. Document the baseline/history mapping, backup and migration plan, and results. Only a separately authorized future release may reconcile the actual production migration ledger, apply the reviewed migration and deploy the coordinated frontend.
@@ -45,4 +46,6 @@ Use the [Supabase migration workflow](https://supabase.com/docs/guides/deploymen
 
 The two existing files under supabase/rollback are manual guards for their original migrations, not a rollback for the new approved-results layer. Do not run them after the new migration: immutable approvals, computation pointers and dependent functions must be preserved. No destructive downgrade is supplied. Rehearse restores or a forward fix in the disposable environment; do not erase approved history or photo objects to recover a release.
 
-Prototype DV/CDV curves are unchanged. Verified reference provenance, official adapter implementation, section weighting and engineer sign-off remain outstanding; edition text or a database verification flag alone is not ASTM compliance.
+Prototype DV/CDV ordinates remain unchanged and illustrative. The new D6433-24 core implements fractional corrections, mixed severity and area-weighted random/additional aggregation with per-rule provenance. Private reference data, licensing, numerical/field engineering validation and a trusted promotion/publication service remain outstanding. See [the engineering review and disposable test gates](d6433-24-engineering-review.md). Edition text or a database verification flag alone is not ASTM compliance.
+
+The new migration fixes the active edition to D6433-24 for new submissions, seeds 20 separate immutable SI mappings without relabeling legacy rows, captures field/catalog context, and saves calculations provisionally. It changes sampling bounds to 135–315 m² and selection to a systematic random interval. Existing drafts need measured area/orientation/field confirmation and legacy distress replacement before new-edition submission. Approved older snapshots stay unchanged; corrections preserve the previous current result until replacement approval.

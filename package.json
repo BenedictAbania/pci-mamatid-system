@@ -51,8 +51,10 @@
     "test:workflow": "node scripts/test-workflow.mjs",
     "test:e2e": "node scripts/test-e2e.mjs",
     "test:published": "node scripts/test-published-revisions.mjs",
-    "test": "npm run test:alignment && npm run test:workflow && npm run test:e2e && npm run test:published",
-    "build:web": "expo export --platform web"
+    "test": "npm run test:alignment && npm run test:workflow && npm run test:e2e && npm run test:published && npm run test:calculation",
+    "build:web": "expo export --platform web",
+    "test:calculation": "node scripts/test-d6433-24.mjs && node scripts/test-d6433-24-workflow.mjs",
+    "typecheck:calculation": "tsc --noEmit -p tsconfig.calculation.json"
   },
   "private": true
 }

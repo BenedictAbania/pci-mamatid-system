@@ -42,3 +42,7 @@ Use a test-only trusted service to stage fictional verified calculations in this
 The new migration is included for review and has not been applied to the connected project. The existing two workflow migrations were observed applied on 4 October 2026; the old documentation saying otherwise has been corrected. No app, Auth configuration or Edge Function is deployed by this work. The protected admin-invite function still needs a separately authorized configuration/deployment and invitation test.
 
 Engineering work remains: licensed DV/CDV provenance and validation, VerifiedPciAdapter implementation, independently validated sample and section calculations/weighting, and civil-engineer sign-off. Do not substitute a fixture or browser prototype for any of these.
+
+## D6433-24 calculation rehearsal
+
+Run npm run test:calculation and npm run typecheck:calculation locally. The new workflow tests apply all four migrations; older suites retain historical migration coverage. Read [the engineering validation register](d6433-24-engineering-review.md) for real-reference and hosted acceptance cases. No fictional fixture curve may be uploaded as an ASTM reference. Provisional output must never become Viewer-visible or automatically mark a computation verified.

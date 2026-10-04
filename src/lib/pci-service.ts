@@ -1,11 +1,11 @@
-/** Official integration boundary. This module never imports the public demo curves. */
+/** Workflow data contracts; VerifiedPciAdapter is reserved for future engineering validation. This module never imports the public demo curves. */
 export const REFERENCE_PENDING = 'Prototype — reference data pending verification';
-export const SAMPLE_UNIT_TARGET_AREA = 230;
-export const SAMPLE_UNIT_MIN_AREA = 137;
-export const SAMPLE_UNIT_MAX_AREA = 323;
-export const SAMPLE_UNIT_GUIDANCE = 'Recommended asphalt sample-unit area:\napproximately 230 ± 93 m² when pavement width is below 7.30 m.';
-export type Measurement = { distress_type_id: string; severity: 'low' | 'medium' | 'high' | null; quantity: number; unit_of_measure: string; location_m: number | null };
-export type ReferenceDistress = { id: string; default_unit_of_measure: string | null; severity_required: boolean; allowed_severities: string[]; is_active: boolean };
+export const SAMPLE_UNIT_TARGET_AREA = 225;
+export const SAMPLE_UNIT_MIN_AREA = 135;
+export const SAMPLE_UNIT_MAX_AREA = 315;
+export const SAMPLE_UNIT_GUIDANCE = 'ASTM D6433-24 §2.1.7 asphalt sample-unit area: 225 ± 90 m² (135–315 m²). Measure the actual surveyed area.';
+export type Measurement = { distress_type_id: string; severity: 'low' | 'medium' | 'high' | null; quantity: number; unit_of_measure: string; location_m: number | null; potholes?: import('./d6433-24/catalog.ts').PotholeDetails };
+export type ReferenceDistress = { id: string; default_unit_of_measure: string | null; severity_required: boolean; allowed_severities: string[]; is_active: boolean; astm_code?: number | null; astm_edition?: string | null };
 export type CalculationInput = { area_sqm: number; edition: string; revision: number; measurements: Measurement[] };
 export type CalculationOutput = {
   densities: number[]; deduct_values: number[]; total_deduct_value: number; highest_deduct_value: number;
@@ -29,7 +29,7 @@ export function validateMeasurement(row: Measurement, type: ReferenceDistress, a
   if (!type.default_unit_of_measure || row.unit_of_measure !== type.default_unit_of_measure) throw new Error('Use the configured measurement unit.');
   if ((type.severity_required && !row.severity) || (row.severity && !type.allowed_severities.includes(row.severity)) || (!type.severity_required && row.severity)) throw new Error('Select the allowed severity (or Not applicable).');
   if (['m²', 'm2', 'sqm'].includes(row.unit_of_measure) && row.quantity > area) throw new Error('Measured area exceeds the sample boundary.');
-  if (['No.', 'count'].includes(row.unit_of_measure) && !Number.isInteger(row.quantity)) throw new Error('Count must be a whole number.');
+  if (['No.', 'count'].includes(row.unit_of_measure) && !Number.isInteger(row.quantity) && !(type.astm_code === 13 && row.potholes)) throw new Error('Count must be a whole number.');
   if (row.location_m !== null && (!Number.isFinite(row.location_m) || row.location_m < 0 || length === null || row.location_m > length)) throw new Error('Location must fall within the sample length.');
   if (existing.some(other => other.distress_type_id === row.distress_type_id && other.severity === row.severity)) throw new Error('This distress and severity already exists. Combine measurements in the existing record.');
 }
@@ -37,7 +37,7 @@ export function isSampleUnitAreaAllowed(area: number) {
   return Number.isFinite(area) && area >= SAMPLE_UNIT_MIN_AREA && area <= SAMPLE_UNIT_MAX_AREA;
 }
 export function possibleSampleUnits(area: number, target = SAMPLE_UNIT_TARGET_AREA) {
-  if (!Number.isFinite(area) || area < SAMPLE_UNIT_MIN_AREA || !isSampleUnitAreaAllowed(target)) throw new Error('Check section area and target sample size (137–323 m²).');
+  if (!Number.isFinite(area) || area < SAMPLE_UNIT_MIN_AREA || !isSampleUnitAreaAllowed(target)) throw new Error('Check section area and target sample size (135–315 m²).');
   const count = Math.max(1, Math.ceil(area / target));
   const areaPerUnit = area / count;
   return { count, areaPerUnit, needsAdjustment: !isSampleUnitAreaAllowed(areaPerUnit) };

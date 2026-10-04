@@ -23,18 +23,18 @@ const severityColorsUrl = await compileUrl('src/lib/severity-colors.ts');
 const severityColors = await import(severityColorsUrl);
 const engine = await import(await compileUrlWithImports('src/lib/pci-engine.ts', { './pci-classification': classificationUrl, './severity-colors': severityColorsUrl }));
 const expectedConditions = [
-  { rating: 'Excellent', minPCI: 85, maxPCI: 100, range: '85\u2013100', color: '#166534', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#4ADE80', darkForegroundColor: '#052E16' },
-  { rating: 'Very Good', minPCI: 70, maxPCI: 84.99, range: '70\u2013below 85', color: '#15803D', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#86EFAC', darkForegroundColor: '#052E16' },
-  { rating: 'Good', minPCI: 55, maxPCI: 69.99, range: '55\u2013below 70', color: '#65A30D', softColor: '#ECFCCB', foregroundColor: '#1A2E05', darkColor: '#BEF264', darkForegroundColor: '#1A2E05' },
-  { rating: 'Fair', minPCI: 40, maxPCI: 54.99, range: '40\u2013below 55', color: '#CA8A04', softColor: '#FEF9C3', foregroundColor: '#422006', darkColor: '#FDE047', darkForegroundColor: '#422006' },
-  { rating: 'Poor', minPCI: 25, maxPCI: 39.99, range: '25\u2013below 40', color: '#EA580C', softColor: '#FFEDD5', foregroundColor: '#431407', darkColor: '#FB923C', darkForegroundColor: '#431407' },
-  { rating: 'Very Poor', minPCI: 10, maxPCI: 24.99, range: '10\u2013below 25', color: '#DC2626', softColor: '#FEE2E2', foregroundColor: '#FFFFFF', darkColor: '#F87171', darkForegroundColor: '#450A0A' },
+  { rating: 'Good', minPCI: 85, maxPCI: 100, range: '85\u2013100', color: '#166534', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#4ADE80', darkForegroundColor: '#052E16' },
+  { rating: 'Satisfactory', minPCI: 70, maxPCI: 84.99, range: '70\u2013below 85', color: '#15803D', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#86EFAC', darkForegroundColor: '#052E16' },
+  { rating: 'Fair', minPCI: 55, maxPCI: 69.99, range: '55\u2013below 70', color: '#65A30D', softColor: '#ECFCCB', foregroundColor: '#1A2E05', darkColor: '#BEF264', darkForegroundColor: '#1A2E05' },
+  { rating: 'Poor', minPCI: 40, maxPCI: 54.99, range: '40\u2013below 55', color: '#CA8A04', softColor: '#FEF9C3', foregroundColor: '#422006', darkColor: '#FDE047', darkForegroundColor: '#422006' },
+  { rating: 'Very Poor', minPCI: 25, maxPCI: 39.99, range: '25\u2013below 40', color: '#EA580C', softColor: '#FFEDD5', foregroundColor: '#431407', darkColor: '#FB923C', darkForegroundColor: '#431407' },
+  { rating: 'Serious', minPCI: 10, maxPCI: 24.99, range: '10\u2013below 25', color: '#DC2626', softColor: '#FEE2E2', foregroundColor: '#FFFFFF', darkColor: '#F87171', darkForegroundColor: '#450A0A' },
   { rating: 'Failed', minPCI: 0, maxPCI: 9.99, range: '0\u2013below 10', color: '#7F1D1D', softColor: '#FECACA', foregroundColor: '#FFFFFF', darkColor: '#FCA5A5', darkForegroundColor: '#450A0A' },
 ];
-check(classification.PCI_CONDITION_SCALE.length === 7, 'All seven authoritative PCI condition categories exist');
+check(classification.PCI_CONDITION_SCALE.length === 7, 'All seven application PCI condition categories exist');
 for (const expected of expectedConditions) {
   const actual = classification.PCI_CONDITION_SCALE.find(category => category.rating === expected.rating);
-  check(actual && Object.entries(expected).every(([key, value]) => actual[key] === value), `${expected.rating} range and light/dark color tokens are authoritative`);
+  check(actual && Object.entries(expected).every(([key, value]) => actual[key] === value), `${expected.rating} range and light/dark color tokens are application`);
 }
 const expectedSeverityColors = {
   Low: { backgroundColor: '#DCFCE7', textColor: '#166534', borderColor: '#86EFAC' },
@@ -42,26 +42,26 @@ const expectedSeverityColors = {
   High: { backgroundColor: '#FEE2E2', textColor: '#991B1B', borderColor: '#FCA5A5' },
 };
 for (const [label, tokens] of Object.entries(expectedSeverityColors)) {
-  check(JSON.stringify(severityColors.DISTRESS_SEVERITY_COLORS[label]) === JSON.stringify(tokens), `${label} distress severity tokens are authoritative`);
+  check(JSON.stringify(severityColors.DISTRESS_SEVERITY_COLORS[label]) === JSON.stringify(tokens), `${label} distress severity tokens are application`);
 }
 const cases = [
-  [0, 'Failed'], [9.99, 'Failed'], [10, 'Very Poor'], [24.99, 'Very Poor'],
-  [25, 'Poor'], [39.99, 'Poor'], [40, 'Fair'], [54.99, 'Fair'],
-  [55, 'Good'], [62, 'Good'], [69.99, 'Good'], [70, 'Very Good'],
-  [84.99, 'Very Good'], [85, 'Excellent'], [100, 'Excellent'],
+  [0, 'Failed'], [9.99, 'Failed'], [10, 'Serious'], [24.99, 'Serious'],
+  [25, 'Very Poor'], [39.99, 'Very Poor'], [40, 'Poor'], [54.99, 'Poor'],
+  [55, 'Fair'], [62, 'Fair'], [69.99, 'Fair'], [70, 'Satisfactory'],
+  [84.99, 'Satisfactory'], [85, 'Good'], [100, 'Good'],
 ];
 for (const [pci, expected] of cases) check(classification.getPciCondition(pci) === expected, `${pci} → ${expected}`);
 check(classification.getPciCondition(-1) === 'Failed', 'Out-of-range PCI is clamped at 0');
-check(classification.getPciCondition(101) === 'Excellent', 'Out-of-range PCI is clamped at 100');
+check(classification.getPciCondition(101) === 'Good', 'Out-of-range PCI is clamped at 100');
 assert.throws(() => classification.getPciCondition(Number.NaN), /finite/); checks++;
 const prototypeResult = engine.computePCI(engine.DEFAULT_SAMPLE, engine.DEFAULT_SAMPLE_AREA);
-check(prototypeResult.pci === 62 && prototypeResult.rating === 'Good', 'Prototype default displays PCI 62 = Good');
+check(prototypeResult.pci === 62 && prototypeResult.rating === 'Fair', 'Prototype default displays PCI 62 = Good');
 
 const service = await import(await compileUrl('src/lib/pci-service.ts'));
-for (const [area, accepted] of [[136.99, false], [137, true], [230, true], [323, true], [323.01, false]]) {
+for (const [area, accepted] of [[134.99, false], [135, true], [225, true], [315, true], [315.01, false]]) {
   check(service.isSampleUnitAreaAllowed(area) === accepted, `${area} m² ${accepted ? 'accepted' : 'rejected'}`);
 }
-check(service.possibleSampleUnits(2300).count === 10, '230 m² layout target is used');
+check(service.possibleSampleUnits(2250).count === 10, '225 m² layout target is used');
 
 const ordered = service.rankPriorities([
   { id: 'higher-pci-risk', pci: 41, safety: true, highSeverity: 5, affectedArea: 1000 },
@@ -81,9 +81,9 @@ const migrationSource = await fs.readFile('supabase/migrations/20260916140000_al
 const sourceFiles = await Promise.all((await fs.readdir('src', { recursive: true })).filter(path => /\.(ts|tsx)$/.test(path)).map(path => fs.readFile(`src/${path}`, 'utf8')));
 const centralizedConditionScreens = ['prototype.tsx', 'dashboard.tsx', 'settings.tsx'];
 const conditionScreenSources = await Promise.all(centralizedConditionScreens.map(path => fs.readFile(`src/app/${path}`, 'utf8')));
-check(prototypeSource.includes('SAMPLE_UNIT_GUIDANCE'), 'Prototype renders centralized 230 ± 93 m² guidance');
+check(prototypeSource.includes('SAMPLE_UNIT_GUIDANCE'), 'Prototype renders centralized 225 ± 90 m² guidance');
 check(engineSource.includes('getPciConditionCategory'), 'Prototype computation uses centralized classification');
-check(!sourceFiles.some(source => /\bSatisfactory\b|\bSerious\b/.test(source)), 'Old PCI condition labels are absent from application source');
+check(sourceFiles.some(source => /\bSatisfactory\b/.test(source)), 'D6433-24 Fig. 1 labels are available');
 const snapshotReportScreens = await Promise.all(['pci-results.tsx','maintenance-plan.tsx','workspace.tsx','reports.tsx'].map(path => fs.readFile('src/app/'+path,'utf8')));
 check(snapshotReportScreens.every(source => /ApprovedReports/.test(source)), 'Snapshot report routes share the saved-report renderer');
 check(conditionScreenSources.every(source => /pci-classification/.test(source)), 'Every condition-color screen imports the centralized PCI classification');
@@ -94,4 +94,4 @@ check(/sample_type === 'additional'/.test(samplingSource) && /Random/.test(sampl
 check((migrationSource.match(/not between 137 and 323/g) || []).length === 2, 'Both sampling RPCs enforce inclusive 137–323 m² boundaries');
 check(/security definer set search_path=''/g.test(migrationSource), 'Sampling RPC replacements preserve security definer and safe search path');
 
-console.log(`Passed ${checks} manuscript classification, sampling and prioritization checks.`);
+console.log(`Passed ${checks} D6433-24 presentation, sampling and prioritization checks.`);
