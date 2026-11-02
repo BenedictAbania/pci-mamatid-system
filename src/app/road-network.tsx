@@ -23,7 +23,7 @@ import {
 import { confirmAction, formatNumber } from '@/lib/admin-utils';
 import { useAuth } from '@/providers/AuthProvider';
 
-const emptyBranchForm = { id: undefined as string | undefined, name: '', description: '', location: 'Barangay Mamatid, Cabuyao, Laguna', administrative_status: 'active' };
+const emptyBranchForm = { id: undefined as string | undefined, name: '', description: '', location: '', administrative_status: 'active' };
 const emptySectionForm = {
   id: undefined as string | undefined,
   branch_id: '',
@@ -56,7 +56,7 @@ export default function RoadNetworkScreen() {
 
   if (!data) {
     return (
-      <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle={role === 'admin' ? 'Manage road branches and section dimensions.' : 'Review road and section inventory before confirming a sampling plan.'} title="Road / Section Inventory">
+      <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle={role === 'admin' ? 'View road branches and sections.' : 'Register road branches and sections before confirming a sampling plan.'} title="Roads">
         {loadError ? <Notice error>{loadError} Use Refresh to try again.</Notice> : <View />}
       </AdminShell>
     );
@@ -110,12 +110,16 @@ export default function RoadNetworkScreen() {
   }
 
   async function submitBranch() {
-    if (role !== 'admin') {
-      setError('Only a system administrator can manage road branches.');
+    if (role !== 'reviewer') {
+      setError('Only a Civil Engineer can add or edit road branches.');
       return;
     }
     if (!user || !branchForm.name.trim()) {
       setError('Branch name is required.');
+      return;
+    }
+    if (branchForm.name.trim().length > 160) {
+      setError('Branch name must be 160 characters or fewer.');
       return;
     }
     if (!['active', 'inactive', 'archived'].includes(branchForm.administrative_status.trim().toLowerCase())) {
@@ -126,7 +130,7 @@ export default function RoadNetworkScreen() {
     setError('');
     setMessage('');
     try {
-      await saveBranch(branchForm, user.id);
+      await saveBranch(branchForm);
       setModal(null);
       await refresh();
       setMessage(`Road branch ${branchForm.id ? 'updated' : 'created'} successfully.`);
@@ -138,8 +142,8 @@ export default function RoadNetworkScreen() {
   }
 
   async function submitSection() {
-    if (role !== 'admin') {
-      setError('Only a system administrator can manage road sections.');
+    if (role !== 'reviewer') {
+      setError('Only a Civil Engineer can add or edit road sections.');
       return;
     }
     if (!user || !sectionForm.branch_id || !sectionForm.name.trim()) {
@@ -211,17 +215,25 @@ export default function RoadNetworkScreen() {
     }
   }
 
+  const sectionLayoutLocked = !!sections.find((section) => section.id === sectionForm.id)?.homogeneous_confirmed_by;
+
   return (
     <AdminShell
-      action={role === 'admin' ? <View style={styles.actions}>
-      <PageControls {...pagination} /><PageControls label="Branches / references" {...referencesPagination} />
-      <Notice>Inventory summaries and search apply to the loaded section and branch pages.</Notice><AdminButton icon="plus" label="Add branch" onPress={() => openBranch()} palette={palette} tone="secondary" /><AdminButton disabled={!branches.length} icon="plus" label="Add section" onPress={() => openSection()} palette={palette} /></View> : undefined}
+      action={role === 'reviewer'
+        ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            <AdminButton icon="plus" label="Add road branch" onPress={() => openBranch()} palette={palette} />
+            <AdminButton disabled={!branches.length} icon="plus" label="Add road section" onPress={() => openSection()} palette={palette} />
+          </View>
+        : undefined}
       loading={loading}
       onRefresh={refresh}
       onSearchChange={setQuery}
       searchValue={query}
-      subtitle={role === 'admin' ? 'Manage road branches and section dimensions.' : 'Review road and section inventory before confirming a sampling plan.'}
-      title="Road / Section Inventory">
+      subtitle={role === 'admin' ? 'View road branches and sections.' : 'Register road branches and sections before confirming a sampling plan.'}
+      title="Roads">
+      <PageControls {...pagination} />
+      <PageControls label="Branches / references" {...referencesPagination} />
+      <Notice>Inventory summaries and search apply to the loaded section and branch pages.</Notice>
       {error ? <Notice error>{error}</Notice> : null}
       {message ? <Notice>{message}</Notice> : null}
 
@@ -238,12 +250,12 @@ export default function RoadNetworkScreen() {
               <View key={branch.id} style={[styles.branchCard, { backgroundColor: palette.panelAlt, borderColor: palette.border }]}>
                 <View style={[styles.itemIcon, { backgroundColor: palette.blueSoft }]}><Feather color={palette.blue} name="git-branch" size={19} /></View>
                 <View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: palette.text }]}>{branch.name}</Text><Text numberOfLines={3} style={[styles.itemMeta, { color: palette.muted }]}>{branch.location || 'Location not recorded'} · {branch.administrative_status} · {sections.filter((section) => section.branch_id === branch.id).length} sections{branch.description ? `\n${branch.description}` : ''}</Text></View>
-                {role === 'admin' ? <><Pressable accessibilityLabel={`Edit ${branch.name}`} onPress={() => openBranch(branch)} style={styles.smallIcon}><Feather color={palette.muted} name="edit-2" size={16} /></Pressable>
-                <Pressable accessibilityLabel={`Delete ${branch.name}`} onPress={() => void deleteBranch(branch)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable></> : null}
+                {role === 'reviewer' ? <Pressable accessibilityLabel={`Edit road branch ${branch.name}`} onPress={() => openBranch(branch)} style={styles.smallIcon}><Feather color={palette.muted} name="edit-2" size={16} /></Pressable> : null}
+                {role === 'admin' ? <Pressable accessibilityLabel={`Delete road branch ${branch.name}`} onPress={() => void deleteBranch(branch)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable> : null}
               </View>
             ))}
           </View>
-        ) : <AdminEmpty icon="git-branch" message={role === 'admin' ? 'Add the first road branch to begin organizing sections.' : 'No road branches are available in your authorized scope.'} palette={palette} />}
+        ) : <AdminEmpty icon="git-branch" message={role === 'reviewer' ? 'Add a road branch from a verified source record to begin the inventory.' : 'No road branches are available in your authorized scope.'} palette={palette} />}
       </AdminPanel>
 
       <AdminPanel palette={palette} title="Road sections" subtitle={`${filteredSections.length} matching section${filteredSections.length === 1 ? '' : 's'}`}>
@@ -258,23 +270,46 @@ export default function RoadNetworkScreen() {
                 <DataPoint label="Length" value={formatNumber(section.length_meters, ' m')} palette={palette} />
                 <DataPoint label="Width" value={formatNumber(section.width_meters, ' m')} palette={palette} />
                 <DataPoint label="Area" value={formatNumber(section.area_sqm, ' m²')} palette={palette} />
-                <DataPoint label="PCI" value={formatNumber(latestPci)} palette={palette} />
-                {role === 'admin' ? <View style={styles.rowActions}><Pressable accessibilityLabel={`Edit ${section.name}`} onPress={() => openSection(section)} style={styles.smallIcon}><Feather color={palette.blue} name="edit-2" size={16} /></Pressable><Pressable accessibilityLabel={`Delete ${section.name}`} onPress={() => void deleteSection(section)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable></View> : null}
+                <DataPoint label="PCI" value={formatNumber(latestPci ?? null)} palette={palette} />
+                {role === 'reviewer' ? <View style={styles.rowActions}><Pressable accessibilityLabel={`Edit road section ${section.name}`} onPress={() => openSection(section)} style={styles.smallIcon}><Feather color={palette.blue} name="edit-2" size={16} /></Pressable></View> : null}
+                {role === 'admin' ? <View style={styles.rowActions}><Pressable accessibilityLabel={`Delete ${section.name}`} onPress={() => void deleteSection(section)} style={styles.smallIcon}><Feather color={palette.red} name="trash-2" size={16} /></Pressable></View> : null}
               </View>
             )})}
           </View>
-        ) : <AdminEmpty icon="map" message={query ? 'No road sections match your search.' : role === 'admin' ? 'No road sections have been added yet.' : 'No road sections are available in your authorized scope.'} palette={palette} />}
+        ) : <AdminEmpty icon="map" message={query ? 'No road sections match your search.' : role === 'reviewer' ? 'Add a road section under a branch to prepare its sampling plan.' : 'No road sections are available in your authorized scope.'} palette={palette} />}
       </AdminPanel>
 
-      <Modal animationType="fade" onRequestClose={() => setModal(null)} transparent visible={role === 'admin' && modal !== null}>
+      <Modal animationType="fade" onRequestClose={() => setModal(null)} transparent visible={(modal === 'branch' || modal === 'section') && role === 'reviewer'}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { backgroundColor: palette.panel, borderColor: palette.border }]}>
             <View style={styles.modalHeader}><View><Text style={[styles.modalTitle, { color: palette.text }]}>{modal === 'branch' ? `${branchForm.id ? 'Edit' : 'Add'} road branch` : `${sectionForm.id ? 'Edit' : 'Add'} road section`}</Text><Text style={[styles.modalSubtitle, { color: palette.muted }]}>Changes are saved directly to the secured project database.</Text></View><Pressable accessibilityLabel="Close dialog" onPress={() => setModal(null)}><Feather color={palette.muted} name="x" size={21} /></Pressable></View>
             <ScrollView contentContainerStyle={styles.form}>
               {modal === 'branch' ? (
-                <><AdminField label="Branch name" onChangeText={(name) => setBranchForm((current) => ({ ...current, name }))} palette={palette} placeholder="Enter branch name" value={branchForm.name} /><AdminField label="Barangay / location" onChangeText={(location) => setBranchForm((current) => ({ ...current, location }))} palette={palette} value={branchForm.location} /><AdminField label="Administrative status" onChangeText={(administrative_status) => setBranchForm((current) => ({ ...current, administrative_status }))} palette={palette} placeholder="active, inactive or archived" value={branchForm.administrative_status} /><AdminField label="Description" multiline onChangeText={(description) => setBranchForm((current) => ({ ...current, description }))} palette={palette} placeholder="Optional description" value={branchForm.description} /></>
+                <><AdminField label="Branch name" onChangeText={(name) => setBranchForm((current) => ({ ...current, name }))} palette={palette} placeholder="Enter branch name" value={branchForm.name} /><AdminField label="Barangay / location" onChangeText={(location) => setBranchForm((current) => ({ ...current, location }))} palette={palette} value={branchForm.location} /><AdminField label="Administrative status" onChangeText={(administrative_status) => setBranchForm((current) => ({ ...current, administrative_status }))} palette={palette} placeholder="active, inactive or archived" value={branchForm.administrative_status} /><AdminField label="Description and verified source record" multiline onChangeText={(description) => setBranchForm((current) => ({ ...current, description }))} palette={palette} placeholder="Describe the branch and cite the municipal record used" value={branchForm.description} /></>
               ) : (
-                <><Text style={[styles.fieldLabel, { color: palette.text }]}>Road branch</Text><View style={styles.optionWrap}>{branches.map((branch) => <Pressable key={branch.id} onPress={() => setSectionForm((current) => ({ ...current, branch_id: branch.id }))} style={[styles.optionChip, { borderColor: sectionForm.branch_id === branch.id ? palette.blue : palette.border, backgroundColor: sectionForm.branch_id === branch.id ? palette.blueSoft : palette.panel }]}><Text style={{ color: sectionForm.branch_id === branch.id ? palette.blue : palette.text, fontSize: 12, fontWeight: '700' }}>{branch.name}</Text></Pressable>)}</View><AdminField label="Section code and name" onChangeText={(name) => setSectionForm((current) => ({ ...current, name }))} palette={palette} placeholder="e.g. MMTD-001 — Purok 2" value={sectionForm.name} /><AdminField label="Description" multiline onChangeText={(description) => setSectionForm((current) => ({ ...current, description }))} palette={palette} placeholder="Optional description" value={sectionForm.description} /><View style={styles.twoColumns}><View style={styles.formColumn}><AdminField label="Start location / chainage" onChangeText={(start_description) => setSectionForm((current) => ({ ...current, start_description }))} palette={palette} value={sectionForm.start_description} /></View><View style={styles.formColumn}><AdminField label="End location / chainage" onChangeText={(end_description) => setSectionForm((current) => ({ ...current, end_description }))} palette={palette} value={sectionForm.end_description} /></View></View><View style={styles.twoColumns}><View style={styles.formColumn}><AdminField keyboardType="numeric" label="Length (meters)" onChangeText={(length_meters) => setSectionForm((current) => ({ ...current, length_meters }))} palette={palette} value={sectionForm.length_meters} /></View><View style={styles.formColumn}><AdminField keyboardType="numeric" label="Width (meters)" onChangeText={(width_meters) => setSectionForm((current) => ({ ...current, width_meters }))} palette={palette} value={sectionForm.width_meters} /></View></View><Text style={[styles.itemMeta, { color: palette.muted }]}>Pavement type: Asphalt. Sample counts come from an engineer-confirmed plan.</Text><View style={styles.twoColumns}><View style={styles.formColumn}><AdminField keyboardType="numeric" label="Latitude (optional)" onChangeText={(latitude) => setSectionForm((current) => ({ ...current, latitude }))} palette={palette} value={sectionForm.latitude} /></View><View style={styles.formColumn}><AdminField keyboardType="numeric" label="Longitude (optional)" onChangeText={(longitude) => setSectionForm((current) => ({ ...current, longitude }))} palette={palette} value={sectionForm.longitude} /></View></View><AdminField label="Notes" multiline onChangeText={(notes) => setSectionForm((current) => ({ ...current, notes }))} palette={palette} placeholder="Administrative and field notes" value={sectionForm.notes} /></>
+                <>
+                  {sectionLayoutLocked ? <Notice>Confirmed section boundaries are locked. You may update only the description and notes.</Notice> : null}
+                  <Text style={[styles.fieldLabel, { color: palette.text }]}>Road branch</Text>
+                  {sectionLayoutLocked
+                    ? <Text style={{ color: palette.text }}>{branchById.get(sectionForm.branch_id)?.name ?? 'Saved branch'}</Text>
+                    : <View style={styles.optionWrap}>{branches.map((branch) => <Pressable key={branch.id} accessibilityRole="button" accessibilityLabel={`Select road branch ${branch.name}`} onPress={() => setSectionForm((current) => ({ ...current, branch_id: branch.id }))} style={[styles.optionChip, { borderColor: sectionForm.branch_id === branch.id ? palette.blue : palette.border, backgroundColor: sectionForm.branch_id === branch.id ? palette.blueSoft : palette.panel }]}><Text style={{ color: sectionForm.branch_id === branch.id ? palette.blue : palette.text, fontSize: 12, fontWeight: '700' }}>{branch.name}</Text></Pressable>)}</View>}
+                  <AdminField editable={!sectionLayoutLocked} label="Section code and name" onChangeText={(name) => setSectionForm((current) => ({ ...current, name }))} palette={palette} placeholder="e.g. MMTD-001 — Purok 2" value={sectionForm.name} />
+                  <AdminField label="Description" multiline onChangeText={(description) => setSectionForm((current) => ({ ...current, description }))} palette={palette} placeholder="Optional description" value={sectionForm.description} />
+                  <View style={styles.twoColumns}>
+                    <View style={styles.formColumn}><AdminField editable={!sectionLayoutLocked} label="Start location / chainage" onChangeText={(start_description) => setSectionForm((current) => ({ ...current, start_description }))} palette={palette} value={sectionForm.start_description} /></View>
+                    <View style={styles.formColumn}><AdminField editable={!sectionLayoutLocked} label="End location / chainage" onChangeText={(end_description) => setSectionForm((current) => ({ ...current, end_description }))} palette={palette} value={sectionForm.end_description} /></View>
+                  </View>
+                  <View style={styles.twoColumns}>
+                    <View style={styles.formColumn}><AdminField editable={!sectionLayoutLocked} keyboardType="numeric" label="Length (meters)" onChangeText={(length_meters) => setSectionForm((current) => ({ ...current, length_meters }))} palette={palette} value={sectionForm.length_meters} /></View>
+                    <View style={styles.formColumn}><AdminField editable={!sectionLayoutLocked} keyboardType="numeric" label="Width (meters)" onChangeText={(width_meters) => setSectionForm((current) => ({ ...current, width_meters }))} palette={palette} value={sectionForm.width_meters} /></View>
+                  </View>
+                  <Text style={[styles.itemMeta, { color: palette.muted }]}>Pavement type: Asphalt. Sample counts come from an engineer-confirmed plan.</Text>
+                  <View style={styles.twoColumns}>
+                    <View style={styles.formColumn}><AdminField editable={!sectionLayoutLocked} keyboardType="numeric" label="Latitude (optional)" onChangeText={(latitude) => setSectionForm((current) => ({ ...current, latitude }))} palette={palette} value={sectionForm.latitude} /></View>
+                    <View style={styles.formColumn}><AdminField editable={!sectionLayoutLocked} keyboardType="numeric" label="Longitude (optional)" onChangeText={(longitude) => setSectionForm((current) => ({ ...current, longitude }))} palette={palette} value={sectionForm.longitude} /></View>
+                  </View>
+                  <AdminField label="Notes" multiline onChangeText={(notes) => setSectionForm((current) => ({ ...current, notes }))} palette={palette} placeholder="Administrative and field notes" value={sectionForm.notes} />
+                </>
               )}
               {error ? <ErrorBanner message={error} palette={palette} /> : null}
             </ScrollView>
@@ -311,7 +346,7 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 11 },
   summaryValue: { fontSize: 22, fontWeight: '900', marginTop: 4 },
   branchGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 11 },
-  branchCard: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 10, minWidth: 260, padding: 12 },
+  branchCard: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 10, maxWidth: '100%', minWidth: 260, padding: 12 },
   itemIcon: { alignItems: 'center', borderRadius: 20, height: 40, justifyContent: 'center', width: 40 },
   itemCopy: { flex: 1, minWidth: 0 },
   itemTitle: { fontSize: 13, fontWeight: '800' },

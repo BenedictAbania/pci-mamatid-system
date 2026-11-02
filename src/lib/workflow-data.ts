@@ -10,13 +10,13 @@ export type History = { id: string; sample_unit_id: string; actor_id: string; ac
 export type Photo = { id: string; sample_unit_id: string; photo_path: string; caption: string | null };
 export type SectionResult = { id: string; section_id: string; edition: string; pci: number; condition: string; safety: boolean; high_severity: number; affected_area: number; sample_computation_ids: string[]; method: string; weights: Record<string, number>; published_at: string };
 export type Settings = { active_edition: string; priority_safety: boolean; priority_area: boolean };
-export type CatalogType = DistressTypeRecord & ReferenceDistress;
+export type CatalogType = DistressTypeRecord & ReferenceDistress & { severity_descriptions?: Partial<Record<'low' | 'medium' | 'high', string>> };
 export type WorkflowData = { samples: Sample[]; sections: RoadSection[]; branches: BranchRecord[]; profiles: ProfileRecord[]; types: CatalogType[]; distresses: (DistressRecord & { measurement_details: { location_m?: number | null; potholes?: import("./d6433-24/catalog.ts").PotholeDetails } })[]; computations: Computation[]; history: History[]; photos: Photo[]; results: SectionResult[]; settings: Settings; audit: { id: string; action: string; created_at: string }[] };
 
 export const WORKFLOW_PAGE_SIZE = 50;
 export type WorkflowScope = 'samples' | 'sections' | 'types';
 export type WorkflowPage = WorkflowData & { pageLastId: string | null; hasNext: boolean; referenceLastId: string | null; referenceHasNext: boolean };
-type QueryOptions = { after?: string | null; ids?: string[]; sampleId?: string; sectionId?: string; limit?: number; newest?: boolean };
+type QueryOptions = { after?: string | null; ids?: string[]; sampleId?: string; sectionId?: string; limit?: number; newest?: boolean; status?: string; assignedTo?: string; reviewerId?: string; excludeAssigned?: string };
 export async function rows<T>(table: string, options: QueryOptions = {}): Promise<T[]> {
   if (options.ids && !options.ids.length) return [];
   let query = supabase.from(table).select('*');
@@ -26,6 +26,10 @@ export async function rows<T>(table: string, options: QueryOptions = {}): Promis
   if (options.ids) query = query.in('id', options.ids);
   if (options.sampleId) query = query.eq('sample_unit_id', options.sampleId);
   if (options.sectionId) query = query.eq('section_id', options.sectionId);
+  if (options.status) query = query.eq('workflow_state', options.status);
+  if (options.assignedTo) query = query.eq('assigned_to', options.assignedTo);
+  if (options.reviewerId) query = query.eq('reviewer_id', options.reviewerId);
+  if (options.excludeAssigned) query = query.neq('assigned_to', options.excludeAssigned);
   const { data, error } = await query;
   if (error) throw new Error('Unable to load ' + table + ': ' + error.message);
   return data as T[];
@@ -37,19 +41,27 @@ export async function ensureWorkflowReady() {
   if(reference.error)throw new Error('The D6433-24 review migration is required: '+reference.error.message);
 }
 /** Screen loads are bounded. Measurements/evidence load only on selection. */
-export async function loadWorkflow(scope: WorkflowScope = 'samples', after: string | null = null, sampleId?: string, sectionId?: string, referenceAfter: string | null = null): Promise<WorkflowPage> {
+export async function loadWorkflow(scope: WorkflowScope = 'samples', after: string | null = null, sampleId?: string, sectionId?: string, referenceAfter: string | null = null, status?: string, userId?: string): Promise<WorkflowPage> {
   await ensureWorkflowReady();
   const access = await supabase.rpc('lakad_session_access');
   if (access.error || !access.data?.is_active || access.data.role === 'viewer') throw new Error('This workspace is available only to active staff. Viewers use published reports.');
+  if (status && !['planned', 'draft', 'submitted', 'returned', 'approved', 'published'].includes(status)) throw new Error('Choose a supported inspection status.');
+  if (sampleId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sampleId)) throw new Error('Invalid sample link. Return to the inspection list.');
+  const assignment = userId ? access.data.role === 'encoder' ? { assignedTo: userId } : access.data.role === 'reviewer' ? { reviewerId: userId, excludeAssigned: userId } : {} : {};
   const settings = await rows<Settings>('lakad_settings', { limit: 1 });
   if (!settings[0]) throw new Error('Workflow settings are not configured.');
   const [primary, profiles, typePage] = await Promise.all([
-    rows<Sample | RoadSection | CatalogType>(scope === 'samples' ? 'sample_units' : scope === 'sections' ? 'sections' : 'distress_types', { after }),
+    rows<Sample | RoadSection | CatalogType>(scope === 'samples' ? 'sample_units' : scope === 'sections' ? 'sections' : 'distress_types', { after, ...(scope === 'samples' ? { status, ...assignment } : {}) }),
     rows<ProfileRecord>('profiles', { after: referenceAfter }),
     scope === 'types' ? Promise.resolve([]) : rows<CatalogType>('distress_types', { after: referenceAfter }),
   ]);
   const referenceCandidates = [profiles, typePage].filter(page => page.length === WORKFLOW_PAGE_SIZE).map(page => page.at(-1)!.id);
-  const samples = scope === 'samples' ? primary as Sample[] : sectionId ? await rows<Sample>('sample_units', { sectionId }) : [];
+  const samples = scope === 'samples' ? [...primary] as Sample[] : sectionId ? await rows<Sample>('sample_units', { sectionId }) : [];
+  // A saved task link can target a unit outside the current register page. RLS and
+  // the session assignment still apply, and it cannot change the page cursor.
+  if (scope === 'samples' && sampleId && !samples.some(s => s.id === sampleId)) {
+    samples.push(...await rows<Sample>('sample_units', { ids: [sampleId], ...assignment, limit: 1 }));
+  }
   const sections = scope === 'sections' ? primary as RoadSection[] : await rows<RoadSection>('sections', { ids: [...new Set(samples.map(s => s.section_id))] });
   const branches = await rows<BranchRecord>('branches', { ids: [...new Set(sections.map(s => s.branch_id))] });
   // Road inventory can navigate otherwise empty branches as well.

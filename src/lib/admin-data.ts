@@ -112,8 +112,7 @@ export async function loadRoadNetwork() {
 }
 
 export async function saveBranch(
-  values: { id?: string; name: string; description: string; location: string; administrative_status: string },
-  userId: string
+  values: { id?: string; name: string; description: string; location: string; administrative_status: string }
 ) {
   const payload = {
     name: values.name.trim(),
@@ -123,9 +122,10 @@ export async function saveBranch(
     updated_at: new Date().toISOString(),
   };
   const result = values.id
-    ? await supabase.from('branches').update(payload).eq('id', values.id)
-    : await supabase.from('branches').insert({ ...payload, created_by: userId });
-  unwrap(result.data, result.error);
+    ? await supabase.from('branches').update(payload).eq('id', values.id).select('id').maybeSingle()
+    : await supabase.from('branches').insert(payload).select('id').maybeSingle();
+  const saved = unwrap(result.data, result.error);
+  if (!saved) throw new Error('Road branch was not saved. Check your Civil Engineer access and retry.');
 }
 
 export async function removeBranch(id: string) {
@@ -167,9 +167,10 @@ export async function saveSection(
     updated_at: new Date().toISOString(),
   };
   const result = values.id
-    ? await supabase.from('sections').update(payload).eq('id', values.id)
-    : await supabase.from('sections').insert({ ...payload, created_by: userId });
-  unwrap(result.data, result.error);
+    ? await supabase.from('sections').update(payload).eq('id', values.id).select('id').maybeSingle()
+    : await supabase.from('sections').insert({ ...payload, created_by: userId }).select('id').maybeSingle();
+  const saved = unwrap(result.data, result.error);
+  if (!saved) throw new Error('Road section was not saved. Check your Civil Engineer access and retry.');
 }
 
 export async function removeSection(id: string) {

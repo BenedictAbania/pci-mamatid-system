@@ -12,7 +12,9 @@ const reject=async(task,pattern)=>{await assert.rejects(task,pattern); checks++;
 const db=new PGlite();
 for(const path of ['tests/schema-fixture.sql','supabase/migrations/20260916_authenticated_workflow.sql',
   'supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql',
-  'supabase/migrations/20261004151522_published_revisions_and_reports.sql']) await db.exec(await fs.readFile(path,'utf8'));
+  'supabase/migrations/20261004151522_published_revisions_and_reports.sql',
+  'supabase/migrations/20261031211658_reviewer_branch_registration.sql',
+  'supabase/migrations/20261102023605_reviewer_section_registration.sql']) await db.exec(await fs.readFile(path,'utf8'));
 const ids=Object.fromEntries(['admin','reviewer','encoder','viewer','other'].map((role,index)=>[role,'00000000-0000-4000-8000-'+String(index+1).padStart(12,'0')]));
 for(const [role,id] of Object.entries(ids)) {
   await db.query('insert into auth.users(id,email) values($1,$2)',[id,role+'@example.test']);
@@ -41,9 +43,10 @@ async function deniedViewerInternals() {
   await reject(()=>db.query('select * from lakad_accounts_page()'),/Administrator/);
   await reject(()=>db.query('select * from lakad_accounts()'),/Administrator/);
 }
-await as('admin');
+await as('reviewer');
 const branch=(await db.query("insert into branches(name) values('ORIGINAL ROAD') returning id")).rows[0].id;
 const section=(await db.query("insert into sections(branch_id,name,length_meters,width_meters,area_sqm) values($1,'ORIGINAL SECTION',92,5,460) returning id",[branch])).rows[0].id;
+await as('admin');
 const type=(await db.query("select lakad_save_distress_type(null,$1) as id",[{code:'TEST',name:'ORIGINAL DISTRESS',default_unit_of_measure:'m\u00b2',severity_required:true,allowed_severities:['low','medium','high'],is_active:true}])).rows[0].id;
 await as('reviewer');
 await db.query('select lakad_plan_samples($1,$2)',[section,{total:2,required:2,inspector:ids.encoder,reviewer:ids.reviewer,start:'0 m',end:'92 m',rationale:'FICTIONAL TEST ONLY'}]);
@@ -141,8 +144,9 @@ await currentAction(sample,'distress',{id:distress,distress_type_id:type,severit
 const photo=(await db.query('select id from distress_photos where sample_unit_id=$1',[sample])).rows[0].id;
 await currentAction(sample,'remove_photo',{id:photo});
 equal((await db.query('delete from storage.objects where name=$1 returning name',[photoPath])).rows,[],'Approved historical evidence cannot be deleted during correction');
-await as('admin');
+await as('reviewer');
 await db.query("update branches set name='RENAMED ROAD' where id=$1",[branch]);
+await as('admin');
 await db.query("update distress_types set name='RENAMED DISTRESS' where id=$1",[type]);
 await as('viewer');
 const duringCorrection=(await db.query('select * from approved_results')).rows[0];

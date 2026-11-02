@@ -1,6 +1,8 @@
 import { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { isRole } from '@/lib/access';
+import { requireSessionAccess } from '@/lib/session-access';
+import { accountDisplayName } from '@/lib/account-display';
 
 import { supabase } from '../lib/supabase';
 
@@ -53,11 +55,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadingProfileFor.current = userId;
     setError(''); setIsLoading(true);
     try {
-      const access = await supabase.rpc('lakad_session_access');
-      if (access.error || !isRole(access.data?.role)) throw new Error('Your access could not be loaded. Verify the published-revisions migration.');
-      if (!access.data.is_active) throw new Error('Your account is deactivated. Contact an administrator.');
-      const { data, error } = access.data.role === 'viewer'
-        ? { data: { id: userId, full_name: 'Decision-maker', role: 'viewer', is_active: true, created_at: '', updated_at: '' }, error: null }
+      const response = await supabase.rpc('lakad_session_access');
+      const access = requireSessionAccess(response.data, response.error);
+      const { data, error } = access.role === 'viewer'
+        ? { data: { id: userId, full_name: accountDisplayName(sessionRef.current?.user.user_metadata?.full_name, sessionRef.current?.user.email), role: 'viewer', is_active: true, created_at: '', updated_at: '' }, error: null }
         : await supabase
         .from('profiles')
         .select('*')

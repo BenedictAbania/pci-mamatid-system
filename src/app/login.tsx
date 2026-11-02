@@ -10,6 +10,7 @@ import {
     StyleSheet,
     Text,
     TextInput,
+    type TextInputInstance,
     useWindowDimensions,
     View,
 } from 'react-native';
@@ -69,8 +70,9 @@ type BrandMarkProps = {
 };
 
 function BrandMark({ compact = false, inverse = false }: BrandMarkProps) {
+  const router = useRouter();
   return (
-    <View accessibilityLabel="LAKAD — Where Data Meets the Road" style={styles.brandMark}>
+    <Pressable accessibilityRole="link" accessibilityLabel="LAKAD home" onPress={() => router.replace('/')} style={styles.brandMark}>
       <Image
         accessibilityLabel="LAKAD logo"
         contentFit="contain"
@@ -95,7 +97,7 @@ function BrandMark({ compact = false, inverse = false }: BrandMarkProps) {
           Where Data Meets the Road
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -111,7 +113,7 @@ export default function LoginScreen() {
     280,
     Math.min(590, isWide ? width * 0.48 - 76 : width - 44)
   );
-  const passwordRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -119,6 +121,9 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
+
+  // On native Fabric, changing a TextInput parent's shadowColor during onFocus
+  // can immediately blur the input. Focus feedback below changes its border only.
 
   const pageStyle = useMemo(
     () => [styles.page, { backgroundColor: colors.page, minHeight: height }],
@@ -288,7 +293,7 @@ export default function LoginScreen() {
                     borderColor: colors.focus,
                     ...(Platform.OS === 'web'
                       ? { boxShadow: `0 0 3px ${colors.focus}` }
-                      : { shadowColor: colors.focus }),
+                      : {}),
                   },
                 ]}>
                 <Feather color={colors.icon} name="mail" size={20} />
@@ -325,7 +330,7 @@ export default function LoginScreen() {
                     borderColor: colors.focus,
                     ...(Platform.OS === 'web'
                       ? { boxShadow: `0 0 3px ${colors.focus}` }
-                      : { shadowColor: colors.focus }),
+                      : {}),
                   },
                 ]}>
                 <Feather color={colors.icon} name="lock" size={20} />

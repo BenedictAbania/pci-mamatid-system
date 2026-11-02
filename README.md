@@ -1,5 +1,7 @@
 # LAKAD / PCI Mamatid
 
+For the supplied private draft curve package, use the [local engineering review workflow](docs/private-curve-local-review.md). It produces provisional sample/section traces without enabling approval or configuring Supabase.
+
 An Expo SDK 57 application for collecting pavement inspection evidence, independent review, and published PCI reports. It uses React Native / Expo Router and Supabase Auth, Postgres RLS, private Storage, and checked workflow RPCs.
 
 **Prototype / Provisional:** the D6433-24 sample/section calculation pipeline is implemented, but real graph ordinates require a private licensed, engineering-reviewed reference package. No such package is committed or configured by this PR. The public browser prototype retains illustrative legacy curves. Civil-engineering validation remains required. No output should be described as official ASTM-compliant solely because it has been approved in this application.
@@ -11,20 +13,24 @@ Use Node 22.20 or newer and the committed npm lockfile. Read [AGENTS.md](AGENTS.
 ```powershell
 npm.cmd ci
 Copy-Item .env.example .env.local
-# Edit .env.local with your DISPOSABLE Supabase URL and public anonymous key.
+# Edit .env.local with the intended Supabase URL and public anonymous key.
 npm.cmd run web
 ```
 
-Expo reads EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY. Public client keys are bundled into the app; RLS is the access boundary. Never put a service-role key in Expo variables. Check whether an existing local .env is present; .env.local should point to the disposable project for testing.
+Expo reads EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY. Public client keys are bundled into the app; RLS is the access boundary. Never put a service-role key in Expo variables. Check whether an existing local .env is present. Use a disposable project for tests that write data.
 
 The repository migrations extend an existing application schema; they do not bootstrap a fresh Supabase project. Follow [the migration guide](docs/authenticated-system.md) before signing in to a test backend. Without the published-revisions migration, authenticated screens display a migration/access error. The anonymous /prototype screen is a temporary browser calculation with no database writes.
+
+On 1 November 2026, the original **PCI Automation** project (`qsqvqkdqxkqparhzpsqn`) received the published-revisions, provisional D6433-24, and Reviewer branch-registration migrations after a private database backup and a Review-project rehearsal. The required `calculate-pci` and `admin-invite` Edge Functions are active there. The ignored local `.env.local` now points to the original project; rebuild with `expo export --platform web --clear` after changing projects so Metro does not reuse an old bundle. **PCI Automation Review** (`zxgscjcgxrezmlfyoriw`) remains the disposable test project; its prior local configuration is preserved privately under `private-astm/production-cutover/`. Existing original Auth accounts and inspection records were retained. No private ASTM reference package was uploaded. This local cutover does not deploy a public website or establish engineering approval.
+
+On 2 November 2026, the original project also received `20261102023605_reviewer_section_registration.sql` and `20261102030601_harden_legacy_function_execute.sql` after a fresh private backup. Reviewer/CE section INSERT and UPDATE now match the tested Review policy; existing section data, deletion rules, inspection approval, and publication rules were preserved. The four legacy helper-function grants now match the hardened Review configuration. No synthetic Review accounts or inspection data were copied, and no frontend was deployed.
 
 ## Roles and workflow
 
 | Role | Responsibility |
 | --- | --- |
-| Admin | Road inventory, active accounts, settings and distress catalog; access to internal workflow data. |
-| Reviewer | Engineer-defined boundaries and sampling plan; independently approve or return assigned submissions, then publish approved results. |
+| Admin | View road branches and sections; manage active accounts, settings and distress catalog; access internal workflow data. Existing inventory deletion rules are unchanged. |
+| Reviewer | Register and edit road branches and sections, define boundaries and sampling plans; independently approve or return assigned submissions, then publish approved results. |
 | Encoder | Collect measurements and photos for assigned units, submit them, and create correction revisions with a reason. |
 | Viewer | Read/download published, Reviewer-approved snapshots and current priorities only. No draft, pending/returned inspection, internal computation, review comment, audit, or account table access. |
 
@@ -54,10 +60,10 @@ Calculation tests independently check units, fractional deducts, severity altern
 
 ## Deployment preparation
 
-The web configuration uses Expo static export into dist/. A static host must serve the exported routes and assets; configure Supabase Auth site/redirect URLs for the intended host. Set the public environment variables at build time. A later authorized deployment must coordinate the reviewed schema migration before this frontend, because the new RPCs are required.
+The web configuration uses Expo static export into dist/. A static host must serve the exported routes and assets; configure Supabase Auth site/redirect URLs for the intended host. Set the public environment variables at build time and clear Metro's cache when switching backends. The original project now has the required migrations and functions, but the November cutover changed only the local app configuration and backend; no external web host was deployed.
 
-Mobile distribution requires a compatible Expo 57 development build/device test and the normal platform signing/build configuration; a web export does not validate a physical phone. The calculate-pci Edge Function is included for a disposable-project rehearsal. It reads private server Storage with a pinned content digest and writes only provisional outputs using race checks; it is not deployed. See [D6433-24 discrepancies, rule provenance, permission question and exact validation gates](docs/d6433-24-engineering-review.md).
+Mobile distribution requires a compatible Expo 57 development build/device test and the normal platform signing/build configuration; a web export does not validate a physical phone. The calculate-pci Edge Function reads private server Storage with a pinned content digest and writes only provisional outputs using race checks. It is deployed to both projects, with no approved curve package or reference hash configured in the original project. A distress-free confirmed sample can calculate; distressed samples fail closed. See [D6433-24 discrepancies, rule provenance, permission question and exact validation gates](docs/d6433-24-engineering-review.md).
 
-The protected admin-invite Edge Function needs server-side configuration and deployment before invitations work. No app, Edge Function, hosted schema or Auth configuration is deployed by this PR.
+The protected admin-invite Edge Function is deployed to the original and Review projects. Actual invitation delivery and acceptance still require hosted testing with authorized recipients and email configuration; the cutover sent no invitations.
 
-Review the new migration and validate it in a disposable full Supabase project before any future production application. [Migration history and procedure](docs/authenticated-system.md) document the actual filenames and the hosted history mismatch.
+Before further schema changes, rehearse new migrations in a disposable full Supabase project. [Migration history and procedure](docs/authenticated-system.md) document the repository filenames and hosted history.

@@ -1,2 +1,2 @@
-import { ApprovedReports } from '@/components/workflow/approved-reports';
-export default function Workspace() { return <ApprovedReports title="PCI Workspace" mode="overview" />; }
+import { RoleDashboard } from '@/components/dashboard/role-dashboard';
+export default function Workspace() { return <RoleDashboard />; }

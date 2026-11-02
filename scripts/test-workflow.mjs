@@ -57,6 +57,8 @@ const alignmentMigration = await fs.readFile('supabase/migrations/20260916140000
 const alignmentRollback = await fs.readFile('supabase/rollback/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
 await db.exec(alignmentMigration);
 await db.exec(await fs.readFile('supabase/migrations/20261004151522_published_revisions_and_reports.sql', 'utf8'));
+await db.exec(await fs.readFile('supabase/migrations/20261031211658_reviewer_branch_registration.sql', 'utf8'));
+await db.exec(await fs.readFile('supabase/migrations/20261102023605_reviewer_section_registration.sql', 'utf8'));
 const ids = Object.fromEntries(['admin', 'reviewer', 'encoder', 'viewer', 'other'].map((name, index) => [name, `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`]));
 for (const [name, id] of Object.entries(ids)) {
   await db.query('insert into auth.users values($1,$2)', [id, `${name}@example.test`]);
@@ -68,7 +70,7 @@ async function as(name) {
   await db.exec(`set role ${name === 'anon' ? 'anon' : 'authenticated'}`);
 }
 async function rejected(task, expected) { await assert.rejects(task, expected); checks++; }
-await as('admin');
+await as('reviewer');
 const branch = (await db.query("insert into branches(name) values('TEST ONLY ROAD') returning id")).rows[0].id;
 check((await db.query("select pg_get_functiondef('lakad_private.plan_samples(uuid,jsonb)'::regprocedure) body")).rows[0].body.includes('137 and 323'), 'Alignment migration updates plan validation');
 const samplingSecurity = (await db.query("select prosecdef, proconfig from pg_proc where oid='lakad_private.plan_samples(uuid,jsonb)'::regprocedure")).rows[0];
@@ -80,8 +82,8 @@ await db.exec('reset role');
 await db.exec(alignmentRollback);
 check((await db.query("select pg_get_functiondef('lakad_private.plan_samples(uuid,jsonb)'::regprocedure) body")).rows[0].body.includes('135 and 315'), 'Alignment rollback restores previous validation');
 await db.exec(alignmentMigration);
-await as('admin');
 const section = (await db.query("insert into sections(branch_id,name,length_meters,width_meters,area_sqm) values($1,'TEST ONLY SECTION',460,5,2300) returning id", [branch])).rows[0].id;
+await as('admin');
 await rejected(() => db.query("select lakad_plan_samples($1,$2)", [section, {}]), /engineer/i);
 await as('reviewer');
 async function testPlanBoundary(area, accepted) {

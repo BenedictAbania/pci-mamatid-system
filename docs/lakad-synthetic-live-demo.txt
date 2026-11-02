@@ -1,0 +1,159 @@
+LAKAD — SYNTHETIC DEMO walkthrough (software exercise only)
+Prepared from local revision 72bc0c0 plus uncommitted UI changes, 2 Nov 2026.
+
+DEMO TARGET: Original PCI Automation (ref qsqvqkdqxkqparhzpsqn). The local
+.env.local currently points there; confirm the project ref before signing in.
+This local app has EXPO_PUBLIC_LAKAD_DEMO_PREVIEW=true for the presentation;
+restart Expo after changing .env.local. Keep that flag false in deployed builds.
+This choice saves synthetic records in the original database. Do not assume that
+the app can completely remove them afterward: submitted inspections have locked
+workflow/history, direct sample deletion is blocked, and audit records may remain.
+Record every created branch, section and sample label (and IDs if available)
+for a separately reviewed cleanup. If the original must stay free of synthetic
+traces, use a separate test project instead.
+All names, dates, dimensions and distress entries below are invented. No field visit,
+municipal source check, engineering validation, approval or publication is claimed.
+
+1. LOG IN
+Who → where → enter → press → next:
+System Administrator logs in FIRST → LAKAD sign-in page →
+admin@test.com; password provided privately → Sign in → Home.
+For each later handoff, press Sign out, then use the same sign-in page:
+Civil Engineer / Reviewer: reviewer@test.com
+Field Inspector / Encoder: encoder@test.com
+Viewer / Decision-maker: viewer@test.com
+For every account: password provided privately. These are the original-project
+test emails supplied by the team; check that all four accounts are active.
+
+2. SYSTEM ADMINISTRATOR — CHECK THE FOUR ACCOUNTS
+Who → where → enter → press → next:
+Administrator → Users → User Directory → find the four emails above (use page
+controls if necessary) → check Active and assigned role: Admin, Reviewer, Encoder,
+Viewer, respectively. No data entry or button is needed when they are correct.
+If a test account has the wrong role, press its Admin / Reviewer / Encoder / Viewer
+role chip → Confirm change → the directory shows the new role. The Admin cannot
+change their own role here. The Invite user panel has Full name, Email address and
+Send invitation; new invitations start as Field Inspector. Do not invite the .test
+addresses: they have no mailbox. If an account is missing, stop and have the test
+project administrator provision a controlled test account before continuing.
+
+3. CIVIL ENGINEER / REVIEWER — REGISTER ROAD, SECTION, PLAN
+Who → where → enter → press → next:
+CE → Sampling Plans → Manage road branches and sections → Roads → Add road branch.
+Enter Branch name = SYNTHETIC DEMO — Acacia Training Road;
+Barangay / location = SYNTHETIC DEMO — fictional Barangay Sample;
+Administrative status = active;
+Description and verified source record = SYNTHETIC DEMO training record only;
+no verified municipal source or field measurements.
+Press Save → the synthetic branch appears under Road branches. Record its name.
+
+CE → Roads → Add road section → choose that Road branch.
+Enter Section code and name = SYNTHETIC DEMO — AC-01;
+Description = Fictional asphalt training section;
+Start location / chainage = SYNTHETIC DEMO chainage 0 m;
+End location / chainage = SYNTHETIC DEMO chainage 90 m;
+Length (meters) = 90; Width (meters) = 5;
+Notes = SYNTHETIC DEMO: invented 450 m² layout, not surveyed.
+Leave optional coordinates blank. Pavement type is shown as Asphalt.
+Press Save → AC-01 appears under Road sections with 450 m². Record its name.
+
+CE → Sampling Plans → Pavement section = SYNTHETIC DEMO — AC-01.
+Choose Assigned field inspector = the test Encoder; Independent review engineer =
+the test Reviewer. Enter Start location / chainage description = SYNTHETIC DEMO 0 m;
+End location / chainage description = SYNTHETIC DEMO 90 m;
+Total possible sample units (engineer adjusted) = 2;
+Minimum random inspections (engineer-confirmed) = 2;
+Sampling rationale, boundary confirmation and reference = SYNTHETIC DEMO only:
+invented 90 m x 5 m asphalt layout, two 225 m² units, both selected for software
+training; no real boundary survey or D6433-07 sampling validation.
+For this fictional exercise only, choose Engineering confirmation → I confirm
+homogeneous boundaries and sample count; this is NOT confirmation of a real road.
+Press Confirm plan & select systematic random units → SU-001 and SU-002 should
+appear as planned random units. Record both sample labels. If the CE cannot save
+the section or plan, stop and check the original project's permissions/schema.
+
+4. FIELD INSPECTOR / ENCODER — ENTER ONE FICTIONAL SAMPLE
+Who → where → enter → press → next:
+Sign out; Encoder signs in → My Inspections → Inspection register → select
+SYNTHETIC DEMO — AC-01, SU-001 → Start field inspection → Draft appears.
+On 1. Sample details, enter Inspection date (YYYY-MM-DD) = 2026-10-01;
+Measured sample area (m², 135–315) = 225;
+Sample orientation / sketch description = SYNTHETIC DEMO: invented 0–45 m
+sample, west to east; no field sketch;
+General inspection notes = SYNTHETIC DEMO: all observations and dimensions
+invented; no field visit. Leave optional coordinates blank. Keep Observed distress
+at Enter distress records below. After checking the invented entry's units and
+severity choices, select I checked severity, SI units, patch exclusions and
+overlapping distress rules. Press Save details and continue →
+2. Distress measurements opens.
+
+Choose Asphalt distress type = D6433-24 / Alligator Cracking (current catalog);
+Observed distress severity =
+L / Low (select the displayed description, if available); Measured quantity
+(m²) = 2; Location from sample start, metres (optional) = 10;
+Distress / location notes = SYNTHETIC DEMO: invented cracking for workflow practice.
+Press Add distress → the measurement appears. Press Continue to photos → Photos.
+Do not add a real-road photo. Press Continue to review and submit →
+4. Review and submit shows one saved distress, zero photos. Press Submit for
+engineer review, then Confirm → status Submitted; inputs are locked.
+SU-002 remains planned. None of these entries represents a physical observation.
+
+5. CIVIL ENGINEER / REVIEWER — RETURN AND INSPECT A REVISION
+Who → where → enter → press → next:
+Sign out; Reviewer signs in → Inspections to Review → Submitted filter → SU-001.
+Open 4. Review and submit → Engineer review comments (required when returning) =
+SYNTHETIC DEMO: revise the invented distress location from 10 m to 12 m.
+Press Return for correction, then Confirm → status Returned and comment recorded.
+
+Sign out; Encoder signs in → My Inspections → Returned filter → SU-001 →
+2. Distress measurements → Edit measurement. Change Location from sample start
+to 12 and Distress / location notes to SYNTHETIC DEMO: invented location revised
+to 12 m after test review. Press Save measurement changes → Continue to photos →
+Continue to review and submit → Submit for engineer review → Confirm → Submitted.
+Sign out; Reviewer signs in → Inspections to Review → SU-001 →
+4. Review and submit → Show calculation details → Review & change history.
+The return, resubmission and new revision should be visible. Do NOT press
+Calculate provisional D6433-24 PCI, Approve reference result, or Publish
+approved reference result for this D6433-07 study.
+For the presentation, press Simulate approval (demo only) on this Submitted
+revision. A notice should say the approval is on-screen only; the saved status
+stays Submitted. Then click Results → Open synthetic priority preview. Enter
+Synthetic section label = SYNTHETIC DEMO — AC-01; Hypothetical PCI = 55;
+Hypothetical affected area = 10 m²; Hypothetical high-severity distress count = 0;
+Hypothetical safety concern = No. Press Add synthetic scenario → Rank 1 appears.
+This manually supplied score is not calculated from the inspection. With one
+section there is no comparative ranking. Press Clear synthetic preview when done.
+
+6. VIEWER — CHECK THE PUBLICATION BOUNDARY
+Who → where → enter → press → next:
+Sign out; Viewer signs in → Published Results → Current published results and
+Published history; then Maintenance Priorities. Enter nothing; press no workflow
+action. The new SYNTHETIC DEMO road/sample must NOT appear because its submission
+was neither approved nor published. Other previously published results in the
+original project may still appear.
+Viewer must not see draft/returned/submitted inspections, internal review
+comments, unapproved calculations, account records or private evidence.
+
+7. END THE DEMO
+Who → where → enter → press → next:
+Presenter → role Home/Overview screens → enter nothing → Sign out → sign-in page.
+Explain: the team demonstrated test-account access, CE branch and section setup,
+a fictional two-unit plan, Inspector draft/submission, CE return and resubmission,
+an on-screen approval/priority simulation, and Viewer exclusion of unpublished
+work. No PCI result was validated, approved in the database, or published.
+Leave the rows clearly marked SYNTHETIC DEMO. Arrange a separate, reviewed
+cleanup of the recorded synthetic records and dependencies; Sign out does not
+delete data.
+
+EDITION AND PERMISSION CHECKS
+The current UI gives CE section create/edit controls. An earlier four-role
+authenticated API test in PCI Automation Review showed CE section writes succeed
+and Admin, Encoder and Viewer writes fail. The original project has the section
+policy migration, but this guide did not retest its API permissions or write data.
+The current app still says D6433-24 on Sampling Plans, My Inspections /
+Inspections to Review (severity guidance and provisional calculation controls),
+and Settings (calculation edition and catalog rules). The calculator and sample
+planning rules are still provisional D6433-24 work; this script tests the
+software workflow only. ASTM D6433-07 engineering rules, curves and results
+must be implemented and independently validated before any real approval or
+publication demonstration.

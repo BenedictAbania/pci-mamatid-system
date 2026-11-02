@@ -30,19 +30,42 @@ export function confirmAction(title: string, message: string): Promise<boolean> 
   });
 }
 
-export function downloadCsv(filename: string, rows: (string | number | null)[][]) {
+export type CsvCell = string | number | null;
+
+/** Spreadsheet-viewing policy: see docs/csv-export-policy.md. Never mutate source values. */
+export function serializeCsv(rows: readonly (readonly CsvCell[])[]): string {
+  return rows.map(row => row.map(value => {
+    let text: string;
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) throw new Error('CSV numbers must be finite.');
+      text = String(value);
+    } else {
+      text = value ?? '';
+      const leading = text.match(/^[\s\u0000-\u001f\u007f]*/u)?.[0] ?? '';
+      // A visible literal prefix survives import without relying on spreadsheet escapes.
+      if (/^[=+\-@＝＋－＠]/u.test(text.slice(leading.length)) || /[\t\r\n]/u.test(leading)) {
+        text = 'Text: ' + text;
+      }
+    }
+    return `"${text.replace(/"/g, '""')}"`;
+  }).join(',')).join('\r\n');
+}
+
+export function downloadCsv(filename: string, rows: readonly (readonly CsvCell[])[]) {
   if (Platform.OS !== 'web' || typeof document === 'undefined') {
     throw new Error('CSV downloads are available in the web app.');
   }
 
-  const csv = rows
-    .map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
-    .join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['\uFEFF', serializeCsv(rows)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  try { link.click(); }
+  finally {
+    // Give the browser time to consume the Blob before releasing it.
+    setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
+  }
 }

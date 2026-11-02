@@ -1,0 +1,182 @@
+LAKAD SYNTHETIC DEMO: from road branch to a priority preview
+Prepared from local revision 72bc0c0 and the current uncommitted UI, 2 Nov 2026.
+
+Everything below is fictional software-training data. No road was surveyed, no
+PCI was validated, and no result will be approved or published. Passwords are
+provided privately. This walkthrough uses the original PCI Automation project
+if that is where the local app is connected. Saved branch, section, plan and
+inspection records will remain there; signing out or clearing the preview does
+not delete them. Record their labels for separately reviewed cleanup.
+
+The local app currently enables the optional synthetic priority preview. If
+"Open synthetic priority preview" is absent, the running build does not have
+that demo setting enabled. The saved ranking/dashboard cannot be populated by
+unapproved provisional inspections.
+
+1. ADMINISTRATOR: CHECK THE ACCOUNTS
+   Who logs in: Administrator, admin@test.com.
+   Where to click: Sign in -> Users -> User Directory.
+   What to enter: Password provided privately. Check that admin@test.com is
+   Administrator, reviewer@test.com is Civil Engineer / Reviewer,
+   encoder@test.com is Field Inspector / Encoder, and viewer@test.com is Viewer.
+   What to press: Sign in, then Sign out after checking. Do not invite anyone.
+   What appears next: The account directory shows each active test account and
+   its role. If an account is missing or inactive, stop and fix that setup first.
+
+2. CIVIL ENGINEER: ADD ONE ROAD BRANCH
+   Who logs in: Civil Engineer / Reviewer, reviewer@test.com.
+   Where to click: Sampling Plans -> Manage road branches and sections ->
+   Roads -> Add road branch.
+   What to enter:
+     Branch name: SYNTHETIC DEMO - Acacia Training Road
+     Barangay / location: SYNTHETIC DEMO - fictional Barangay Sample
+     Administrative status: active
+     Description and verified source record: SYNTHETIC DEMO training record;
+       no municipal source, survey or field measurement was verified.
+   What to press: Save.
+   What appears next: The branch appears under Road branches. Write down its
+   name and any displayed ID for later cleanup. If Save reports a permission
+   error, stop this step and have the project owner check the CE migration.
+
+3. CIVIL ENGINEER: ADD ONE ASPHALT ROAD SECTION
+   Who logs in: Keep reviewer@test.com signed in.
+   Where to click: Roads -> Add road section -> select the new road branch.
+   What to enter:
+     Section code and name: SYNTHETIC DEMO - AC-01
+     Description: Fictional asphalt training section
+     Start location / chainage: SYNTHETIC DEMO - 0 m
+     End location / chainage: SYNTHETIC DEMO - 90 m
+     Length (meters): 90
+     Width (meters): 5
+     Notes: SYNTHETIC DEMO - invented layout; not surveyed
+     Latitude / Longitude: leave both blank
+   What to press: Save.
+   What appears next: AC-01 appears under Road sections. Its geometric area is
+   450 m2 (90 x 5). Write down the section label for later cleanup.
+
+4. CIVIL ENGINEER: CREATE A TWO-UNIT SAMPLING PLAN
+   Who logs in: Keep reviewer@test.com signed in.
+   Where to click: Sampling Plans -> Pavement section -> AC-01.
+   What to enter:
+     Assigned field inspector: the encoder@test.com test account
+     Independent review engineer: the reviewer@test.com test account
+     Start location / chainage description: SYNTHETIC DEMO - 0 m
+     End location / chainage description: SYNTHETIC DEMO - 90 m
+     Total possible sample units (engineer adjusted): 2
+     Minimum random inspections (engineer-confirmed): 2
+     Sampling rationale, boundary confirmation and reference:
+       SYNTHETIC DEMO only - invented 90 m x 5 m section with two 225 m2
+       units for software training; no real boundary or sample count checked.
+     Engineering confirmation: I confirm homogeneous boundaries and sample
+       count (for this fictional software exercise only).
+   What to press: Confirm plan & select systematic random units; then Sign out.
+   What appears next: SU-001 and SU-002 are planned and assigned. This button
+   records a plan confirmation; it is not a real engineering sign-off.
+
+5. FIELD INSPECTOR: SAVE AND SUBMIT A FICTIONAL INSPECTION
+   Who logs in: Field Inspector / Encoder, encoder@test.com.
+   Where to click: My Inspections -> Inspection register -> AC-01 / SU-001 ->
+   Start field inspection -> 1. Sample details.
+   What to enter:
+     Inspection date (YYYY-MM-DD): 2026-10-01
+     Measured sample area (m2, 135-315): 225
+     Sample orientation / sketch description: SYNTHETIC DEMO - invented
+       0-45 m sample, west to east; no field sketch
+     General inspection notes: SYNTHETIC DEMO - invented observation;
+       no field visit
+     Latitude / Longitude: leave both blank
+     Observed distress: Enter distress records below
+     Field measurement and severity rules: I checked severity, SI units,
+       patch exclusions and overlapping distress rules (software exercise).
+   What to press: Save details and continue.
+   What appears next: 2. Distress measurements opens.
+
+   Where to click: Asphalt distress type -> Alligator Cracking; then
+   Observed distress severity -> the Low description/code shown by the catalog.
+   What to enter:
+     Measured quantity (m2): 2
+     Location from sample start, metres (optional): 10
+     Distress / location notes: SYNTHETIC DEMO - invented cracking
+   What to press: Add distress -> Continue to photos ->
+   Continue to review and submit -> Submit for engineer review -> Confirm;
+   then Sign out. Do not upload a real-road photograph.
+   What appears next: SU-001 is Submitted with one distress and zero photos.
+   SU-002 remains Planned. These are invented entries, not measurements.
+
+6. CIVIL ENGINEER: RETURN, THEN INSPECT A CORRECTED REVISION
+   Who logs in: Civil Engineer / Reviewer, reviewer@test.com.
+   Where to click: Inspections to Review -> Submitted -> SU-001 ->
+   4. Review and submit.
+   What to enter: Engineer review comments = SYNTHETIC DEMO - change the
+   invented distress location from 10 m to 12 m.
+   What to press: Return for correction -> Confirm -> Sign out.
+   What appears next: SU-001 is Returned and the comment is in its history.
+
+   Who logs in: Field Inspector / Encoder, encoder@test.com.
+   Where to click: My Inspections -> Returned -> SU-001 ->
+   2. Distress measurements -> Edit measurement.
+   What to enter: Location from sample start = 12; Distress / location notes =
+   SYNTHETIC DEMO - invented location revised to 12 m.
+   What to press: Save measurement changes -> Continue to photos ->
+   Continue to review and submit -> Submit for engineer review -> Confirm ->
+   Sign out.
+   What appears next: SU-001 is Submitted again as a newer revision.
+
+   Who logs in: Civil Engineer / Reviewer, reviewer@test.com.
+   Where to click: Inspections to Review -> Submitted -> SU-001 ->
+   4. Review and submit -> Show calculation details.
+   What to enter: Nothing.
+   What to press: Optionally press Simulate approval (demo only). The Review &
+   change history panel appears below the calculation details.
+   What appears next: The history shows the return and resubmission. The
+   optional simulation displays a notice on this screen only; saved status
+   stays Submitted. Do NOT press Approve reference result or Publish approved
+   reference result.
+
+7. CIVIL ENGINEER: SHOW THE PRIORITIZATION PREVIEW
+   Who logs in: Keep reviewer@test.com signed in.
+   Where to click: Results -> Open synthetic priority preview.
+   What to enter for scenario A:
+     Synthetic section label: SYNTHETIC DEMO - AC-01 what-if
+     Hypothetical PCI (0-100; manually supplied): 55
+     Hypothetical affected area (m2): 10
+     Hypothetical high-severity distress count: 0
+     Hypothetical safety concern: No
+   What to press: Add synthetic scenario.
+   What appears next: One temporary scenario appears at Rank 1.
+
+   What to enter for scenario B (a comparison, NOT a saved road section):
+     Synthetic section label: SYNTHETIC DEMO - Comparison what-if
+     Hypothetical PCI (0-100; manually supplied): 35
+     Hypothetical affected area (m2): 20
+     Hypothetical high-severity distress count: 1
+     Hypothetical safety concern: Yes
+   What to press: Add synthetic scenario.
+   What appears next: The comparison scenario is Rank 1; AC-01 what-if is
+   Rank 2. Lower manually supplied PCI ranks first. These numbers do not come
+   from SU-001 and are not saved to reports or the database.
+
+   Where to click: Home -> Maintenance priorities panel; then Results ->
+   Maintenance priorities tab.
+   What to enter: Nothing.
+   What to press: Open the tab; return to the preview and press Clear synthetic
+   preview when the presentation is finished.
+   What appears next: The real dashboard/report ranking remains empty until
+   eligible verified, approved current section results exist. Clearing the
+   preview removes its on-screen scenarios. Sign out.
+
+8. VIEWER: CHECK WHAT IS ACTUALLY PUBLISHED
+   Who logs in: Viewer, viewer@test.com.
+   Where to click: Published Results -> Current published results; then
+   Maintenance Priorities. The Overview also has a priorities container.
+   What to enter: Password provided privately; no report data.
+   What to press: Sign in, navigate, then Sign out.
+   What appears next: This synthetic submission and the temporary preview do
+   not appear. Viewer can see only eligible published, approved information.
+
+END OF DEMO
+You showed CE branch/section setup, planning, Inspector submission, CE return
+and resubmission, and a temporary priority ordering. You did not demonstrate
+calculated ASTM D6433-07 prioritization. The current catalog/calculation UI
+still contains provisional D6433-24 references; engineering validation and
+edition alignment are still required before real approval or publication.

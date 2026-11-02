@@ -11,6 +11,7 @@ const routes: Record<string, readonly Role[]> = {
   // This legacy CRUD screen bypasses the authenticated workflow and is intentionally inaccessible.
   '/inspections': [],
   '/pci-results': ['admin', 'reviewer', 'viewer'],
+  '/demo-priorities': ['admin', 'reviewer'],
   '/maintenance-plan': ['admin', 'reviewer', 'viewer'],
   '/users': ['admin'],
   '/reports': ['admin', 'reviewer', 'viewer'],

@@ -40,16 +40,20 @@ function checkCurve(curve: Curve | undefined, figure: string, scale: Curve['x_sc
     previous=x;
   }
 }
-/** Caller verifies content hash. This validates completeness/axes, not engineering truth. */
-export function privateCurveReader(pack: CurvePackage, digest: string): CurveReader {
-  if (!pack || pack.edition !== EDITION || pack.usage !== 'private-server' || !pack.id?.trim() || !pack.permission_record?.trim() || !pack.reviewed_by?.trim() || !pack.interpolation_review?.trim()
-    || !/^[a-f0-9]{64}$/.test(pack.source_sha256 ?? '') || !/^[a-f0-9]{64}$/.test(digest)) throw new ReferenceUnavailable('A provenance-reviewed private D6433-24 package is required');
+/** Structural validation only; this does not grant permission or engineering approval. */
+export function validateCurveMaps(pack: Pick<CurvePackage, 'dv' | 'cdv'>) {
   const keys=new Set(ASPHALT_CATALOG.flatMap(d=>(d.severities.length ? d.severities : [null]).map(sev=>curveKey(d.code,sev))));
   if(!pack.dv || Object.keys(pack.dv).some(key=>!keys.has(key)))throw new ReferenceUnavailable('Unknown or legacy DV key in D6433-24 package');
   for (const d of ASPHALT_CATALOG) for (const sev of d.severities.length ? d.severities : [null]) checkCurve(pack.dv?.[curveKey(d.code,sev)],d.figure,'log10');
   // Fig. X3.27 supplies q=1..7 only. Do not fabricate the missing q=8..10.
   for (let q=2;q<=7;q++) checkCurve(pack.cdv?.[String(q)],'X3.27','linear');
   if (Object.keys(pack.cdv).some(q=>!['2','3','4','5','6','7'].includes(q))) throw new ReferenceUnavailable('Unsupported CDV q: Fig. X3.27 only supplies 1–7; engineering clarification required');
+}
+/** Caller verifies content hash. This validates completeness/axes, not engineering truth. */
+export function privateCurveReader(pack: CurvePackage, digest: string): CurveReader {
+  if (!pack || pack.edition !== EDITION || pack.usage !== 'private-server' || !pack.id?.trim() || !pack.permission_record?.trim() || !pack.reviewed_by?.trim() || !pack.interpolation_review?.trim()
+    || !/^[a-f0-9]{64}$/.test(pack.source_sha256 ?? '') || !/^[a-f0-9]{64}$/.test(digest)) throw new ReferenceUnavailable('A provenance-reviewed private D6433-24 package is required');
+  validateCurveMaps(pack);
   return {
     id:pack.id,digest,
     deduct(code,severity,density) {

@@ -6,9 +6,30 @@ export type SectionSample = {
 export type SectionInput = {
   area_sqm: number; total_sample_units: number; required_random_ids: string[]; samples: SectionSample[];
 };
+type GeometrySample = Omit<SectionSample, 'computation_id' | 'approved' | 'is_current'> & { calculation_id: string };
+type GeometryInput = Omit<SectionInput, 'samples'> & { samples: GeometrySample[] };
+export type SectionReviewInput = Omit<GeometryInput, 'samples'> & {
+  samples: (GeometrySample & { status: 'provisional' })[];
+};
+/** Local engineering rehearsal uses the same geometry/formulas without inventing approvals.
+ * This entry point is not called by the HTTP service or the publication workflow. */
+export function calculateSectionForReview(input: SectionReviewInput) {
+  if (input.samples.some(s => s.status !== 'provisional' || s.edition !== EDITION)) throw new Error('Only provisional D6433-24 local review samples are allowed');
+  return { ...aggregateSectionGeometry(input), scope: 'local-review' as const, engineering_approved: false, publishable: false };
+}
+/** Production membership gate is preserved independently of local rehearsal. */
+export function calculateSection(input: SectionInput) {
+  for (const s of input.samples) {
+    if(s.approved!==true||s.is_current!==true||s.edition!==EDITION)throw new Error('Only current approved D6433-24 sample calculations may enter section aggregation');
+  }
+  const { sample_calculation_ids, ...output } = aggregateSectionGeometry({ ...input,
+    samples: input.samples.map(s => ({ ...s, calculation_id: s.computation_id })),
+  });
+  return { ...output, sample_computation_ids: sample_calculation_ids };
+}
 /** §11.1 Eqs. 5–7. Random sample mean represents the non-additional section area;
  * additional units contribute their ACTUAL surveyed area, not equal sample counts. */
-export function calculateSection(input: SectionInput) {
+function aggregateSectionGeometry(input: GeometryInput) {
   const area=positive(input.area_sqm,'Section area');
   if(!Number.isInteger(input.total_sample_units)||input.total_sample_units<1||input.total_sample_units>10000) throw new Error('Total section sample-unit count required');
   if(area/input.total_sample_units<135 || area/input.total_sample_units>315)throw new Error('Section layout cannot meet the AC sample-unit area range');
@@ -16,9 +37,8 @@ export function calculateSection(input: SectionInput) {
   if(!input.samples.length||input.samples.length>input.total_sample_units) throw new Error('Invalid surveyed sample count');
   const ids=new Set<string>(), computations=new Set<string>();
   for(const s of input.samples) {
-    if(!s.id||!s.computation_id||ids.has(s.id)||computations.has(s.computation_id))throw new Error('Duplicate sample or computation');
-    ids.add(s.id); computations.add(s.computation_id);
-    if(s.approved!==true||s.is_current!==true||s.edition!==EDITION)throw new Error('Only current approved D6433-24 sample calculations may enter section aggregation');
+    if(!s.id||!s.calculation_id||ids.has(s.id)||computations.has(s.calculation_id))throw new Error('Duplicate sample or computation');
+    ids.add(s.id); computations.add(s.calculation_id);
     if(s.sample_type!=='random'&&s.sample_type!=='additional')throw new Error('Unknown sample type');
     positive(s.area_sqm,'Sample area');validPci(s.pci);
     if(s.area_sqm<135||s.area_sqm>315)throw new Error('Approved sample area outside D6433-24 AC limits');
@@ -41,7 +61,7 @@ export function calculateSection(input: SectionInput) {
   const pci=input.samples.reduce((a,s)=>a+s.pci*weights[s.id],0);
   return {pci,condition:condition(pci),weights,random_mean:randomMean,additional_mean:addMean,
     represented_random_area:area-addArea,additional_area:addArea,census_reclassification:census,
-    sample_computation_ids:input.samples.map(s=>s.computation_id),
+    sample_calculation_ids:input.samples.map(s=>s.calculation_id),
     method:'D6433-24 §11.1 Eqs. 5–7 (area-weighted random/additional)',status:'provisional' as const,label:PROVISIONAL_LABEL,
     edition:EDITION,algorithm_version:ALGORITHM_VERSION,precision_policy:'full precision; round display only',source_rules:{section:RULES.section,additional:RULES.additional,rating:RULES.rating},
   };

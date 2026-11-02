@@ -12,7 +12,7 @@ let checks=0;const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;};
 const reject=async(f,re)=>{await assert.rejects(f,re);checks++;};
 const db=new PGlite();
 await db.exec("create role service_role");
-for(const p of ['tests/schema-fixture.sql','supabase/migrations/20260916_authenticated_workflow.sql','supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql','supabase/migrations/20261004151522_published_revisions_and_reports.sql','supabase/migrations/20261004162431_d6433_24_provisional_calculations.sql'])await db.exec(await fs.readFile(p,'utf8'));
+for(const p of ['tests/schema-fixture.sql','supabase/migrations/20260916_authenticated_workflow.sql','supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql','supabase/migrations/20261004151522_published_revisions_and_reports.sql','supabase/migrations/20261004162431_d6433_24_provisional_calculations.sql','supabase/migrations/20261031211658_reviewer_branch_registration.sql','supabase/migrations/20261102023605_reviewer_section_registration.sql'])await db.exec(await fs.readFile(p,'utf8'));
 const ids=Object.fromEntries(['admin','reviewer','encoder','viewer','other'].map((r,i)=>[r,'00000000-0000-4000-8000-'+String(i+1).padStart(12,'0')]));
 for(const [r,id]of Object.entries(ids)){await db.query('insert into auth.users(id,email)values($1,$2)',[id,r+'@fictional.test']);await db.query('insert into profiles(id,full_name,role)values($1,$2,$3)',[id,r,r==='other'?'encoder':r]);}
 const as=async(r)=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[r]??'']);await db.exec('set role '+(r==='service'?'service_role':'authenticated'));};
@@ -21,9 +21,10 @@ const get=async(id)=>(await db.query('select * from sample_units where id=$1',[i
 const action=async(id,act,payload={})=>{const s=await get(id);return db.query('select lakad_inspection_action($1,$2,$3)',[id,act,{...payload,revision:s.input_revision,version:s.action_version}]);};
 const context=async(id,kind='sample')=>(await db.query('select lakad_calculation_context($1,$2)as c',[id,kind])).rows[0].c;
 const save=(c,o,actor=ids.encoder)=>db.query('select lakad_record_provisional_calculation($1,$2,$3)',[actor,c,o]);
-await as('admin');
+await as('reviewer');
 const branch=(await db.query("insert into branches(name)values('FICTIONAL')returning id")).rows[0].id;
 const sec=(await db.query("insert into sections(branch_id,name,area_sqm,length_meters,width_meters)values($1,'FICTIONAL',2250,450,5)returning id",[branch])).rows[0].id;
+await as('admin');
 const catalog=(await db.query('select * from distress_types where astm_code is not null order by astm_code')).rows;
 eq(catalog.length,20);eq(catalog[18].allowed_severities,'{medium,high}');
 await reject(()=>db.query("update distress_types set default_unit_of_measure='m' where astm_code=1"),/immutable/);

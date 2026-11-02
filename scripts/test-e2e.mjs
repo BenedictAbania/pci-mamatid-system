@@ -24,6 +24,8 @@ async function run() {
   const alignmentMigration = await fs.readFile('supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql', 'utf8');
   await db.exec(alignmentMigration);
   await db.exec(await fs.readFile('supabase/migrations/20261004151522_published_revisions_and_reports.sql', 'utf8'));
+  await db.exec(await fs.readFile('supabase/migrations/20261031211658_reviewer_branch_registration.sql', 'utf8'));
+  await db.exec(await fs.readFile('supabase/migrations/20261102023605_reviewer_section_registration.sql', 'utf8'));
 
   const ids = {
     admin: '00000000-0000-4000-8000-000000000001',
@@ -63,20 +65,21 @@ async function run() {
 
   console.log('Starting TC-E2E-01');
 
-  // A. Administrator
-  await as('admin');
+  // A. Civil Engineer registers the branch and section.
+  await as('reviewer');
   const branch = (await db.query("insert into branches(name) values('TEST – Mabuhay Road') returning id")).rows[0].id;
-  check(branch, 'A.1: Admin created test branch');
+  check(branch, 'A.1: Civil Engineer created test branch');
 
   const section = (await db.query(
     "insert into sections(branch_id, name, length_meters, width_meters, area_sqm, pavement_type) values($1, 'TEST – Section A', 125, 6, 750, 'asphalt') returning id",
     [branch]
   )).rows[0].id;
-  check(section, 'A.2: Admin created test section');
+  check(section, 'A.2: Civil Engineer created test section');
 
   const sData = (await db.query('select branch_id from sections where id = $1', [section])).rows[0];
   check(sData.branch_id === branch, 'A.3: Branch-section relationship verified');
 
+  await as('admin');
   await rejected(
     () => db.query('select lakad_plan_samples($1, $2)', [section, { total: 3, required: 2, inspector: ids.encoder, reviewer: ids.reviewer }]),
     /civil engineer must confirm homogeneous boundaries and the sampling plan/i

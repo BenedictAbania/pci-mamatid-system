@@ -1,50 +1,76 @@
 import { Image } from 'expo-image';
 import { PhotoCard } from '@/components/workflow/photo-card';
-import { PageControls } from '@/components/workflow/pagination';
+import { PageControls, type PageControlsProps } from '@/components/workflow/pagination';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { TaskTabs } from '@/components/workflow/task-tabs';
+import { inspectionSteps, severityChoices, statusGuidance, type InspectionStep } from '@/lib/inspection-presentation';
+import { StatusBadge } from '@/components/dashboard/dashboard-parts';
 import { Pressable, Text, View } from 'react-native';
 import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { REFERENCE_PENDING, validateMeasurement, type CalculationOutput } from '@/lib/pci-service';
+import { validateMeasurement, type CalculationOutput } from '@/lib/pci-service';
 import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
 import { supabase } from '@/lib/supabase';
 import { Photo, Sample, WorkflowData, workflowAction, calculateProvisional } from '@/lib/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
+import { PHOTO_SIZE_MESSAGE, validatePhotoSize } from '@/lib/inspection-photo';
+import { DEMO_PREVIEW_ENABLED } from '@/lib/demo-preview';
 
 import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL, potholeQuantity, type PotholeDetails } from '@/lib/d6433-24/catalog';
 import type { SampleOutput } from '@/lib/d6433-24/sample';
 
 export default function FieldInspections() {
-  const [selected, setSelected] = useState('');
-  const state = useWorkflow(selected);
+  const params = useLocalSearchParams<{ sample?: string; status?: string }>();
+  const { role, user } = useAuth();
+  const status = typeof params.status === 'string' ? params.status : role === 'reviewer' ? 'submitted' : 'all';
+  const initialSample = typeof params.sample === 'string' ? params.sample : '';
+  return <InspectionWorkspace key={[user?.id, role].join(':')} status={status} initialSample={initialSample} />;
+}
+function InspectionWorkspace({ status, initialSample }: { status: string; initialSample: string }) {
+  const router = useRouter();
+  const [selected, setSelected] = useState(initialSample);
+  const [step, setStep] = useState<InspectionStep>('details');
+  useEffect(() => {
+    // Sync direct task links and browser history without remounting the shell.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelected(initialSample);
+    setStep('details');
+  }, [initialSample]);
+  const state = useWorkflow(selected, undefined, status === 'all' ? undefined : status);
   const p = useAdminPalette();
   const { role, user } = useAuth();
   const [query, setQuery] = useState('');
-  const visibleSamples = state.data?.samples.filter(item => role === 'reviewer' ? item.reviewer_id === user?.id && item.assigned_to !== user?.id : role === 'encoder' ? item.assigned_to === user?.id : false) ?? [];
+  const visibleSamples = state.scopeChanging ? [] : state.data?.samples.filter(item => role === 'reviewer' ? item.reviewer_id === user?.id && item.assigned_to !== user?.id : role === 'encoder' ? item.assigned_to === user?.id : false) ?? [];
+  const filteredSamples = visibleSamples.filter(s => (status === 'all' || s.workflow_state === status)).filter(s => `${state.data?.sections.find(x => x.id === s.section_id)?.name} ${s.unit_number} ${s.workflow_state}`.toLowerCase().includes(query.toLowerCase()));
   const sample = visibleSamples.find(item => item.id === selected);
-  const title = role === 'reviewer' ? 'Inspection Review' : 'Field Inspections';
+  const title = role === 'reviewer' ? 'Inspections to Review' : 'My Inspections';
   const subtitle = role === 'reviewer' ? 'Review submitted inspections assigned to you and record an independent decision.' : 'Start, save, correct, and submit your assigned sample-unit inspections.';
-  return <AdminShell title={title} subtitle={subtitle} loading={state.loading} onRefresh={() => void state.refresh()} onSearchChange={setQuery} searchValue={query}>
+  return <AdminShell title={title} subtitle={subtitle} loading={state.loading} onRefresh={() => void state.refresh()} onSearchChange={setQuery} searchValue={query} searchLabel="Search inspections on this page">
     {!!state.error && <Notice error>{state.error}</Notice>}{!!state.message && <Notice>{state.message}</Notice>}
-    <Notice>{REFERENCE_PENDING}. You may collect and review inputs; approval requires a verified reference calculation.</Notice>
-    <PageControls {...state.pagination} />
-    <PageControls label="Assignees / catalog" {...state.referencesPagination} />
-    <Notice>Assignee and distress choices are paged. Search applies to the loaded register page. Review history shows up to 50 entries; historical reports use saved approvals.</Notice>
+    <Notice>{PROVISIONAL_LABEL}. Inspections can be saved and reviewed; approval requires a verified reference calculation.</Notice>
     {state.data && <>
-      <AdminPanel title="Inspection register" palette={p}>
-        <View style={{ gap: 10 }}>{visibleSamples.filter(s => `${state.data?.sections.find(x => x.id === s.section_id)?.name} ${s.unit_number} ${s.workflow_state}`.toLowerCase().includes(query.toLowerCase())).map(s => <Pressable key={s.id} onPress={() => setSelected(s.id)} style={{ borderWidth: 1, borderColor: s.id === selected ? p.blue : p.border, backgroundColor: s.id === selected ? p.blueSoft : p.panel, borderRadius: 9, padding: 14, gap: 6 }}>
+      {!selected && <AdminPanel title="Inspection register" palette={p}>
+        <TaskTabs label="Filter inspections by status" value={status} items={['all', 'planned', 'draft', 'returned', 'submitted', 'approved', 'published'].map(value => ({ value, label: value === 'all' ? 'All inspections' : value[0].toUpperCase() + value.slice(1) }))} onChange={value => router.setParams({ status: value })} />
+        <Text style={{ color: p.muted, marginVertical: 12 }}>Status filters cover all your assignments. Text search covers this page only. Select a sample to see the next task.</Text>
+        <View style={{ gap: 10 }}>{filteredSamples.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityLabel={`Open sample ${s.unit_number}`} onPress={() => { setSelected(s.id); setStep('details'); }} style={{ borderWidth: 1, borderColor: s.id === selected ? p.blue : p.border, backgroundColor: s.id === selected ? p.blueSoft : p.panel, borderRadius: 9, padding: 14, gap: 6 }}>
           <Text style={{ color: p.text, fontWeight: '700' }}>{state.data?.sections.find(x => x.id === s.section_id)?.name} · SU-{String(s.unit_number).padStart(3, '0')}</Text>
           <Text style={{ color: p.muted }}>{s.workflow_state.toUpperCase()} · {s.sample_type ?? 'Unplanned'} · {s.area_sqm ?? '—'} m² · Revision {s.input_revision}</Text>
         </Pressable>)}</View>
-        {!visibleSamples.length && <AdminEmpty palette={p} icon="clipboard" message={role === 'reviewer' ? 'No sample units are assigned to you for independent review.' : 'No sample units are assigned to you. A civil engineer must confirm a plan first.'} />}
-      </AdminPanel>
-      {sample && !state.loading && <InspectionEditor key={`${sample.id}-${sample.input_revision}-${sample.action_version}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy} run={state.run} />}
+        {!state.loading && !visibleSamples.length && <AdminEmpty palette={p} icon="clipboard" message={role === 'reviewer' ? 'No sample units are assigned to you for independent review.' : 'No sample units are assigned to you. A civil engineer must confirm a plan first.'} />}
+        {!state.loading && !!visibleSamples.length && !filteredSamples.length && <AdminEmpty palette={p} icon="search" message="No matching inspections on this page. Change the status filter, clear search, or move to the next page." />}
+        <PageControls {...state.pagination} />
+      </AdminPanel>}
+      {selected && <AdminButton palette={p} tone="secondary" label="Back to inspection list" onPress={() => { setSelected(''); router.setParams({ status, sample: undefined }); }} />}
+      {selected && state.loadedSampleId !== selected && <Notice>Loading inspection details…</Notice>}
+      {selected && state.loadedSampleId === selected && !sample && !state.loading && <Notice error>This sample is unavailable in your authorized assignments. Return to the list or refresh.</Notice>}
+      {sample && state.loadedSampleId === selected && <InspectionEditor step={step} setStep={setStep} error={state.error} key={`${sample.id}-${sample.input_revision}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} referencePagination={state.referencesPagination} />}
     </>}
   </AdminShell>;
 }
 
-function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: WorkflowData; busy: boolean; run: (task: () => Promise<unknown>, success?: string) => Promise<void> }) {
+export function InspectionEditor({ sample, data, busy, run, referencePagination, step, setStep, error }: { sample: Sample; data: WorkflowData; busy: boolean; run: (task: () => Promise<unknown>, success?: string) => Promise<boolean>; referencePagination: PageControlsProps; step: InspectionStep; setStep: (step: InspectionStep) => void; error?: string }) {
   const p = useAdminPalette();
   const { role, user } = useAuth();
   const editable = role === 'encoder' && sample.assigned_to === user?.id && ['draft', 'returned'].includes(sample.workflow_state);
@@ -66,7 +92,9 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
   const [distressNotes, setDistressNotes] = useState('');
   const [editingId, setEditingId] = useState('');
   const [comments, setComments] = useState('');
+  const [traceOpen, setTraceOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [simulatedApproval, setSimulatedApproval] = useState(false);
   const [caption, setCaption] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [photoSelectionError, setPhotoSelectionError] = useState('');
@@ -105,12 +133,13 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
     if (!selectedPhoto) throw new Error('Choose a photograph before uploading.');
     setPhotoUploading(true);
     try {
-      if (selectedPhoto.fileSize && selectedPhoto.fileSize > 5 * 1024 * 1024) throw new Error('Choose a JPEG, PNG or WebP photograph up to 5 MB.');
+      if (selectedPhoto.fileSize) validatePhotoSize(selectedPhoto.fileSize);
       const response = await fetch(selectedPhoto.uri);
       const bytes = await response.arrayBuffer();
       const head = new Uint8Array(bytes);
       const detected = head[0] === 255 && head[1] === 216 && head[2] === 255 ? 'image/jpeg' : head[0] === 137 && head[1] === 80 && head[2] === 78 && head[3] === 71 ? 'image/png' : String.fromCharCode(...head.slice(0, 4)) === 'RIFF' && String.fromCharCode(...head.slice(8, 12)) === 'WEBP' ? 'image/webp' : null;
-      if (!detected || bytes.byteLength > 5 * 1024 * 1024 || !bytes.byteLength) throw new Error('Choose a JPEG, PNG or WebP photograph up to 5 MB.');
+      if (!detected) throw new Error(PHOTO_SIZE_MESSAGE);
+      validatePhotoSize(bytes.byteLength);
       const path = `${sample.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${detected.split('/')[1]}`;
       const { error } = await supabase.storage.from('sample-unit-photos').upload(path, bytes, { contentType: detected, upsert: false });
       if (error) throw new Error(`Photograph upload failed: ${error.message}`);
@@ -127,41 +156,57 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
     const { error } = await supabase.storage.from('sample-unit-photos').remove([photo.photo_path]);
     if (error) throw new Error(`The photograph record was removed, but file cleanup failed: ${error.message}. Refresh to continue.`);
   }
-  return <View style={{ gap: 16 }}>
-    <AdminPanel palette={p} title={`Sample SU-${String(sample.unit_number).padStart(3, '0')} · ${sample.workflow_state}`} subtitle={`${sample.start_m ?? '—'}–${sample.end_m ?? '—'} m within the section; ${sample.area_sqm ?? '—'} m²`}>
+  const pendingEvidence = !!typeId || !!selectedPhoto;
+  const submitIssues = [
+    !sample.surveyed_at ? 'Save an inspection date.' : '',
+    !sample.area_sqm || sample.area_sqm < 135 || sample.area_sqm > 315 ? 'Save a measured area between 135 and 315 m².' : '',
+    !sample.orientation_note?.trim() ? 'Save an orientation or sketch description.' : '',
+    !sample.field_rules_confirmed ? 'Confirm that you checked the field measurement rules.' : '',
+    !distresses.length && !sample.no_distress_confirmed ? 'Record distress measurements or explicitly confirm no distress.' : '',
+  ].filter(Boolean);
+  return <View style={{ gap: 18 }}>
+    <AdminPanel palette={p} title={`Sample SU-${String(sample.unit_number).padStart(3, '0')}`}>
+      <StatusBadge state={sample.workflow_state} palette={p} />
+      <Text style={{ color: p.text, lineHeight: 23, marginTop: 10 }}>{statusGuidance[sample.workflow_state]}</Text>
+      <Text accessibilityLiveRegion="polite" style={{ color: dirty || pendingEvidence ? p.amber : p.muted, marginTop: 8 }}>{busy ? 'Saving…' : dirty || pendingEvidence ? 'Unsaved changes — save or discard the draft before continuing.' : 'Showing saved inspection details.'}</Text>
+      {!!sample.review_notes && <Notice>Reviewer comments: {sample.review_notes}</Notice>}
+    </AdminPanel>
+    <TaskTabs label="Inspection steps" items={inspectionSteps} value={step} onChange={value => setStep(value as InspectionStep)} disabled={busy || dirty || pendingEvidence || !!confirmation} />
+    {!!error && <Notice error>{error} Your changes are retained. For an outdated revision, refresh and review the latest state before retrying.</Notice>}
+    {!confirmation && step === 'details' && <AdminPanel palette={p} title={`Sample SU-${String(sample.unit_number).padStart(3, '0')} · ${sample.workflow_state}`} subtitle={`${sample.start_m ?? '—'}–${sample.end_m ?? '—'} m within the section; ${sample.area_sqm ?? '—'} m²`}>
       <Text style={{ color: p.muted, marginBottom: 12 }}>Inspector: {data.profiles.find(u => u.id === sample.assigned_to)?.full_name ?? (sample.assigned_to === user?.id ? 'You' : 'Assigned inspector')} · Engineer: {data.profiles.find(u => u.id === sample.reviewer_id)?.full_name ?? 'Assigned engineer'}</Text>
       {!!sample.review_notes && <Notice>Reviewer comments: {sample.review_notes}</Notice>}
       {['approved', 'published'].includes(sample.workflow_state) && sample.assigned_to === user?.id && role === 'encoder' && <View style={{ gap: 10 }}><AdminField palette={p} label="Correction reason" value={comments} onChangeText={setComments} /><AdminButton palette={p} disabled={busy || !comments.trim()} label="Create correction revision" onPress={() => setConfirmation('correct')} /></View>}
       {sample.workflow_state === 'planned' && sample.assigned_to === user?.id && role === 'encoder' && <AdminButton palette={p} disabled={busy} label="Start field inspection" onPress={() => void run(() => workflowAction(sample, 'start'))} />}
       {editable ? <View style={{ gap: 14 }}>
-        <AdminField palette={p} label="Inspection date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
-        <AdminField palette={p} label="Measured sample area (m², 135–315)" keyboardType="numeric" value={measuredArea} onChangeText={setMeasuredArea} />
-        <AdminField palette={p} label="Sample orientation / sketch description (§8.2)" multiline value={orientation} onChangeText={setOrientation} />
+        <AdminField palette={p} label="Inspection date (YYYY-MM-DD) *" value={date} onChangeText={setDate} />
+        <AdminField palette={p} label="Measured sample area (m², 135–315) *" keyboardType="numeric" value={measuredArea} onChangeText={setMeasuredArea} />
+        <AdminField palette={p} label="Sample orientation / sketch description (§8.2) *" multiline value={orientation} onChangeText={setOrientation} />
         <Choices label="Field measurement and severity rules (Appendix X1)" value={fieldConfirmed ? "yes" : "no"} options={[{value:"no",label:"Needs checking"},{value:"yes",label:"I checked severity, SI units, patch exclusions and overlapping distress rules"}]} onChange={value=>setFieldConfirmed(value==="yes")} />
         <AdminField palette={p} label="General inspection notes" multiline value={notes} onChangeText={setNotes} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}><View style={{ flexGrow: 1, minWidth: 180 }}><AdminField palette={p} label="Latitude (optional)" value={latitude} onChangeText={setLatitude} /></View><View style={{ flexGrow: 1, minWidth: 180 }}><AdminField palette={p} label="Longitude (optional)" value={longitude} onChangeText={setLongitude} /></View></View>
         {!distresses.length && <Choices label="Observed distress" value={noDistress ? 'none' : 'present'} options={[{ value: 'present', label: 'Enter distress records below' }, { value: 'none', label: 'I inspected this unit: no distress' }]} onChange={value => setNoDistress(value === 'none')} />}
-        <AdminButton palette={p} disabled={busy || !dirty} label="Save inspection details" onPress={() => void run(save)} />
+        <AdminButton palette={p} disabled={busy} label="Save details and continue" onPress={() => void (async () => { if (await run(save)) setStep('distress'); })()} />
         {dirty && <Notice>Save inspection details before adding evidence or submitting.</Notice>}
-      </View> : <Text selectable style={{ color: p.text, lineHeight: 22 }}>{sample.surveyed_at?.slice(0, 10) ?? 'Not started'}{`\n`}{sample.inspection_notes || 'No general notes.'}{sample.no_distress_confirmed ? '\nInspector confirmed no distress.' : ''}</Text>}
-    </AdminPanel>
-    <AdminPanel palette={p} title="Distress evidence">
+      </View> : <Text selectable style={{ color: p.text, lineHeight: 22 }}>{sample.surveyed_at?.slice(0, 10) ?? 'Not started'}{`\n`}{sample.inspection_notes || 'No general notes.'}{sample.no_distress_confirmed ? '\nInspector confirmed no distress.' : ''}{'\nOrientation: ' + (sample.orientation_note || 'Not recorded')}{'\nField measurement rules: ' + (sample.field_rules_confirmed ? 'Confirmed by Inspector' : 'Not confirmed')}{sample.latitude !== null && sample.longitude !== null ? '\nCoordinates: ' + sample.latitude + ', ' + sample.longitude : ''}</Text>}
+      {!editable && sample.workflow_state !== 'planned' && <AdminButton palette={p} tone={sample.workflow_state === 'approved' || sample.workflow_state === 'published' ? 'secondary' : 'primary'} label="Continue to distress measurements" onPress={() => setStep('distress')} />}
+      <Text style={{ color: p.muted, marginTop: 12 }}>* Required before submission. Coordinates and photos are optional.</Text>
+    </AdminPanel>}
+    {!confirmation && step === 'distress' && <AdminPanel palette={p} title="Distress measurements">
       <View style={{ gap: 12 }}>{distresses.map(d => <View key={d.id} style={{ borderBottomWidth: 1, borderColor: p.border, paddingBottom: 12, gap: 7 }}>
         <View style={{ alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Text style={{ color: p.text, fontWeight: '700' }}>{data.types.find(t => t.id === d.distress_type_id)?.name ?? d.distress_type_id}</Text>{d.severity ? <SeverityBadge severity={d.severity} /> : <Text style={{ color: p.muted }}>Not applicable</Text>}</View>
         <Text style={{ color: p.muted }}>{d.quantity} {d.unit_of_measure} · Location {d.measurement_details?.location_m ?? 'not specified'} m · {d.notes || 'No notes'}</Text>
         {editable && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><AdminButton palette={p} disabled={busy || dirty} tone="secondary" label="Edit measurement" onPress={() => { setEditingId(d.id); setTypeId(d.distress_type_id); setSeverity(d.severity ?? ''); setQuantity(String(d.quantity)); setLocation(d.measurement_details?.location_m?.toString() ?? ''); setDistressNotes(d.notes ?? ''); setSmallCount(String(d.measurement_details?.potholes?.small_count ?? d.quantity));setLargeHoles((d.measurement_details?.potholes?.large_holes ?? []).map(h=>({diameter:String(h.diameter_mm),depth:String(h.depth_mm),area:String(h.area_sqm)}))); }} /><AdminButton palette={p} disabled={busy || dirty} tone="danger" label="Remove" onPress={() => setConfirmation(`remove:${d.id}`)} /></View>}
       </View>)}</View>
       {!distresses.length && <Text style={{ color: p.muted, marginBottom: 12 }}>No distress records saved.</Text>}
+      <PageControls label="Catalog" {...referencePagination} />
       {editable && <View style={{ gap: 14, marginTop: 16 }}>
-        <Choices label="Asphalt distress type" value={typeId} options={data.types.filter(t => t.is_active && t.astm_edition === EDITION).map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity('');setSmallCount('');setLargeHoles([]); }} />
+        <Choices label="Asphalt distress type *" value={typeId} options={data.types.filter(t => t.is_active && t.astm_edition === EDITION).map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity('');setSmallCount('');setLargeHoles([]); }} />
         {!data.types.length && <Notice>The live distress catalog is empty. Ask an administrator to configure engineer-validated distress names, units and severity requirements in Settings.</Notice>}
-        {type && (type.severity_required ? <View style={{ gap: 8 }}><Text style={{ color: p.text, fontWeight: '700' }}>Severity</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{type.allowed_severities.map(value => {
-          const label = normalizeDistressSeverity(value);
-          if (!label) return null;
-          const colors = getDistressSeverityColors(label);
-          const selectedSeverity = severity === value;
-          return <Pressable accessibilityLabel={`${label} severity`} accessibilityRole="radio" accessibilityState={{ selected: selectedSeverity }} key={value} onPress={() => setSeverity(value)} style={{ backgroundColor: selectedSeverity ? colors.backgroundColor : p.panel, borderColor: selectedSeverity ? colors.borderColor : p.border, borderRadius: 8, borderWidth: 1, minWidth: 88, paddingHorizontal: 14, paddingVertical: 11 }}><Text style={{ color: selectedSeverity ? colors.textColor : p.text, fontWeight: '700', textAlign: 'center' }}>{selectedSeverity ? '✓ ' : ''}{label}</Text></Pressable>;
-        })}</View></View> : <Choices label="Severity" value={severity} options={[{ value: '', label: 'Not applicable' }]} onChange={setSeverity} />)}
+        {type && (type.severity_required ? <>
+          <Choices label="Observed distress severity *" value={severity} options={severityChoices(type)} onChange={setSeverity} />
+          {severityChoices(type).some(option => !option.description) && <Notice>Some distress-specific descriptions are unavailable in this catalog. Use D6433-24 field guidance and consult your Reviewer. Your selection saves the corresponding severity code.</Notice>}
+        </> : <Choices label="Severity" value={severity} options={[{ value: '', label: 'Not applicable' }]} onChange={setSeverity} />)}
         {type?.astm_code === 13 ? <View style={{gap:12}}>
           <Notice>Classify small holes using Table X1.1 and record diameter/depth evidence in the notes. Exactly 200, 450 or 750 mm requires engineering clarification. Large holes use measured area / 0.5 m²; equivalent counts may be fractional.</Notice>
           <AdminField palette={p} label="Small potholes at this severity (whole count; zero if none)" value={smallCount} keyboardType="numeric" onChangeText={setSmallCount} />
@@ -172,13 +217,21 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
             <AdminButton palette={p} label="Remove this large hole" tone="secondary" onPress={()=>setLargeHoles(rows=>rows.filter((_,j)=>j!==i))} />
           </View>)}
           <AdminButton palette={p} label="Add measured large pothole" tone="secondary" onPress={()=>setLargeHoles(rows=>[...rows,{diameter:'',depth:'',area:''}])} />
-        </View> : <AdminField palette={p} label={`Measured quantity (${type?.default_unit_of_measure ?? 'select distress first'})`} keyboardType="numeric" value={quantity} onChangeText={setQuantity} />}
+        </View> : <AdminField palette={p} label={`Measured quantity (${type?.default_unit_of_measure ?? 'select distress first'}) *`} keyboardType="numeric" value={quantity} onChangeText={setQuantity} />}
         <AdminField palette={p} label="Location from sample start, metres (optional)" keyboardType="numeric" value={location} onChangeText={setLocation} />
         <AdminField palette={p} label="Distress / location notes" value={distressNotes} onChangeText={setDistressNotes} multiline />
-        <AdminButton palette={p} disabled={busy || dirty || !type} label={editingId ? 'Save measurement changes' : 'Add distress'} onPress={() => void run(addDistress)} />
+        <AdminButton palette={p} disabled={busy || dirty || !type} tone="secondary" label={editingId ? 'Save measurement changes' : 'Add distress'} onPress={() => void (async () => {
+          if (await run(addDistress)) {
+            setTypeId(''); setEditingId(''); setSeverity(''); setQuantity('');
+            setLocation(''); setDistressNotes(''); setSmallCount(''); setLargeHoles([]);
+          }
+        })()} />
       </View>}
-    </AdminPanel>
-    <AdminPanel palette={p} title="Supporting photographs" subtitle="Private evidence; JPEG, PNG or WebP, maximum 5 MB per photograph.">
+      {!!typeId && <Text style={{ color: p.amber }}>Measurement draft: add this distress or discard it before continuing.</Text>}
+      {!!typeId && <AdminButton palette={p} tone="secondary" label="Discard measurement draft" onPress={() => { setTypeId(''); setEditingId(''); setSeverity(''); setQuantity(''); setDistressNotes(''); }} />}
+      <AdminButton palette={p} disabled={busy || dirty || !!typeId} label="Continue to photos" onPress={() => setStep('photos')} />
+    </AdminPanel>}
+    {!confirmation && step === 'photos' && <AdminPanel palette={p} title="Photos" subtitle="Private evidence; JPEG, PNG or WebP, maximum 5 MB per photograph.">
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>{photos.map(photo => <PhotoCard busy={busy} canRemove={editable} key={photo.id} onRemove={() => setConfirmation(`photo:${photo.id}`)} photo={photo} />)}</View>
       {!photos.length && <Text style={{ color: p.muted }}>No photographs uploaded.</Text>}
       {editable && <View style={{ gap: 12, marginTop: 12 }}>
@@ -186,25 +239,38 @@ function InspectionEditor({ sample, data, busy, run }: { sample: Sample; data: W
         {!!photoSelectionError && <Notice error>{photoSelectionError}</Notice>}
         {selectedPhoto ? <Image accessibilityLabel="Selected photograph preview" contentFit="cover" source={{ uri: selectedPhoto.uri }} style={{ borderRadius: 10, height: 190, maxWidth: '100%', width: 300 }} /> : null}
         <AdminField palette={p} label="Photograph caption" value={caption} onChangeText={setCaption} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}><AdminButton palette={p} disabled={busy || dirty || photoUploading} label={selectedPhoto ? 'Choose another photograph' : 'Choose photograph'} icon="camera" onPress={() => void choosePhoto()} />{selectedPhoto ? <AdminButton palette={p} disabled={busy || dirty || photoUploading} label={photoUploading ? 'Uploading photograph…' : 'Upload photograph'} icon="upload" onPress={() => void run(uploadPhoto, 'Photograph saved.')} /> : null}</View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}><AdminButton palette={p} disabled={busy || dirty || photoUploading} tone="secondary" label={selectedPhoto ? 'Choose another photograph' : 'Choose photograph'} icon="camera" onPress={() => void choosePhoto()} />{selectedPhoto ? <AdminButton palette={p} disabled={busy || dirty || photoUploading} tone="secondary" label={photoUploading ? 'Uploading photograph…' : 'Upload photograph'} icon="upload" onPress={() => void run(uploadPhoto, 'Photograph saved.')} /> : null}</View>
       </View>}
-    </AdminPanel>
-    <AdminPanel palette={p} title="PCI calculation & review" subtitle={computation ? `${computation.edition} · Input revision ${computation.input_revision}` : data.settings.active_edition}>
-      {computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} label={computation.output_snapshot.status==='provisional' ? PROVISIONAL_LABEL : 'Saved calculation — see approved snapshot for historical evidence'} /> : <Notice>No D6433-24 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>}
-      {sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton palette={p} disabled={busy} label="Calculate provisional D6433-24 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
+      <AdminButton palette={p} disabled={busy || dirty || photoUploading || !!selectedPhoto} label="Continue to review and submit" onPress={() => setStep('submit')} />
+      {selectedPhoto && <Text style={{ color: p.amber }}>Upload or discard the selected photo before continuing.</Text>}
+      {selectedPhoto && <AdminButton palette={p} tone="secondary" label="Discard selected photo" onPress={() => setSelectedPhoto(null)} />}
+    </AdminPanel>}
+    {!confirmation && step === 'submit' && <AdminPanel palette={p} title="Review and submit" subtitle={computation ? `${computation.edition} · Input revision ${computation.input_revision}` : data.settings.active_edition}>
+      <Text style={{ color: p.text, lineHeight: 24 }}>Saved date: {sample.surveyed_at?.slice(0, 10) ?? 'Missing'} · Area: {sample.area_sqm} m² · {distresses.length} distress records · {photos.length} photos</Text>
+      {sample.no_distress_confirmed && <Text style={{ color: p.text }}>Inspector explicitly confirmed no distress.</Text>}
+      {editable && submitIssues.length > 0 && <Notice error>{submitIssues.join(' ')}</Notice>}
+      <AdminButton palette={p} tone="secondary" label={traceOpen ? 'Hide calculation details' : 'Show calculation details'} onPress={() => setTraceOpen(!traceOpen)} />
+      {traceOpen && (computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} label={computation.output_snapshot.status==='provisional' ? PROVISIONAL_LABEL : 'Saved calculation — see approved snapshot for historical evidence'} /> : <Notice>No D6433-24 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>)}
+      {traceOpen && sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton tone="secondary" palette={p} disabled={busy} label="Calculate provisional D6433-24 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
 
-      {editable && <View style={{ marginTop: 16 }}><AdminButton palette={p} disabled={busy || dirty} label="Submit for engineer review" onPress={() => setConfirmation('submit')} /></View>}
-      {reviewer && ['submitted', 'approved'].includes(sample.workflow_state) && <View style={{ gap: 12, marginTop: 16 }}>
+      {editable && !confirmation && <View style={{ marginTop: 16 }}><AdminButton palette={p} disabled={busy || dirty || submitIssues.length > 0} label="Submit for engineer review" onPress={() => setConfirmation('submit')} /></View>}
+      {reviewer && computation?.verification !== 'verified' && <Notice>Approval is unavailable: this revision needs an eligible verified reference calculation. You may return the submission with comments.</Notice>}
+      {reviewer && DEMO_PREVIEW_ENABLED && sample.workflow_state === 'submitted' && <View style={{ gap: 10, marginTop: 12 }}>
+        <AdminButton palette={p} tone="secondary" label={simulatedApproval ? 'Clear simulated approval' : 'Simulate approval (demo only)'} onPress={() => setSimulatedApproval(!simulatedApproval)} />
+        {simulatedApproval && <Notice>SYNTHETIC DEMO — approval simulated on this screen only. Nothing was saved to the database; the sample remains Submitted. It is not a verified ASTM D6433-07 result and cannot be published.</Notice>}
+      </View>}
+      {reviewer && !confirmation && ['submitted', 'approved'].includes(sample.workflow_state) && <View style={{ gap: 12, marginTop: 16 }}>
         <AdminField palette={p} label="Engineer review comments (required when returning)" multiline value={comments} onChangeText={setComments} />
         <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>{sample.workflow_state === 'submitted' && <AdminButton palette={p} disabled={busy || !comments.trim()} tone="secondary" label="Return for correction" onPress={() => setConfirmation('return')} />}
           <AdminButton palette={p} disabled={busy || computation?.verification !== 'verified'} label={sample.workflow_state === 'approved' ? 'Publish approved reference result' : 'Approve reference result'} onPress={() => setConfirmation(sample.workflow_state === 'approved' ? 'publish' : 'approve')} /></View>
       </View>}
+
+    </AdminPanel>}
       {!!confirmation && <View style={{ gap: 12, padding: 16, marginTop: 14, borderWidth: 1, borderColor: p.border, borderRadius: 10 }}>
         <Text style={{ color: p.text }}>Confirm {confirmation.startsWith('remove:') ? 'removing this distress measurement' : confirmation.startsWith('photo:') ? 'removing this photograph' : confirmation}? {confirmation === 'submit' ? 'Your saved inputs will become read-only.' : 'This action is recorded in the review history.'}</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}><AdminButton palette={p} disabled={busy} label="Confirm" onPress={() => void run(() => confirmation.startsWith('remove:') ? workflowAction(sample, 'remove_distress', { id: confirmation.slice(7) }) : confirmation.startsWith('photo:') ? removePhoto(photos.find(photo => photo.id === confirmation.slice(6))!) : workflowAction(sample, confirmation, { comments }), 'Workflow updated.')} /><AdminButton palette={p} tone="secondary" label="Cancel" onPress={() => setConfirmation(null)} /></View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}><AdminButton palette={p} disabled={busy} label="Confirm" onPress={() => void (async () => { if (await run(() => confirmation.startsWith('remove:') ? workflowAction(sample, 'remove_distress', { id: confirmation.slice(7) }) : confirmation.startsWith('photo:') ? removePhoto(photos.find(photo => photo.id === confirmation.slice(6))!) : workflowAction(sample, confirmation, { comments }), 'Workflow updated.')) setConfirmation(null); })()} /><AdminButton palette={p} tone="secondary" label="Cancel" onPress={() => setConfirmation(null)} /></View>
       </View>}
-    </AdminPanel>
-    <AdminPanel palette={p} title="Review & change history"><View style={{ gap: 12 }}>{data.history.filter(h => h.sample_unit_id === sample.id).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(h => <Text key={h.id} selectable style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action} · Revision {h.revision}{h.comments ? `\n${h.comments}` : ''}</Text>)}</View></AdminPanel>
+    {step === 'submit' && traceOpen && <AdminPanel palette={p} title="Review & change history"><View style={{ gap: 12 }}>{data.history.filter(h => h.sample_unit_id === sample.id).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(h => <Text key={h.id} selectable style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action} · Revision {h.revision}{h.comments ? `\n${h.comments}` : ''}</Text>)}</View></AdminPanel>}
   </View>;
 }
 
@@ -222,6 +288,10 @@ function PciResultDetails({label,result}:{label:string;result:CalculationOutput 
     {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{ASPHALT_CATALOG.find(d=>d.code===g.code)?.name} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Selected severity combination: density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(4)}</Text></View>)}
     {!!result.severity_alternatives && <Text style={{color:p.muted}}>Evaluated {result.severity_alternatives.length} severity alternatives; displayed values are the selected maximum-PCI combination, not the original measurements.</Text>}
     <View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}><ResultMetric label="TDV (before fractional trim)" value={formatMetric(result.total_deduct_value,4)} /><ResultMetric label="Allowable deducts (m)" value={result.iterations.length ? formatMetric(result.allowable_deducts,6) : 'Shortcut: not applicable'} /><ResultMetric label="Maximum CDV" value={formatMetric(result.max_corrected_deduct_value,4)} /><ResultMetric label="Provisional PCI" value={formatMetric(result.pci,2)} /><ResultMetric label="Saved condition" value={result.condition} /></View>
+    {result.iterations.map((iteration, index) => <View key={index} style={{ borderTopWidth: 1, borderColor: p.border, paddingTop: 10, gap: 4 }}>
+      <Text selectable style={{ color: p.text }}>Iteration {index + 1} ? q {iteration.q} ? TDV {formatMetric(iteration.total_deduct_value, 6)} ? CDV {formatMetric(iteration.corrected_deduct_value, 6)}</Text>
+      <Text selectable style={{ color: p.muted }}>Retained deducts: {iteration.adjusted_deducts.map(value => formatMetric(value, 6)).join(', ')}</Text>
+    </View>)}
     <Text style={{color:p.muted}}>Full precision is saved; displayed numbers are rounded. {result.reference_id ?? 'Legacy reference'} {result.reference_digest ?? ''}</Text>
   </View>;
 }

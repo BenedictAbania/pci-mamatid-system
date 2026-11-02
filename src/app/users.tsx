@@ -1,3 +1,4 @@
+import { layout } from '@/lib/design-system';
 import { PageControls } from '@/components/workflow/pagination';
 import { Feather } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -112,7 +113,7 @@ export default function UsersScreen() {
   }
 
   return (
-    <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle="Review authenticated profiles and assign system responsibilities." title="Users & Roles">
+    <AdminShell loading={loading} onRefresh={refresh} onSearchChange={setQuery} searchValue={query} subtitle="Review authenticated profiles and assign system responsibilities." title="Users">
       <PageControls page={cursors.length} busy={loading} hasNext={profiles.length === 50} previous={() => setCursors(cursors.slice(0, -1))} next={() => { const last = profiles.at(-1); if (last) setCursors([...cursors, last.id]); }} />
       <Notice message="Counts and search apply to this account page (up to 50 records)." palette={palette} tone="info" />
       {error ? <Notice message={error} palette={palette} tone="error" /> : null}
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
   rolesCell: { flex: 1.8, flexDirection: 'row', flexWrap: 'wrap', gap: 6, minWidth: 260 },
   identity: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   identityCopy: { flex: 1, minWidth: 0 },
-  avatar: { alignItems: 'center', backgroundColor: '#2878F0', borderRadius: 19, height: 38, justifyContent: 'center', width: 38 },
+  avatar: { alignItems: 'center', backgroundColor: layout.navy.active, borderRadius: 19, height: 38, justifyContent: 'center', width: 38 },
   avatarText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
   name: { fontSize: 12.5, fontWeight: '700' },
   userId: { fontSize: 9, marginTop: 3 },

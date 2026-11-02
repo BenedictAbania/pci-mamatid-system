@@ -88,7 +88,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <AdminShell loading={loading} onRefresh={refresh} subtitle="Manage safe application preferences and workflow configurations." title="System Settings">
+    <AdminShell loading={loading} onRefresh={refresh} subtitle="Manage safe application preferences and workflow configurations." title="Settings">
       <PageControls {...pagination} />
       {error ? <Notice error>{error}</Notice> : null}
       {message ? <Notice>{message}</Notice> : null}
@@ -171,7 +171,7 @@ export default function SettingsScreen() {
                 <View style={styles.settingCopy}><Text style={[styles.settingTitle, { color: palette.text }]}>Active for field entry</Text><Text style={[styles.settingText, { color: palette.muted }]}>Inactive references remain attached to historical records but cannot be selected for new entries.</Text></View>
                 <Switch disabled={busy} onValueChange={setReferenceActive} value={referenceActive} trackColor={{ false: palette.border, true: palette.green }} />
               </View>
-              <View style={styles.actionRow}><AdminButton disabled={busy} label={referenceId ? 'Update Reference' : 'Add Reference'} onPress={handleSaveReference} palette={palette} /><AdminButton disabled={busy} label="Clear" onPress={resetReference} palette={palette} tone="secondary" /></View>
+              <View style={styles.actionRow}><AdminButton disabled={busy} tone="secondary" label={referenceId ? 'Update Reference' : 'Add Reference'} onPress={handleSaveReference} palette={palette} /><AdminButton disabled={busy} label="Clear" onPress={resetReference} palette={palette} tone="secondary" /></View>
             </View>
           </View>
           <View style={styles.column}>
