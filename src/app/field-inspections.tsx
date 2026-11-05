@@ -1,25 +1,27 @@
 import { Image } from 'expo-image';
 import { PhotoCard } from '@/components/workflow/photo-card';
-import { PageControls, type PageControlsProps } from '@/components/workflow/pagination';
+import { PageControls } from '@/components/workflow/pagination';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { TaskTabs } from '@/components/workflow/task-tabs';
-import { inspectionSteps, severityChoices, statusGuidance, type InspectionStep } from '@/lib/inspection-presentation';
+import { inspectionSteps, severityChoices, statusGuidance, type InspectionStep } from '@/lib/ui/inspection-presentation';
 import { StatusBadge } from '@/components/dashboard/dashboard-parts';
 import { Pressable, Text, View } from 'react-native';
 import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
-import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { validateMeasurement, type CalculationOutput } from '@/lib/pci-service';
-import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
-import { supabase } from '@/lib/supabase';
-import { Photo, Sample, WorkflowData, workflowAction, calculateProvisional } from '@/lib/workflow-data';
+import { CatalogDropdown, Choices, Notice, useWorkflow } from '@/components/workflow/shared';
+import { validateMeasurement, type CalculationOutput } from '@/lib/pci/pci-service';
+import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/pci/severity-colors';
+import { supabase } from '@/lib/data/supabase';
+import { Photo, Sample, WorkflowData, workflowAction, calculateProvisional } from '@/lib/data/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
-import { PHOTO_SIZE_MESSAGE, validatePhotoSize } from '@/lib/inspection-photo';
-import { DEMO_PREVIEW_ENABLED } from '@/lib/demo-preview';
+import { PHOTO_SIZE_MESSAGE, validatePhotoSize } from '@/lib/utils/inspection-photo';
+import { DEMO_PREVIEW_ENABLED } from '@/lib/ui/demo-preview';
 
-import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL, potholeQuantity, type PotholeDetails } from '@/lib/d6433-24/catalog';
-import type { SampleOutput } from '@/lib/d6433-24/sample';
+import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL, type Unit } from '@/lib/d6433-07/catalog';
+import { d07GuidanceFor, d07GuidanceSnapshot, D07_GUIDANCE_VERSION, type SeverityCode } from '@/lib/d6433-07/severity-guidance';
+import { blankPart, describePart, measureParts, partToDraft, severityEvidence, SEVERITY_MEASUREMENT_LABELS, type PartDraft } from '@/lib/d6433-07/measurement-parts';
+import type { SampleOutput } from '@/lib/d6433-07/sample';
 
 export default function FieldInspections() {
   const params = useLocalSearchParams<{ sample?: string; status?: string }>();
@@ -62,15 +64,15 @@ function InspectionWorkspace({ status, initialSample }: { status: string; initia
         {!state.loading && !!visibleSamples.length && !filteredSamples.length && <AdminEmpty palette={p} icon="search" message="No matching inspections on this page. Change the status filter, clear search, or move to the next page." />}
         <PageControls {...state.pagination} />
       </AdminPanel>}
-      {selected && <AdminButton palette={p} tone="secondary" label="Back to inspection list" onPress={() => { setSelected(''); router.setParams({ status, sample: undefined }); }} />}
-      {selected && state.loadedSampleId !== selected && <Notice>Loading inspection details…</Notice>}
-      {selected && state.loadedSampleId === selected && !sample && !state.loading && <Notice error>This sample is unavailable in your authorized assignments. Return to the list or refresh.</Notice>}
-      {sample && state.loadedSampleId === selected && <InspectionEditor step={step} setStep={setStep} error={state.error} key={`${sample.id}-${sample.input_revision}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} referencePagination={state.referencesPagination} />}
+      {!!selected && <AdminButton palette={p} tone="secondary" label="Back to inspection list" onPress={() => { setSelected(''); router.setParams({ status, sample: undefined }); }} />}
+      {!!selected && state.loadedSampleId !== selected && <Notice>Loading inspection details…</Notice>}
+      {!!selected && state.loadedSampleId === selected && !sample && !state.loading && <Notice error>This sample is unavailable in your authorized assignments. Return to the list or refresh.</Notice>}
+      {sample && state.loadedSampleId === selected && <InspectionEditor step={step} setStep={setStep} error={state.error} key={`${sample.id}-${sample.input_revision}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} />}
     </>}
   </AdminShell>;
 }
 
-export function InspectionEditor({ sample, data, busy, run, referencePagination, step, setStep, error }: { sample: Sample; data: WorkflowData; busy: boolean; run: (task: () => Promise<unknown>, success?: string) => Promise<boolean>; referencePagination: PageControlsProps; step: InspectionStep; setStep: (step: InspectionStep) => void; error?: string }) {
+export function InspectionEditor({ sample, data, busy, run, step, setStep, error }: { sample: Sample; data: WorkflowData; busy: boolean; run: (task: () => Promise<unknown>, success?: string) => Promise<boolean>; step: InspectionStep; setStep: (step: InspectionStep) => void; error?: string }) {
   const p = useAdminPalette();
   const { role, user } = useAuth();
   const editable = role === 'encoder' && sample.assigned_to === user?.id && ['draft', 'returned'].includes(sample.workflow_state);
@@ -83,11 +85,10 @@ export function InspectionEditor({ sample, data, busy, run, referencePagination,
   const [measuredArea,setMeasuredArea]=useState(String(sample.area_sqm ?? ''));
   const [orientation,setOrientation]=useState(sample.orientation_note ?? '');
   const [fieldConfirmed,setFieldConfirmed]=useState(sample.field_rules_confirmed ?? false);
-  const [smallCount,setSmallCount]=useState('');
-  const [largeHoles,setLargeHoles]=useState<{diameter:string;depth:string;area:string}[]>([]);
+  const [parts,setParts]=useState<PartDraft[]>([]);
+  const [severityMeasure,setSeverityMeasure]=useState('');
   const [typeId, setTypeId] = useState('');
   const [severity, setSeverity] = useState('');
-  const [quantity, setQuantity] = useState('');
   const [location, setLocation] = useState('');
   const [distressNotes, setDistressNotes] = useState('');
   const [editingId, setEditingId] = useState('');
@@ -100,18 +101,23 @@ export function InspectionEditor({ sample, data, busy, run, referencePagination,
   const [photoSelectionError, setPhotoSelectionError] = useState('');
   const [photoUploading, setPhotoUploading] = useState(false);
   const type = data.types.find(t => t.id === typeId);
+  const activeTypes = data.types.filter(t => t.is_active && t.astm_edition === EDITION).sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  const unit = type?.default_unit_of_measure as Unit | undefined;
+  let quantityPreview: string | null = null;
+  if (type && unit) { try { quantityPreview = String(measureParts(parts, unit, (severity || null) as 'low' | 'medium' | 'high' | null).quantity); } catch { /* Incomplete draft: do not show a false zero. */ } }
   const distresses = data.distresses.filter(d => d.sample_unit_id === sample.id);
   const computation = data.computations.find(c => c.id === sample.computation_id);
   const photos = data.photos.filter(photo => photo.sample_unit_id === sample.id);
   const dirty = measuredArea !== String(sample.area_sqm ?? '') || orientation !== (sample.orientation_note ?? '') || fieldConfirmed !== (sample.field_rules_confirmed ?? false) || notes !== (sample.inspection_notes ?? '') || date !== (sample.surveyed_at?.slice(0, 10) ?? todayLocal()) || latitude !== (sample.latitude?.toString() ?? '') || longitude !== (sample.longitude?.toString() ?? '') || noDistress !== sample.no_distress_confirmed;
   async function addDistress() {
     if (!type) throw new Error('Select an active distress type. An administrator must configure the catalog if it is empty.');
-    const potholes: PotholeDetails | undefined=type.astm_code===13 ? {small_count:Number(smallCount),large_holes:largeHoles.map(h=>({diameter_mm:Number(h.diameter),depth_mm:Number(h.depth),area_sqm:Number(h.area)}))} : undefined;
-    if(type.astm_code===13 && (!smallCount.trim() || !severity))throw new Error('Enter the classified small pothole count (zero if none) and severity.');
-    const enteredQuantity=potholes ? potholeQuantity(potholes,severity as 'low'|'medium'|'high') : Number(quantity);
-    const measurement = { distress_type_id: typeId, severity: (severity || null) as 'low' | 'medium' | 'high' | null, quantity: enteredQuantity, potholes, unit_of_measure: type.default_unit_of_measure ?? '', location_m: location === '' ? null : Number(location) };
+    const guidance = type.astm_edition === EDITION ? d07GuidanceSnapshot(type.astm_code ?? -1, (severity || null) as SeverityCode | null) : null;
+    if (type.astm_edition === EDITION && !guidance) throw new Error('Draft severity guidance is unavailable for this distress. Ask the Civil Engineer before saving.');
+    const measured = measureParts(parts, type.default_unit_of_measure as Unit, (severity || null) as 'low' | 'medium' | 'high' | null);
+    const evidence = severityEvidence(type.astm_code ?? -1, severityMeasure);
+    const measurement = { distress_type_id: typeId, severity: (severity || null) as 'low' | 'medium' | 'high' | null, quantity: measured.quantity, potholes: measured.potholes, unit_of_measure: type.default_unit_of_measure ?? '', location_m: location === '' ? null : Number(location) };
     validateMeasurement(measurement, type, Number(sample.area_sqm), sample.start_m !== null && sample.end_m !== null ? sample.end_m - sample.start_m : null, distresses.filter(d => d.id !== editingId).map(d => ({ ...d, location_m: d.measurement_details?.location_m ?? null })));
-    await workflowAction(sample, 'distress', { ...measurement, id: editingId || null, notes: distressNotes });
+    await workflowAction(sample, 'distress', { ...measurement, measurement_parts: measured.parts, severity_evidence: evidence, id: editingId || null, notes: distressNotes, ...(guidance ? { severity_guidance: guidance } : {}) });
   }
   async function save() {
     if (!isValidDateString(date)) throw new Error('Use a valid inspection date (YYYY-MM-DD).');
@@ -196,39 +202,52 @@ export function InspectionEditor({ sample, data, busy, run, referencePagination,
       <View style={{ gap: 12 }}>{distresses.map(d => <View key={d.id} style={{ borderBottomWidth: 1, borderColor: p.border, paddingBottom: 12, gap: 7 }}>
         <View style={{ alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><Text style={{ color: p.text, fontWeight: '700' }}>{data.types.find(t => t.id === d.distress_type_id)?.name ?? d.distress_type_id}</Text>{d.severity ? <SeverityBadge severity={d.severity} /> : <Text style={{ color: p.muted }}>Not applicable</Text>}</View>
         <Text style={{ color: p.muted }}>{d.quantity} {d.unit_of_measure} · Location {d.measurement_details?.location_m ?? 'not specified'} m · {d.notes || 'No notes'}</Text>
-        {editable && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><AdminButton palette={p} disabled={busy || dirty} tone="secondary" label="Edit measurement" onPress={() => { setEditingId(d.id); setTypeId(d.distress_type_id); setSeverity(d.severity ?? ''); setQuantity(String(d.quantity)); setLocation(d.measurement_details?.location_m?.toString() ?? ''); setDistressNotes(d.notes ?? ''); setSmallCount(String(d.measurement_details?.potholes?.small_count ?? d.quantity));setLargeHoles((d.measurement_details?.potholes?.large_holes ?? []).map(h=>({diameter:String(h.diameter_mm),depth:String(h.depth_mm),area:String(h.area_sqm)}))); }} /><AdminButton palette={p} disabled={busy || dirty} tone="danger" label="Remove" onPress={() => setConfirmation(`remove:${d.id}`)} /></View>}
+        {d.measurement_details?.measurement_parts && <Text style={{ color: p.muted }}>Saved measured parts: {d.measurement_details.measurement_parts.map(describePart).join('; ')} · Total Q: {d.quantity} {d.unit_of_measure}</Text>}
+        {d.measurement_details?.severity_evidence && <Text style={{ color: p.muted }}>Separate severity measurement: {d.measurement_details.severity_evidence.value_mm} mm ({d.measurement_details.severity_evidence.metric})</Text>}
+        {d.measurement_details?.severity_guidance && <Text selectable style={{ color: p.muted, lineHeight: 20 }}>Saved provisional cue ({d.measurement_details.severity_guidance.version}): {d.measurement_details.severity_guidance.text}</Text>}
+        {data.types.find(t => t.id === d.distress_type_id)?.astm_edition === EDITION && !d.measurement_details?.severity_guidance && <Text style={{ color: p.muted }}>Draft severity wording was not captured with this earlier measurement.</Text>}
+        {editable && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><AdminButton palette={p} disabled={busy || dirty} tone="secondary" label="Edit measurement" onPress={() => { setEditingId(d.id); setTypeId(d.distress_type_id); setSeverity(d.severity ?? ''); setParts(d.measurement_details?.measurement_parts?.map(partToDraft) ?? []); setSeverityMeasure(d.measurement_details?.severity_evidence?.value_mm?.toString() ?? ''); setLocation(d.measurement_details?.location_m?.toString() ?? ''); setDistressNotes(d.notes ?? ''); }} /><AdminButton palette={p} disabled={busy || dirty} tone="danger" label="Remove" onPress={() => setConfirmation(`remove:${d.id}`)} /></View>}
       </View>)}</View>
       {!distresses.length && <Text style={{ color: p.muted, marginBottom: 12 }}>No distress records saved.</Text>}
-      <PageControls label="Catalog" {...referencePagination} />
       {editable && <View style={{ gap: 14, marginTop: 16 }}>
-        <Choices label="Asphalt distress type *" value={typeId} options={data.types.filter(t => t.is_active && t.astm_edition === EDITION).map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity('');setSmallCount('');setLargeHoles([]); }} />
-        {!data.types.length && <Notice>The live distress catalog is empty. Ask an administrator to configure engineer-validated distress names, units and severity requirements in Settings.</Notice>}
+        <CatalogDropdown label="Asphalt distress type *" value={typeId} options={activeTypes.map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity(''); setSeverityMeasure(''); const selected = activeTypes.find(t => t.id === id); setParts(selected ? [blankPart(selected.default_unit_of_measure as Unit)] : []); }} />
+        {!activeTypes.length && <Notice>The active D6433-07 distress catalog is unavailable. Ask the Civil Engineer to check the reference data.</Notice>}
+        {type?.astm_edition === EDITION && <Notice>Draft D6433-07 Appendix X1 cues ({D07_GUIDANCE_VERSION}). Civil Engineer wording review is pending. Record what you measured; these choices do not validate PCI.</Notice>}
+        {type && d07GuidanceFor(type.astm_edition, type.astm_code)?.context && <Text selectable style={{ color: p.muted, lineHeight: 21 }}>{d07GuidanceFor(type.astm_edition, type.astm_code)?.context}</Text>}
         {type && (type.severity_required ? <>
           <Choices label="Observed distress severity *" value={severity} options={severityChoices(type)} onChange={setSeverity} />
-          {severityChoices(type).some(option => !option.description) && <Notice>Some distress-specific descriptions are unavailable in this catalog. Use D6433-24 field guidance and consult your Reviewer. Your selection saves the corresponding severity code.</Notice>}
-        </> : <Choices label="Severity" value={severity} options={[{ value: '', label: 'Not applicable' }]} onChange={setSeverity} />)}
-        {type?.astm_code === 13 ? <View style={{gap:12}}>
-          <Notice>Classify small holes using Table X1.1 and record diameter/depth evidence in the notes. Exactly 200, 450 or 750 mm requires engineering clarification. Large holes use measured area / 0.5 m²; equivalent counts may be fractional.</Notice>
-          <AdminField palette={p} label="Small potholes at this severity (whole count; zero if none)" value={smallCount} keyboardType="numeric" onChangeText={setSmallCount} />
-          {largeHoles.map((h,i)=><View key={i} style={{gap:8}}>
-            <AdminField palette={p} label="Large-hole diameter (>750 mm)" keyboardType="numeric" value={h.diameter} onChangeText={v=>setLargeHoles(rows=>rows.map((r,j)=>j===i?{...r,diameter:v}:r))} />
-            <AdminField palette={p} label="Maximum depth (mm; ≤25 medium, >25 high)" keyboardType="numeric" value={h.depth} onChangeText={v=>setLargeHoles(rows=>rows.map((r,j)=>j===i?{...r,depth:v}:r))} />
-            <AdminField palette={p} label="Measured hole area (m²)" keyboardType="numeric" value={h.area} onChangeText={v=>setLargeHoles(rows=>rows.map((r,j)=>j===i?{...r,area:v}:r))} />
-            <AdminButton palette={p} label="Remove this large hole" tone="secondary" onPress={()=>setLargeHoles(rows=>rows.filter((_,j)=>j!==i))} />
+          {severityChoices(type).some(option => !option.description) && <Notice>Distress-specific descriptions are unavailable for this edition. Consult your Civil Engineer; no wording from another edition is substituted.</Notice>}
+        </> : <Notice>{d07GuidanceFor(type.astm_edition, type.astm_code)?.none ?? 'No severity level for this distress. Record the measured quantity.'}</Notice>)}
+        {type && unit && <View style={{ gap: 12 }}>
+          <Text style={{ color: p.text, fontWeight: '700' }}>Measured parts · catalog unit: {unit}</Text>
+          {type.astm_code === 13 && <Notice>Provisional Table X1.1: each small-hole part needs count, diameter and maximum depth. Large holes need measured area; their equivalent count is area ÷ 0.5 m². Exact 200, 450 and 750 mm boundaries require CE review.</Notice>}
+          {parts.map((part, index) => <View key={`${typeId}-${index}`} style={{ padding: 12, gap: 9, borderWidth: 1, borderColor: p.border, borderRadius: 8 }}>
+            <Text style={{ color: p.text, fontWeight: '700' }}>Part {index + 1}</Text>
+            {unit === 'm²' && <Choices label={`Part ${index + 1} shape`} value={part.mode} options={[{ value: 'rectangle', label: 'Rectangle: length × width' }, { value: 'irregular', label: 'Irregular: measured area' }]} onChange={mode => setParts(rows => rows.map((r, i) => i === index ? { ...r, mode: mode as PartDraft['mode'] } : r))} />}
+            {unit === 'No.' && <Choices label={`Part ${index + 1} pothole size`} value={part.mode} options={[{ value: 'small_pothole', label: 'Small hole (100–<750 mm)' }, { value: 'large_pothole', label: 'Large hole (>750 mm)' }]} onChange={mode => setParts(rows => rows.map((r, i) => i === index ? { ...r, mode: mode as PartDraft['mode'] } : r))} />}
+            {(part.mode === 'rectangle' || part.mode === 'length') && <AdminField palette={p} label={part.mode === 'length' ? `Part ${index + 1} affected length (m) *` : `Part ${index + 1} length (m) *`} keyboardType="numeric" value={part.length} onChangeText={v => setParts(rows => rows.map((r, i) => i === index ? { ...r, length: v } : r))} />}
+            {part.mode === 'rectangle' && <AdminField palette={p} label={`Part ${index + 1} width (m) *`} keyboardType="numeric" value={part.width} onChangeText={v => setParts(rows => rows.map((r, i) => i === index ? { ...r, width: v } : r))} />}
+            {(part.mode === 'irregular' || part.mode === 'large_pothole') && <AdminField palette={p} label={`Part ${index + 1} measured area (m²) *`} keyboardType="numeric" value={part.area} onChangeText={v => setParts(rows => rows.map((r, i) => i === index ? { ...r, area: v } : r))} />}
+            {part.mode === 'small_pothole' && <AdminField palette={p} label={`Part ${index + 1} pothole count *`} keyboardType="numeric" value={part.count} onChangeText={v => setParts(rows => rows.map((r, i) => i === index ? { ...r, count: v } : r))} />}
+            {(part.mode === 'small_pothole' || part.mode === 'large_pothole') && <><AdminField palette={p} label={`Part ${index + 1} diameter (mm) *`} keyboardType="numeric" value={part.diameter} onChangeText={v => setParts(rows => rows.map((r, i) => i === index ? { ...r, diameter: v } : r))} /><AdminField palette={p} label={`Part ${index + 1} maximum depth (mm) *`} keyboardType="numeric" value={part.depth} onChangeText={v => setParts(rows => rows.map((r, i) => i === index ? { ...r, depth: v } : r))} /></>}
+            {parts.length > 1 && <AdminButton palette={p} tone="secondary" label={`Remove part ${index + 1}`} onPress={() => setParts(rows => rows.filter((_, i) => i !== index))} />}
           </View>)}
-          <AdminButton palette={p} label="Add measured large pothole" tone="secondary" onPress={()=>setLargeHoles(rows=>[...rows,{diameter:'',depth:'',area:''}])} />
-        </View> : <AdminField palette={p} label={`Measured quantity (${type?.default_unit_of_measure ?? 'select distress first'}) *`} keyboardType="numeric" value={quantity} onChangeText={setQuantity} />}
+          <AdminButton palette={p} tone="secondary" label="Add another measured part" onPress={() => setParts(rows => [...rows, blankPart(unit)])} />
+          <Text accessibilityLiveRegion="polite" style={{ color: p.text, fontWeight: '700' }}>Total quantity (Q): {quantityPreview ?? 'Complete the parts above'} {unit}</Text>
+          {SEVERITY_MEASUREMENT_LABELS[type.astm_code ?? -1] && <AdminField palette={p} label={`${SEVERITY_MEASUREMENT_LABELS[type.astm_code ?? -1]} — severity evidence, separate from Q`} keyboardType="numeric" value={severityMeasure} onChangeText={setSeverityMeasure} />}
+          {!!editingId && !parts.length && <Notice>This earlier measurement has no saved parts. Enter the measured parts before saving the correction; the old total was not converted into invented dimensions.</Notice>}
+        </View>}
         <AdminField palette={p} label="Location from sample start, metres (optional)" keyboardType="numeric" value={location} onChangeText={setLocation} />
         <AdminField palette={p} label="Distress / location notes" value={distressNotes} onChangeText={setDistressNotes} multiline />
         <AdminButton palette={p} disabled={busy || dirty || !type} tone="secondary" label={editingId ? 'Save measurement changes' : 'Add distress'} onPress={() => void (async () => {
           if (await run(addDistress)) {
-            setTypeId(''); setEditingId(''); setSeverity(''); setQuantity('');
-            setLocation(''); setDistressNotes(''); setSmallCount(''); setLargeHoles([]);
+            setTypeId(''); setEditingId(''); setSeverity(''); setParts([]); setSeverityMeasure('');
+            setLocation(''); setDistressNotes('');
           }
         })()} />
       </View>}
       {!!typeId && <Text style={{ color: p.amber }}>Measurement draft: add this distress or discard it before continuing.</Text>}
-      {!!typeId && <AdminButton palette={p} tone="secondary" label="Discard measurement draft" onPress={() => { setTypeId(''); setEditingId(''); setSeverity(''); setQuantity(''); setDistressNotes(''); }} />}
+      {!!typeId && <AdminButton palette={p} tone="secondary" label="Discard measurement draft" onPress={() => { setTypeId(''); setEditingId(''); setSeverity(''); setParts([]); setSeverityMeasure(''); setDistressNotes(''); }} />}
       <AdminButton palette={p} disabled={busy || dirty || !!typeId} label="Continue to photos" onPress={() => setStep('photos')} />
     </AdminPanel>}
     {!confirmation && step === 'photos' && <AdminPanel palette={p} title="Photos" subtitle="Private evidence; JPEG, PNG or WebP, maximum 5 MB per photograph.">
@@ -250,8 +269,8 @@ export function InspectionEditor({ sample, data, busy, run, referencePagination,
       {sample.no_distress_confirmed && <Text style={{ color: p.text }}>Inspector explicitly confirmed no distress.</Text>}
       {editable && submitIssues.length > 0 && <Notice error>{submitIssues.join(' ')}</Notice>}
       <AdminButton palette={p} tone="secondary" label={traceOpen ? 'Hide calculation details' : 'Show calculation details'} onPress={() => setTraceOpen(!traceOpen)} />
-      {traceOpen && (computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} label={computation.output_snapshot.status==='provisional' ? PROVISIONAL_LABEL : 'Saved calculation — see approved snapshot for historical evidence'} /> : <Notice>No D6433-24 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>)}
-      {traceOpen && sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton tone="secondary" palette={p} disabled={busy} label="Calculate provisional D6433-24 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
+      {traceOpen && (computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} label={computation.output_snapshot.status==='provisional' ? PROVISIONAL_LABEL : 'Saved calculation — see approved snapshot for historical evidence'} /> : <Notice>No D6433-07 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>)}
+      {traceOpen && sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton tone="secondary" palette={p} disabled={busy} label="Calculate provisional D6433-07 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
 
       {editable && !confirmation && <View style={{ marginTop: 16 }}><AdminButton palette={p} disabled={busy || dirty || submitIssues.length > 0} label="Submit for engineer review" onPress={() => setConfirmation('submit')} /></View>}
       {reviewer && computation?.verification !== 'verified' && <Notice>Approval is unavailable: this revision needs an eligible verified reference calculation. You may return the submission with comments.</Notice>}
@@ -270,7 +289,13 @@ export function InspectionEditor({ sample, data, busy, run, referencePagination,
         <Text style={{ color: p.text }}>Confirm {confirmation.startsWith('remove:') ? 'removing this distress measurement' : confirmation.startsWith('photo:') ? 'removing this photograph' : confirmation}? {confirmation === 'submit' ? 'Your saved inputs will become read-only.' : 'This action is recorded in the review history.'}</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}><AdminButton palette={p} disabled={busy} label="Confirm" onPress={() => void (async () => { if (await run(() => confirmation.startsWith('remove:') ? workflowAction(sample, 'remove_distress', { id: confirmation.slice(7) }) : confirmation.startsWith('photo:') ? removePhoto(photos.find(photo => photo.id === confirmation.slice(6))!) : workflowAction(sample, confirmation, { comments }), 'Workflow updated.')) setConfirmation(null); })()} /><AdminButton palette={p} tone="secondary" label="Cancel" onPress={() => setConfirmation(null)} /></View>
       </View>}
-    {step === 'submit' && traceOpen && <AdminPanel palette={p} title="Review & change history"><View style={{ gap: 12 }}>{data.history.filter(h => h.sample_unit_id === sample.id).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(h => <Text key={h.id} selectable style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action} · Revision {h.revision}{h.comments ? `\n${h.comments}` : ''}</Text>)}</View></AdminPanel>}
+    {step === 'submit' && traceOpen && <AdminPanel palette={p} title="Review & change history"><View style={{ gap: 12 }}>
+      {data.history.filter(h => h.sample_unit_id === sample.id).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(h => <Text key={h.id} selectable style={{ color: p.text }}>{new Date(h.created_at).toLocaleString()} · {h.action} · Revision {h.revision}{h.comments ? `\n${h.comments}` : ''}</Text>)}
+      {data.computations.filter(c => c.sample_unit_id === sample.id).sort((a, b) => b.input_revision - a.input_revision).map(c => <View key={c.id} style={{ borderTopWidth: 1, borderColor: p.border, paddingTop: 10, gap: 5 }}>
+        <Text style={{ color: p.text, fontWeight: '700' }}>Saved {c.edition} input · Revision {c.input_revision}</Text>
+        {c.edition === EDITION && c.input_snapshot?.distresses?.map(d => <Text key={d.id} selectable style={{ color: p.muted, lineHeight: 20 }}>{c.input_snapshot?.report_context?.distress_names?.[d.distress_type_id] ?? 'Saved distress'} · {d.severity ?? 'No severity level'} · Q {d.quantity} {d.unit_of_measure} · Parts: {d.measurement_details?.measurement_parts?.map(describePart).join('; ') ?? 'not captured in this earlier revision'} · {d.measurement_details?.severity_guidance ? `${d.measurement_details.severity_guidance.version}: ${d.measurement_details.severity_guidance.text}` : 'Draft guidance was not captured in this earlier revision.'}</Text>)}
+      </View>)}
+    </View></AdminPanel>}
   </View>;
 }
 
@@ -285,8 +310,7 @@ function PciResultDetails({label,result}:{label:string;result:CalculationOutput 
   const p=useAdminPalette();
   return <View style={{gap:12,marginTop:14}}>
     <Text style={{color:p.amber,fontWeight:'900'}}>{label}</Text>
-    {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{ASPHALT_CATALOG.find(d=>d.code===g.code)?.name} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Selected severity combination: density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(4)}</Text></View>)}
-    {!!result.severity_alternatives && <Text style={{color:p.muted}}>Evaluated {result.severity_alternatives.length} severity alternatives; displayed values are the selected maximum-PCI combination, not the original measurements.</Text>}
+    {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{result.edition === EDITION ? ASPHALT_CATALOG.find(d=>d.code===g.code)?.name : `Saved ${result.edition} distress code ${g.code}`} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(4)}</Text></View>)}
     <View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}><ResultMetric label="TDV (before fractional trim)" value={formatMetric(result.total_deduct_value,4)} /><ResultMetric label="Allowable deducts (m)" value={result.iterations.length ? formatMetric(result.allowable_deducts,6) : 'Shortcut: not applicable'} /><ResultMetric label="Maximum CDV" value={formatMetric(result.max_corrected_deduct_value,4)} /><ResultMetric label="Provisional PCI" value={formatMetric(result.pci,2)} /><ResultMetric label="Saved condition" value={result.condition} /></View>
     {result.iterations.map((iteration, index) => <View key={index} style={{ borderTopWidth: 1, borderColor: p.border, paddingTop: 10, gap: 4 }}>
       <Text selectable style={{ color: p.text }}>Iteration {index + 1} ? q {iteration.q} ? TDV {formatMetric(iteration.total_deduct_value, 6)} ? CDV {formatMetric(iteration.corrected_deduct_value, 6)}</Text>

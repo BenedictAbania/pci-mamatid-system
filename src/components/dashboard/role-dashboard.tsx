@@ -2,12 +2,12 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AdminButton, AdminPanel, AdminShell, useAdminPalette, type AdminPalette } from '@/components/admin/admin-shell';
-import { canAccess, type Role } from '@/lib/access';
-import { formatDate } from '@/lib/admin-utils';
-import { getPciConditionCategory } from '@/lib/pci-classification';
-import { currentApprovedResults } from '@/lib/approved-results';
-import { dashboardLayout, layout } from '@/lib/design-system';
-import { loadDashboardData, loadDashboardRegister, resource, type DashboardData, type RegisterPage, type Resource, type ResultSummary } from '@/lib/dashboard';
+import { canAccess, type Role } from '@/lib/auth/access';
+import { formatDate } from '@/lib/utils/admin-utils';
+import { getPciConditionCategory } from '@/lib/pci/pci-classification';
+import { currentApprovedResults } from '@/lib/data/approved-results';
+import { dashboardLayout, layout } from '@/lib/ui/design-system';
+import { loadDashboardData, loadDashboardRegister, resource, type DashboardData, type RegisterPage, type Resource, type ResultSummary } from '@/lib/data/dashboard';
 import { useAuth } from '@/providers/AuthProvider';
 import { DashboardNotice, DashboardState, MetricCard, PanelHeader, StatusBadge, WorkflowProgress, type DashboardIcon } from './dashboard-parts';
 

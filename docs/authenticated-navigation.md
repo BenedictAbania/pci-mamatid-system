@@ -1,6 +1,6 @@
 # Authenticated navigation and task flow
 
-The October 2026 task redesign builds on the current local Expo 57 implementation. Shared navy, spacing, type, radius, and shadow tokens live in `src/lib/design-system.ts`. `AdminShell` supplies responsive navigation, identity, theme controls, scoped search, and print styles. The former royal-blue navigation and decorative photograph are replaced with muted navy and a simple road wordmark. No map is added.
+The October 2026 task redesign builds on the current local Expo 57 implementation. Shared navy, spacing, type, radius, and shadow tokens live in `src/lib/ui/design-system.ts`. `AdminShell` supplies responsive navigation, identity, theme controls, scoped search, and print styles. The former royal-blue navigation and decorative photograph are replaced with muted navy and a simple road wordmark. No map is added.
 
 | Role | Navigation | Home focus |
 | --- | --- | --- |

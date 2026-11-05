@@ -4,8 +4,8 @@ import { Text, View } from 'react-native';
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice } from '@/components/workflow/shared';
 import { useAuth } from '@/providers/AuthProvider';
-import { DEMO_PREVIEW_ENABLED, readScenarioNumber } from '@/lib/demo-preview';
-import { rankPriorities, type PrioritySection } from '@/lib/pci-service';
+import { DEMO_PREVIEW_ENABLED, readScenarioNumber } from '@/lib/ui/demo-preview';
+import { rankPriorities, type PrioritySection } from '@/lib/pci/pci-service';
 
 type Scenario = PrioritySection & { name: string };
 

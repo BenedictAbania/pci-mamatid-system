@@ -15,13 +15,13 @@ import {
   ViewStyle,
 } from 'react-native';
 
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/data/supabase';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { canAccess, roleLabels } from '@/lib/access';
-import { createPalette, layout } from '@/lib/design-system';
-import { accountDisplayName } from '@/lib/account-display';
-import { navigationForRole, navigationRoute } from '@/lib/navigation';
+import { canAccess, roleLabels } from '@/lib/auth/access';
+import { createPalette, layout } from '@/lib/ui/design-system';
+import { accountDisplayName } from '@/lib/auth/account-display';
+import { navigationForRole, navigationRoute } from '@/lib/auth/navigation';
 
 export type AdminPalette = ReturnType<typeof createPalette>;
 

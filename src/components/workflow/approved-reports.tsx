@@ -5,12 +5,12 @@ import { AdminButton, AdminEmpty, AdminPanel, AdminShell, useAdminPalette } from
 import { Notice } from './shared';
 import { TaskTabs } from './task-tabs';
 import { PageControls } from './pagination';
-import { loadApprovedPage, loadApprovedSummary, loadSectionReportPage, REPORT_PAGE_SIZE } from '@/lib/approved-data';
-import { approvedReportCsv, type ApprovedResult } from '@/lib/approved-results';
-import { downloadCsv, formatDate } from '@/lib/admin-utils';
+import { loadApprovedPage, loadApprovedSummary, loadSectionReportPage, REPORT_PAGE_SIZE } from '@/lib/data/approved-data';
+import { approvedReportCsv, type ApprovedResult } from '@/lib/data/approved-results';
+import { downloadCsv, formatDate } from '@/lib/utils/admin-utils';
 import { useAuth } from '@/providers/AuthProvider';
 import { PhotoCard } from '@/components/workflow/photo-card';
-import { DEMO_PREVIEW_ENABLED } from '@/lib/demo-preview';
+import { DEMO_PREVIEW_ENABLED } from '@/lib/ui/demo-preview';
 
 export function ApprovedReports({ title, mode: initialMode = 'results', initialTab = 'current', hub = false }: { title: string; mode?: 'results' | 'overview' | 'reports' | 'rankings'; initialTab?: string; hub?: boolean }) {
   const palette = useAdminPalette();

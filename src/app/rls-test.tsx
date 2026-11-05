@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/data/supabase';
 
 type Profile = {
   full_name: string;

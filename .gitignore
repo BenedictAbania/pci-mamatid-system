@@ -44,4 +44,13 @@ example
 /ios
 /android
 
+# Locally installed agent skills (keep .claude/settings.json tracked)
+/.agents/
+/.claude/skills/
+/skills-lock.json
+
+# Supabase CLI local state
+supabase/.temp/
+
+# Private ASTM references, backups and briefs (never commit)
 /private-astm/

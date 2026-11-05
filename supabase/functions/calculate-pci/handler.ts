@@ -1,7 +1,7 @@
-import { calculateSample } from '../_shared/d6433-24/sample.ts';
-import { calculateSection, type SectionInput } from '../_shared/d6433-24/section.ts';
-import { sampleFromSnapshot } from '../_shared/d6433-24/snapshot.ts';
-import { ReferenceUnavailable, type CurveReader } from '../_shared/d6433-24/curves.ts';
+import { calculateSample } from '../_shared/d6433-07/sample.ts';
+import { calculateSection, type SectionInput } from '../_shared/d6433-07/section.ts';
+import { sampleFromSnapshot } from '../_shared/d6433-07/snapshot.ts';
+import { ReferenceUnavailable, type CurveReader } from '../_shared/d6433-07/curves.ts';
 type Context = {kind:'sample';id:string;revision:number;version:number;edition:string;input:Parameters<typeof sampleFromSnapshot>[0]}
  | {kind:'section';id:string;input:SectionInput};
 export type Dependencies = {

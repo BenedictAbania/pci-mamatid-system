@@ -2,8 +2,8 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Linking, Pressable, Text, View } from 'react-native';
 import { AdminButton, useAdminPalette } from '@/components/admin/admin-shell';
-import { supabase } from '@/lib/supabase';
-import type { Photo } from '@/lib/workflow-data';
+import { supabase } from '@/lib/data/supabase';
+import type { Photo } from '@/lib/data/workflow-data';
 
 export function PhotoCard({ busy = false, canRemove = false, onRemove, photo }: { busy?: boolean; canRemove?: boolean; onRemove?: () => void; photo: Photo }) {
   const p = useAdminPalette();

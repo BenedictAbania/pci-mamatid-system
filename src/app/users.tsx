@@ -1,13 +1,13 @@
-import { layout } from '@/lib/design-system';
+import { layout } from '@/lib/ui/design-system';
 import { PageControls } from '@/components/workflow/pagination';
 import { Feather } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
 
 import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
-import { formatDate, titleCase } from '@/lib/admin-utils';
-import { supabase } from '@/lib/supabase';
-import { callWorkflow, ensureWorkflowReady } from '@/lib/workflow-data';
+import { formatDate, titleCase } from '@/lib/utils/admin-utils';
+import { supabase } from '@/lib/data/supabase';
+import { callWorkflow, ensureWorkflowReady } from '@/lib/data/workflow-data';
 import { useAuth, UserRole } from '@/providers/AuthProvider';
 
 const roles: UserRole[] = ['admin', 'reviewer', 'encoder', 'viewer'];

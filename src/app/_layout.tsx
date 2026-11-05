@@ -12,8 +12,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import { canAccess, homeForRole } from '@/lib/access';
-import { supabase } from '@/lib/supabase';
+import { canAccess, homeForRole } from '@/lib/auth/access';
+import { supabase } from '@/lib/data/supabase';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { AppThemeProvider, useAppTheme } from '@/providers/ThemeProvider';
 
@@ -69,7 +69,6 @@ function RootLayoutNav() {
         <Stack.Screen name="sampling" options={{ title: 'Sampling Plans · LAKAD' }} />
         <Stack.Screen name="dashboard" options={{ title: role === 'viewer' ? 'Overview · LAKAD' : 'Home · LAKAD' }} />
         <Stack.Screen name="road-network" options={{ title: 'Roads · LAKAD' }} />
-        <Stack.Screen name="inspections" options={{ title: 'Inspections · LAKAD' }} />
         <Stack.Screen name="pci-results" options={{ title: role === 'viewer' ? 'Published Results · LAKAD' : role === 'admin' ? 'Results & Reports · LAKAD' : 'Results · LAKAD' }} />
         <Stack.Screen name="demo-priorities" options={{ title: 'Synthetic priority preview · LAKAD' }} />
         <Stack.Screen name="maintenance-plan" options={{ title: 'Maintenance Priorities · LAKAD' }} />

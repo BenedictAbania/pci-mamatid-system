@@ -13,10 +13,40 @@ The original **PCI Automation** project (`qsqvqkdqxkqparhzpsqn`) has these recor
 | 20261031211658_reviewer_branch_registration.sql | 20261031211658 / reviewer_branch_registration |
 | 20261102023605_reviewer_section_registration.sql | 20261102023605 / reviewer_section_registration |
 | 20261102030601_harden_legacy_function_execute.sql | 20261102030601 / harden_legacy_function_execute |
+| 20261103045500_remove_unused_legacy_distress_types.sql | 20261103045500 / remove_unused_legacy_distress_types (applied 5 Nov 2026) |
+| 20261103045543_d6433_07_provisional_edition.sql | 20261103045543 / d6433_07_provisional_edition (applied 5 Nov 2026) |
+| 20261103105805_d6433_07_severity_guidance_snapshot.sql | 20261103105805 / d6433_07_severity_guidance_snapshot (applied 5 Nov 2026) |
+| 20261103120853_d6433_07_measurement_parts.sql | 20261103120853 / d6433_07_measurement_parts (applied 5 Nov 2026) |
+
+The D6433-07 transition adds 19 new canonical entries and changes only *new*
+submission edition. D6433-24 catalog rows and historical snapshots remain
+separate and inactive. The migrations and matching Edge Function were rehearsed
+on the disposable Review project on 3 November 2026.
+
+### D6433-07 cutover of the original project (5 November 2026)
+
+A fresh CLI backup (roles, schema and data, including Auth users and Storage
+metadata) with SHA-256 checksums was saved privately under
+`private-astm/production-cutover/original-20261105-210457-cli/`. The first
+attempt at `20261103045543` failed on `distress_types_name_key` and rolled back
+completely: the original project still had four unused pre-ASTM distress types
+with no edition whose names match the D6433-07 catalog. The new
+`20261103045500_remove_unused_legacy_distress_types.sql` deletes only rows
+with no edition, no ASTM mapping, no measurements and no deduct points. It and
+the three D6433-07 migrations were then executed one at a time, each in its own
+transaction with its ledger entry. Afterwards the active edition is
+`ASTM D6433-07`, the 19 D6433-07 types are active, the 20 D6433-24 types are
+inactive, and the existing users, sample units, measurements and calculation
+were preserved. The D6433-07 `calculate-pci` was deployed to the original
+project (bundle identical to the Review function). The cleanup migration is a
+no-op in Review and was recorded there for ledger parity. The D6433-24
+calculation engine and its tests were removed from the repository; saved
+D6433-24 snapshots remain readable history.
+See [the D6433-07 transition](d6433-07-transition.md).
 
 The old guide named a nonexistent 20260915103850 migration and said workflow was unapplied. Those statements were outdated. The repository's two existing filenames and the hosted history timestamps differ. **Do not run db push or migration repair against PCI Automation to resolve this automatically.** Inspect and reconcile history in a disposable clone first, without replaying existing migrations.
 
-There is no complete base-schema migration or committed Supabase config.toml. The migrations depend on existing profiles, branches, sections, sample_units, distress_types, distress_records, distress_photos, deduct_value_points, Auth and Storage. tests/schema-fixture.sql reconstructs a minimal legacy schema for PGlite; it is not a deployable Supabase baseline. Neither supabase db reset nor blindly pushing this migration folder to a fresh hosted project is a supported setup.
+There is no complete base-schema migration or committed Supabase config.toml. The migrations depend on existing profiles, branches, sections, sample_units, distress_types, distress_records, distress_photos, deduct_value_points, Auth and Storage. tests/fixtures/schema-fixture.sql reconstructs a minimal legacy schema for PGlite; it is not a deployable Supabase baseline. Neither supabase db reset nor blindly pushing this migration folder to a fresh hosted project is a supported setup.
 
 ## New migration behavior
 
@@ -24,7 +54,15 @@ There is no complete base-schema migration or committed Supabase config.toml. Th
 
 `20261102023605_reviewer_section_registration.sql` adds a restrictive Reviewer-only check to section INSERT and UPDATE, plus permissive Reviewer policies so legacy Admin-only write policies cannot block the CE. It leaves section SELECT, DELETE, confirmed-layout triggers, and inspection approval policies untouched. `20261102030601_harden_legacy_function_execute.sql` removes anonymous direct execution of the legacy role helper and removes client execution of three trigger helpers; authenticated role-helper access stays in place for existing policies.
 
-On 2 November, four authenticated test roles passed direct section API checks in **PCI Automation Review** (`zxgscjcgxrezmlfyoriw`). A fresh original-project custom-format backup was verified privately at `private-astm/production-cutover/original-20261102-110847/` before both migrations were applied and recorded transactionally in PCI Automation. The original section count remained one. The Review ledger still contains its four earlier baseline/rehearsal entries and does not record the manually executed branch/section SQL; its ledger must be reconciled before any automatic push there. No Review fixtures were copied to the original.
+On 2 November, four authenticated test roles passed direct section API checks in **PCI Automation Review** (`zxgscjcgxrezmlfyoriw`). A fresh original-project custom-format backup was verified privately at `private-astm/production-cutover/original-20261102-110847/` before both migrations were applied and recorded transactionally in PCI Automation. The original section count remained one. On 3 November, the D6433-07 migration was executed in Review and its version `20261103045543` was recorded after execution. The Review ledger now has those four earlier entries plus this D6433-07 entry; it still does not record the manually executed branch/section SQL. Reconcile that older divergence before any automatic push there. No Review fixtures were copied to the original.
+
+Also on 3 November, `20261103105805_d6433_07_severity_guidance_snapshot.sql`
+was executed and recorded in **Review only**. Four synthetic authenticated
+sessions verified the versioned cue save, correction, resubmission, null
+severity, Viewer exclusion, and unchanged D6433-24 snapshots. The Review
+ledger now contains six entries, including these two D6433-07 versions. The
+older branch/section ledger divergence still requires reconciliation before an
+automatic push. The original project has neither D6433-07 migration.
 
 ### Signed in but unable to load access
 
@@ -32,7 +70,7 @@ The authenticated frontend calls `lakad_session_access()` immediately after Supa
 
 The local app distinguishes missing-function errors from network/permission failures, absent profiles, unsupported roles and deactivated accounts. It does not assume Admin access or query profiles as a legacy fallback. Retry cannot repair an unapplied migration.
 
-The ignored local `.env.local` selects PCI Automation. Rebuild static exports after switching environments so Metro does not reuse an old bundle. Database migration is complete for the currently recorded files, but public frontend deployment and engineering validation are separate tasks. Use a disposable backend for write-heavy tests and future migration rehearsals.
+The ignored local `.env.local` currently selects disposable PCI Automation Review for the D6433-07 rehearsal. The previous local configuration is privately backed up under `private-astm/review-backend/`. Rebuild static exports after switching environments so Metro does not reuse an old bundle. Public frontend deployment and engineering validation are separate tasks. Use a disposable backend for write-heavy tests and future migration rehearsals.
 
 The new additive migration creates approved_results, sample revision action versions/current approval pointers, safe session/report/account RPCs, immutable snapshot triggers, scoped Storage preservation, and restrictive Viewer policies. Existing permissive policies cannot expose internal rows to Viewers.
 
@@ -77,6 +115,6 @@ Remaining hosted work includes real photo upload/signed download and retention, 
 
 The two existing files under supabase/rollback are manual guards for their original migrations, not a rollback for the new approved-results layer. Do not run them after the new migration: immutable approvals, computation pointers and dependent functions must be preserved. No destructive downgrade is supplied. Rehearse restores or a forward fix in the disposable environment; do not erase approved history or photo objects to recover a release.
 
-Prototype DV/CDV ordinates remain unchanged and illustrative. The new D6433-24 core implements fractional corrections, mixed severity and area-weighted random/additional aggregation with per-rule provenance. Private reference data, licensing, numerical/field engineering validation and a trusted promotion/publication service remain outstanding. See [the engineering review and disposable test gates](d6433-24-engineering-review.md). Edition text or a database verification flag alone is not ASTM compliance.
+Prototype DV/CDV ordinates remain unchanged and illustrative. The D6433-24 calculation core was removed from the repository; only D6433-07 is calculated. Private reference data, licensing, numerical/field engineering validation and a trusted promotion/publication service remain outstanding. See [the D6433-07 transition](d6433-07-transition.md). Edition text or a database verification flag alone is not ASTM compliance.
 
 The new migration fixes the active edition to D6433-24 for new submissions, seeds 20 separate immutable SI mappings without relabeling legacy rows, captures field/catalog context, and saves calculations provisionally. It changes sampling bounds to 135–315 m² and selection to a systematic random interval. Existing drafts need measured area/orientation/field confirmation and legacy distress replacement before new-edition submission. Approved older snapshots stay unchanged; corrections preserve the previous current result until replacement approval.

@@ -15,7 +15,7 @@ import {
     View,
 } from 'react-native';
 
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/data/supabase';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
 const heroImage = require('../../assets/images/lakad_hero_bg.jpg');

@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { AdminButton, useAdminPalette } from '@/components/admin/admin-shell';
-import { layout } from '@/lib/design-system';
+import { layout } from '@/lib/ui/design-system';
 
 export type PageControlsProps = { label?: string; page: number; hasNext: boolean; busy: boolean; next: () => void; previous: () => void };
 

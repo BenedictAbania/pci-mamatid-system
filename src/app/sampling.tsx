@@ -4,11 +4,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Text, View } from 'react-native';
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { possibleSampleUnits, SAMPLE_UNIT_GUIDANCE } from '@/lib/pci-service';
-import { calculateProvisional, callWorkflow } from '@/lib/workflow-data';
-import { minimumRandomSamples } from '@/lib/d6433-24/section';
-import { PROVISIONAL_LABEL } from '@/lib/d6433-24/catalog';
-import type { calculateSection } from '@/lib/d6433-24/section';
+import { possibleSampleUnits, SAMPLE_UNIT_GUIDANCE } from '@/lib/pci/pci-service';
+import { calculateProvisional, callWorkflow } from '@/lib/data/workflow-data';
+import { minimumRandomSamples } from '@/lib/d6433-07/section';
+import { PROVISIONAL_LABEL } from '@/lib/d6433-07/catalog';
+import type { calculateSection } from '@/lib/d6433-07/section';
 import { useAuth } from '@/providers/AuthProvider';
 
 export default function Sampling() {
@@ -44,13 +44,13 @@ export default function Sampling() {
     <Notice>Sections and assignee choices are paged. The unit preview shows up to 50 units; use Field Inspections for the paged register.</Notice>
     {!!state.error && <Notice error>{state.error}</Notice>}{!!state.message && <Notice>{state.message}</Notice>}
     <Notice>{SAMPLE_UNIT_GUIDANCE}</Notice>
-    <Notice>D6433-24 §7.5.2 Eq. 1 initial AC estimate uses s=10 and e=5; it is not a completed confidence check. An engineer must justify the count, use preceding survey deviation when available, and check actual deviation after survey (§7.5.2.1–.2). Selection uses a random start and floor(N/n) intervals (§7.5.3).</Notice>
+    <Notice>D6433-07 §7.5.2 Eq. 1 initial AC estimate uses s=10 and e=5; it is not a completed confidence check. An engineer must justify the count, use preceding survey deviation when available, and check actual deviation after survey (§7.5.2.1–.2). Selection uses a random start and floor(N/n) intervals (§7.5.3).</Notice>
     {state.data && <AdminPanel palette={p} title="Section plan"><View style={{ gap: 16 }}>
       <Choices label="Pavement section" value={sectionId} options={state.data.sections.filter(s => attention !== 'unconfirmed' || !s.homogeneous_confirmed_by).map(s => ({ value: s.id, label: s.name }))} onChange={id => { setSectionId(id);setSectionResult(null);setUnusualId(""); setConfirm(false); setAdditional(false); const s = state.data?.sections.find(x => x.id === id); setStart(s?.start_description ?? ''); setEnd(s?.end_description ?? ''); }} />
       {section && <>
         <Text style={{ color: p.text }}>{section.area_sqm ?? '—'} m² · {section.length_meters ?? '—'} m long · {section.width_meters ?? '—'} m wide</Text>
         <Text style={{ color: p.muted }}>{recommendation ? `Estimated ${recommendation.count} possible units at ${recommendation.areaPerUnit.toFixed(1)} m² each. ${recommendation.needsAdjustment ? 'Layout adjustment required.' : 'Engineer confirmation required.'}` : 'Enter valid section dimensions in Road Network first.'}</Text>
-        {role === 'admin' && <Notice>Administrators manage the road inventory. A signed-in civil engineer confirms the boundaries, required count and final sampling plan.</Notice>}
+        {role === 'admin' && <Notice>A signed-in civil engineer registers road branches and sections, then confirms boundaries and the sampling plan.</Notice>}
         <Choices label="Assigned field inspector" value={inspector} options={state.data.profiles.filter(u => u.role === 'encoder' && u.is_active !== false).map(u => ({ value: u.id, label: u.full_name || u.id }))} onChange={setInspector} />
         {!section.homogeneous_confirmed_by && <>
           <Choices label="Independent review engineer" value={reviewer} options={state.data.profiles.filter(u => u.role === 'reviewer' && u.is_active !== false).map(u => ({ value: u.id, label: u.full_name || u.id }))} onChange={setReviewer} />

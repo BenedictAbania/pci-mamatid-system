@@ -12,7 +12,7 @@ npm.cmd run build:web
 
 Individual suites: test:workflow, test:e2e, test:alignment and test:published. All use local fictional data; none connect to Supabase, invite real users or apply hosted migrations. test:e2e is a database/domain scenario, not a browser/device end-to-end run.
 
-PGlite rebuilds tests/schema-fixture.sql and the appropriate repository migrations. The published suite applies all three migrations and covers:
+PGlite rebuilds tests/fixtures/schema-fixture.sql and the appropriate repository migrations. The published suite applies all three migrations and covers:
 - Viewer zero-row access to internal tables, including own profile, raw calculations, review comments, audit and accounts; only minimal role/active bootstrap and published approved snapshots are readable.
 - Pending, returned and unpublished approvals excluded from Viewer reads and summaries; private evidence paths and mutation attempts blocked even with a permissive legacy Storage read policy.
 - Missing/stale revision/version rejected; return/resubmit without edits creates a new computation; overlapping approve/return requests with the same token allow only one action.
@@ -43,6 +43,11 @@ The new migration is included for review and has not been applied to the connect
 
 Engineering work remains: licensed DV/CDV provenance and validation, VerifiedPciAdapter implementation, independently validated sample and section calculations/weighting, and civil-engineer sign-off. Do not substitute a fixture or browser prototype for any of these.
 
-## D6433-24 calculation rehearsal
+## D6433-07 calculation rehearsal
 
-Run npm run test:calculation and npm run typecheck:calculation locally. The new workflow tests apply all four migrations; older suites retain historical migration coverage. Read [the engineering validation register](d6433-24-engineering-review.md) for real-reference and hosted acceptance cases. No fictional fixture curve may be uploaded as an ASTM reference. Provisional output must never become Viewer-visible or automatically mark a computation verified.
+`npm run test:calculation` runs only the D6433-07 calculation, severity,
+measurement and migration fixtures. The D6433-24 calculation engine and its
+tests were removed; saved D6433-24 snapshots remain readable history. Check the edition-specific review questions in
+[the D6433-07 transition](d6433-07-transition.md). No fictional graph points
+may be uploaded as D6433-07 reference data. Verify the D07 migration and
+the coordinated Edge/frontend against a matching disposable Supabase project.

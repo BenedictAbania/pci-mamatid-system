@@ -19,8 +19,8 @@ import {
     saveBranch,
     saveSection,
     SectionRecord,
-} from '@/lib/admin-data';
-import { confirmAction, formatNumber } from '@/lib/admin-utils';
+} from '@/lib/data/admin-data';
+import { confirmAction, formatNumber } from '@/lib/utils/admin-utils';
 import { useAuth } from '@/providers/AuthProvider';
 
 const emptyBranchForm = { id: undefined as string | undefined, name: '', description: '', location: '', administrative_status: 'active' };

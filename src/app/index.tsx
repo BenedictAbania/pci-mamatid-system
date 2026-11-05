@@ -4,8 +4,8 @@ import { useRouter } from 'expo-router';
 import { type ComponentRef, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 
-import { homeForRole } from '@/lib/access';
-import { layout } from '@/lib/design-system';
+import { homeForRole } from '@/lib/auth/access';
+import { layout } from '@/lib/ui/design-system';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 

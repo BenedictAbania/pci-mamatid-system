@@ -13,7 +13,7 @@
     ]
   },
   "include": [
-    "src/lib/d6433-24/**/*.ts",
+    "src/lib/d6433-07/**/*.ts",
     "supabase/functions/calculate-pci/handler.ts"
   ]
 }

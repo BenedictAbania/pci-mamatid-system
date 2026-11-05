@@ -2,9 +2,9 @@ import { Feather } from '@expo/vector-icons';
 import { ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { AdminButton, AdminPalette } from '@/components/admin/admin-shell';
-import { layout } from '@/lib/design-system';
-import type { Resource } from '@/lib/dashboard';
-import type { WorkflowState } from '@/lib/workflow-data';
+import { layout } from '@/lib/ui/design-system';
+import type { Resource } from '@/lib/data/dashboard';
+import type { WorkflowState } from '@/lib/data/workflow-data';
 
 export type DashboardIcon = keyof typeof Feather.glyphMap;
 export function IconCircle({ icon, palette, large = false }: { icon: DashboardIcon; palette: AdminPalette; large?: boolean }) {

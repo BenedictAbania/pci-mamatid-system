@@ -6,9 +6,9 @@ import { Pressable, StyleSheet, Switch, Text, useWindowDimensions, View } from '
 
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { PCI_CONDITION_SCALE } from '@/lib/pci-classification';
-import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/severity-colors';
-import { callWorkflow } from '@/lib/workflow-data';
+import { PCI_CONDITION_SCALE } from '@/lib/pci/pci-classification';
+import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/pci/severity-colors';
+import { callWorkflow } from '@/lib/data/workflow-data';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
 export default function SettingsScreen() {
@@ -99,7 +99,7 @@ export default function SettingsScreen() {
         <View style={styles.column}>
           <AdminPanel palette={palette} subtitle="Application configuration" title="System Settings">
             <View style={{ gap: 16 }}>
-              <Text style={{color:palette.text}}>Calculation edition: ASTM D6433-24 · provisional. Historical snapshots keep their saved edition.</Text>
+              <Text style={{color:palette.text}}>Calculation edition: ASTM D6433-07 · provisional. Historical snapshots keep their saved edition.</Text>
 
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}>
@@ -154,7 +154,7 @@ export default function SettingsScreen() {
               <AdminField editable={!canonical} label="Reference Code" onChangeText={setReferenceCode} palette={palette} placeholder="e.g. AC-01" value={referenceCode} />
               <AdminField label="Distress Name" onChangeText={setReferenceName} palette={palette} placeholder="Validated asphalt distress name" value={referenceName} />
               <AdminField label="Description" multiline onChangeText={setReferenceDescription} palette={palette} placeholder="Field identification guidance" value={referenceDescription} />
-              {canonical ? <Notice>Canonical D6433-24 units and severity sets are fixed: {referenceUnit} · {allowedSeverities.join(", ") || "No severity"}. Names, descriptions and active status may be maintained.</Notice> : <>
+              {canonical ? <Notice>Canonical D6433-07 units and severity sets are fixed: {referenceUnit} · {allowedSeverities.join(", ") || "No severity"}. Names, descriptions and active status may be maintained.</Notice> : <>
               <Choices label="Default Measurement Unit" onChange={setReferenceUnit} options={[{ label: 'Area (m²)', value: 'm²' }, { label: 'Length (m)', value: 'm' }, { label: 'Count (No.)', value: 'No.' }]} value={referenceUnit} />
               <View style={[styles.settingRow, { borderBottomColor: palette.border }]}>
                 <View style={styles.settingCopy}><Text style={[styles.settingTitle, { color: palette.text }]}>Severity is required</Text><Text style={[styles.settingText, { color: palette.muted }]}>Require inspectors to classify the record using the allowed levels below.</Text></View>

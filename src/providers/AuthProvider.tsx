@@ -1,10 +1,10 @@
 import { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { isRole } from '@/lib/access';
-import { requireSessionAccess } from '@/lib/session-access';
-import { accountDisplayName } from '@/lib/account-display';
+import { isRole } from '@/lib/auth/access';
+import { requireSessionAccess } from '@/lib/auth/session-access';
+import { accountDisplayName } from '@/lib/auth/account-display';
 
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/data/supabase';
 
 export type UserRole = 'admin' | 'reviewer' | 'encoder' | 'viewer';
 
