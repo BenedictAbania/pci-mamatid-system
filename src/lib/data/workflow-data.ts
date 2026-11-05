@@ -15,9 +15,11 @@ export type CatalogType = DistressTypeRecord & ReferenceDistress & { severity_de
 export type WorkflowData = { samples: Sample[]; sections: RoadSection[]; branches: BranchRecord[]; profiles: ProfileRecord[]; types: CatalogType[]; distresses: (DistressRecord & { measurement_details: DistressDetails })[]; computations: Computation[]; history: History[]; photos: Photo[]; results: SectionResult[]; settings: Settings; audit: { id: string; action: string; created_at: string }[] };
 
 export const WORKFLOW_PAGE_SIZE = 50;
-export type WorkflowScope = 'samples' | 'sections' | 'types';
+/** Only the current edition's catalog is listed; older types load by ID for history. */
+const ACTIVE_EDITION = 'ASTM D6433-07';
+export type WorkflowScope ='samples' | 'sections' | 'types';
 export type WorkflowPage = WorkflowData & { pageLastId: string | null; hasNext: boolean; referenceLastId: string | null; referenceHasNext: boolean };
-type QueryOptions = { after?: string | null; ids?: string[]; sampleId?: string; sectionId?: string; limit?: number; newest?: boolean; status?: string; assignedTo?: string; reviewerId?: string; excludeAssigned?: string };
+type QueryOptions = { after?: string | null; ids?: string[]; sampleId?: string; sectionId?: string; limit?: number; newest?: boolean; status?: string; assignedTo?: string; reviewerId?: string; excludeAssigned?: string; edition?: string };
 export async function rows<T>(table: string, options: QueryOptions = {}): Promise<T[]> {
   if (options.ids && !options.ids.length) return [];
   let query = supabase.from(table).select('*');
@@ -31,6 +33,7 @@ export async function rows<T>(table: string, options: QueryOptions = {}): Promis
   if (options.assignedTo) query = query.eq('assigned_to', options.assignedTo);
   if (options.reviewerId) query = query.eq('reviewer_id', options.reviewerId);
   if (options.excludeAssigned) query = query.neq('assigned_to', options.excludeAssigned);
+  if (options.edition) query = query.eq('astm_edition', options.edition);
   const { data, error } = await query;
   if (error) throw new Error('Unable to load ' + table + ': ' + error.message);
   return data as T[];
@@ -52,9 +55,9 @@ export async function loadWorkflow(scope: WorkflowScope = 'samples', after: stri
   const settings = await rows<Settings>('lakad_settings', { limit: 1 });
   if (!settings[0]) throw new Error('Workflow settings are not configured.');
   const [primary, profiles, typePage] = await Promise.all([
-    rows<Sample | RoadSection | CatalogType>(scope === 'samples' ? 'sample_units' : scope === 'sections' ? 'sections' : 'distress_types', { after, ...(scope === 'samples' ? { status, ...assignment } : {}) }),
+    rows<Sample | RoadSection | CatalogType>(scope === 'samples' ? 'sample_units' : scope === 'sections' ? 'sections' : 'distress_types', { after, ...(scope === 'samples' ? { status, ...assignment } : scope === 'types' ? { edition: ACTIVE_EDITION } : {}) }),
     rows<ProfileRecord>('profiles', { after: referenceAfter }),
-    scope === 'types' ? Promise.resolve([]) : scope === 'samples' ? loadActiveD07Types() : rows<CatalogType>('distress_types', { after: referenceAfter }),
+    scope === 'types' ? Promise.resolve([]) : scope === 'samples' ? loadActiveD07Types() : rows<CatalogType>('distress_types', { after: referenceAfter, edition: ACTIVE_EDITION }),
   ]);
   const referenceCandidates = [profiles, typePage].filter(page => page.length === WORKFLOW_PAGE_SIZE).map(page => page.at(-1)!.id);
   const samples = scope === 'samples' ? [...primary] as Sample[] : sectionId ? await rows<Sample>('sample_units', { sectionId }) : [];
@@ -94,7 +97,7 @@ export async function loadWorkflow(scope: WorkflowScope = 'samples', after: stri
     pageLastId: primary.at(-1)?.id ?? null, hasNext: primary.length === WORKFLOW_PAGE_SIZE };
 }
 async function loadActiveD07Types(): Promise<CatalogType[]> {
-  const { data, error } = await supabase.from('distress_types').select('*').eq('astm_edition', 'ASTM D6433-07').eq('is_active', true).order('name').limit(20);
+  const { data, error } = await supabase.from('distress_types').select('*').eq('astm_edition', ACTIVE_EDITION).eq('is_active', true).order('name').limit(20);
   if (error) throw new Error('Unable to load the active D6433-07 catalog: ' + error.message);
   if ((data?.length ?? 0) > 19) throw new Error('The active D6433-07 catalog exceeds the expected 19 asphalt types. Ask the Civil Engineer to check the catalog.');
   return data as CatalogType[];
