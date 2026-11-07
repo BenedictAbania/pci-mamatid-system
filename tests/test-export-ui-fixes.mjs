@@ -15,7 +15,7 @@ const prefix = before ? 'private-astm/defect-fixes-2026-10-07/before/' : '';
 function load(file, dependencies = {}, globals = {}) {
   const source = fs.readFileSync(prefix + file + (before ? '.source' : ''), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const context = { exports: {}, require: name => name in dependencies ? dependencies[name] : require(name), ...globals };
+  const context = { exports: {}, require: name => name in dependencies ? dependencies[name] : /\.png$|\.jpg$/.test(name) ? 'synthetic-asset' : require(name), ...globals };
   vm.runInNewContext(code, context, { filename: file });
   return context.exports;
 }
@@ -157,7 +157,7 @@ await test('F04', 'Actual React Native Web markup: area/date/orientation/notes l
   for (const label of labels) check(html.includes('aria-label="' + label + '"'), 'Meaningful fallback accessible name');
   check(html.includes('<input') && html.includes('<textarea'), 'Single and multiline fields covered');
   check(!html.includes('tabindex="-1"'), 'Editable fields are not excluded from normal tab navigation');
-  const { Notice } = load('src/components/workflow/shared.tsx', { 'react-native': native, 'expo-router': {}, '@/providers/AuthProvider': {}, '@/components/admin/admin-shell': { useAdminPalette: () => ({}) }, '@/lib/data/workflow-data': {} });
+  const { Notice } = load('src/components/workflow/shared.tsx', { 'react-native': native, 'expo-router': {}, '@/providers/AuthProvider': {}, '@/components/admin/admin-shell': { useAdminPalette: () => ({}) }, '@/lib/data/workflow-data': {}, '@/lib/ui/design-system': load('src/lib/ui/design-system.ts') });
   const error = renderToStaticMarkup(React.createElement(Notice, { error: true }, 'Measured area must be 135–315 m².'));
   check(error.includes('role="alert"') && error.includes('aria-live="polite"'), 'Validation notice is an accessible alert');
   return 'Actual RN Web SSR markup verified; live label selection, keyboard and screen-reader testing pending';

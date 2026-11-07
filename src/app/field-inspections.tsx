@@ -309,7 +309,7 @@ function SeverityBadge({ severity }: { severity: string }) {
 function PciResultDetails({label,result}:{label:string;result:CalculationOutput & Partial<SampleOutput>}) {
   const p=useAdminPalette();
   return <View style={{gap:12,marginTop:14}}>
-    <Text style={{color:p.amber,fontWeight:'900'}}>{label}</Text>
+    <Text style={{color:p.amber,fontWeight:'700'}}>{label}</Text>
     {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{result.edition === EDITION ? ASPHALT_CATALOG.find(d=>d.code===g.code)?.name : `Saved ${result.edition} distress code ${g.code}`} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(4)}</Text></View>)}
     <View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}><ResultMetric label="TDV (before fractional trim)" value={formatMetric(result.total_deduct_value,4)} /><ResultMetric label="Allowable deducts (m)" value={result.iterations.length ? formatMetric(result.allowable_deducts,6) : 'Shortcut: not applicable'} /><ResultMetric label="Maximum CDV" value={formatMetric(result.max_corrected_deduct_value,4)} /><ResultMetric label="Provisional PCI" value={formatMetric(result.pci,2)} /><ResultMetric label="Saved condition" value={result.condition} /></View>
     {result.iterations.map((iteration, index) => <View key={index} style={{ borderTopWidth: 1, borderColor: p.border, paddingTop: 10, gap: 4 }}>

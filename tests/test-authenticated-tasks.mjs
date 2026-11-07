@@ -16,7 +16,7 @@ const { getByRole, queryByRole, getByLabelText, getByText, queryByText, getAllBy
 const userEvent = require('@testing-library/user-event').default;
 function load(file, deps = {}) {
   const code = ts.transpileModule(fs.readFileSync(file,'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const context = { exports: {}, require: n => n in deps ? deps[n] : require(n), document, HTMLElement, Response, fetch };
+  const context = { exports: {}, require: n => n in deps ? deps[n] : /\.png$|\.jpg$/.test(n) ? 'synthetic-asset' : require(n), document, HTMLElement, Response, fetch };
   vm.runInNewContext(code, context, { filename: file }); return context.exports;
 }
 let role = 'encoder', width = 390, requests = [], serverError = '', update, uploadFailure = false, uploads = 0;
@@ -30,7 +30,7 @@ const shell = load('src/components/admin/admin-shell.tsx', {
   '@/lib/data/supabase': {}, '@/providers/AuthProvider': auth, '@/providers/ThemeProvider': { useAppTheme: () => ({ colorScheme: 'light', toggleColorScheme() {} }) },
   '@/lib/auth/access': access, '@/lib/ui/design-system': tokens, '@/lib/auth/account-display': load('src/lib/auth/account-display.ts'), '@/lib/auth/navigation': navigation,
 });
-const shared = load('src/components/workflow/shared.tsx', { 'react-native': rn, 'expo-router': {}, '@/providers/AuthProvider': auth, '@/components/admin/admin-shell': shell, '@/lib/data/workflow-data': {} });
+const shared = load('src/components/workflow/shared.tsx', { 'react-native': rn, 'expo-router': {}, '@/providers/AuthProvider': auth, '@/components/admin/admin-shell': shell, '@/lib/data/workflow-data': {}, '@/lib/ui/design-system': tokens });
 const tabs = load('src/components/workflow/task-tabs.tsx', { 'react-native': rn, '@/components/admin/admin-shell': shell });
 const guidance = load('src/lib/d6433-07/severity-guidance.ts');
 const presentation = load('src/lib/ui/inspection-presentation.ts', { '../d6433-07/severity-guidance': guidance });
@@ -83,7 +83,7 @@ for (const w of [390, 820, 1440]) await test('inspector-flow-' + w, async ({ hos
   check(getByRole(host,'tab',{ name:'2. Distress measurements' }).getAttribute('aria-selected')==='true','Arrow key advances the selected task tab');
   await React.act(async()=>user.keyboard('{Home}'));
   check(queryByRole(host,'textbox',{ name:'Inspection date (YYYY-MM-DD) *' }),'Home key returns to details');
-  const primary = [...host.querySelectorAll('[data-testid="lakad-action"]')].filter(node=>node.style.backgroundColor==='rgb(41, 73, 95)');
+  const primary = [...host.querySelectorAll('[data-testid="lakad-action"]')].filter(node=>node.style.backgroundColor==='rgb(24, 80, 224)');
   check(primary.length===1,'One primary task action');
   const date = getByLabelText(host, 'Inspection date (YYYY-MM-DD) *');
   const steps = getByRole(host, 'tablist', { name: 'Inspection steps' });
@@ -224,8 +224,8 @@ await test('navigation-and-permissions', async () => {
   for (const r of ['admin','reviewer','encoder','viewer']) check(navigation.navigationForRole(r).every(item => access.canAccess(r,item.route)), 'Navigation respects existing permission table');
   check(!access.canAccess('admin','/field-inspections'), 'Admin does not gain approval route');
   check(!access.canAccess('viewer','/users') && !access.canAccess('viewer','/field-inspections'), 'Viewer staff routes remain denied');
-  check(access.canAccess('reviewer','/demo-priorities') && access.canAccess('admin','/demo-priorities') && !access.canAccess('viewer','/demo-priorities') && !access.canAccess('encoder','/demo-priorities'), 'Preview route stays staff-only');
-  check(navigation.navigationRoute('admin','/reports') === '/pci-results', 'Legacy reports activate consolidated destination');
+  check(access.canAccess('reviewer','/demo-priorities') && !access.canAccess('admin','/demo-priorities') && !access.canAccess('viewer','/demo-priorities') && !access.canAccess('encoder','/demo-priorities'), 'Preview route stays staff-only');
+  check(navigation.navigationRoute('reviewer','/reports') === '/pci-results', 'Legacy reports activate consolidated destination');
 });
 await test('status-filter-no-remount', async ({ host, root, user }) => {
   role = 'encoder'; width = 1440;

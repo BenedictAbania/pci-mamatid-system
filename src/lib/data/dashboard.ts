@@ -5,7 +5,8 @@ import type { SectionResult, WorkflowState } from './workflow-data';
 
 export const DASHBOARD_PAGE_SIZE = 8;
 export type Resource<T> = { status: 'ready'; data: T } | { status: 'loading' } | { status: 'error' | 'unavailable'; message: string };
-export type WorkSummary = { sections: number; plansRequiringAttention: number; samples: number; accounts: number | null; pendingCalculations: number; states: Record<WorkflowState, number> };
+/** activeAccounts and roles are admin-only (null for other roles); roles counts active accounts. */
+export type WorkSummary = { sections: number; plansRequiringAttention: number; samples: number; accounts: number | null; activeAccounts: number | null; roles: Record<Role, number> | null; pendingCalculations: number; states: Record<WorkflowState, number> };
 export type DashboardInspection = { id: string; section_id: string; unit_number: number; workflow_state: WorkflowState; input_revision: number; updated_at: string; section_name: string };
 export type RegisterPage = { rows: DashboardInspection[]; next: string | null };
 export type RankedSection = SectionResult & { rank: number; road_snapshot: { section_name: string; branch_name: string } | null };
@@ -14,6 +15,7 @@ export type DashboardData = { work: Resource<WorkSummary>; results: Resource<Res
 function countQuery(table: string) { return supabase.from(table).select('id', { count: 'exact', head: true }); }
 type Query = ReturnType<typeof countQuery>;
 const states: WorkflowState[] = ['planned', 'draft', 'submitted', 'returned', 'approved', 'published'];
+const roles: Role[] = ['admin', 'reviewer', 'encoder', 'viewer'];
 function requireArray<T>(data: unknown): T[] {
   if (!Array.isArray(data)) throw new Error('Incomplete dashboard response.');
   return data as T[];
@@ -43,7 +45,16 @@ async function workSummary(role: Role, userId: string): Promise<WorkSummary> {
     count('inspection_computations', q => q.eq('verification', 'pending')),
     ...states.map(state => count('sample_units', q => sampleScope(q).eq('workflow_state', state))),
   ]);
-  return { sections, plansRequiringAttention, samples, accounts, pendingCalculations, states: Object.fromEntries(states.map((state, i) => [state, totals[i]])) as WorkSummary['states'] };
+  const admin = role === 'admin';
+  const [activeAccounts, ...roleTotals] = admin ? await Promise.all([
+    count('profiles', q => q.eq('is_active', true)),
+    ...roles.map(r => count('profiles', q => q.eq('is_active', true).eq('role', r))),
+  ]) : [null];
+  return {
+    sections, plansRequiringAttention, samples, accounts, pendingCalculations,
+    activeAccounts, roles: admin ? Object.fromEntries(roles.map((r, i) => [r, roleTotals[i]])) as Record<Role, number> : null,
+    states: Object.fromEntries(states.map((state, i) => [state, totals[i]])) as WorkSummary['states'],
+  };
 }
 async function resultSummary(role: Role): Promise<ResultSummary> {
   const viewer = role === 'viewer';
@@ -78,7 +89,7 @@ export async function resource<T>(task: () => Promise<T>): Promise<Resource<T>> 
 export async function loadDashboardData(role: Role, userId: string): Promise<DashboardData> {
   const [work, results] = await Promise.all([
     role === 'viewer' ? Promise.resolve<Resource<WorkSummary>>({ status: 'unavailable', message: 'Viewers use published results only.' }) : resource(() => workSummary(role, userId)),
-    role === 'encoder' ? Promise.resolve<Resource<ResultSummary>>({ status: 'unavailable', message: 'This home focuses on assigned inspection work.' }) : resource(() => resultSummary(role)),
+    role === 'encoder' || role === 'admin' ? Promise.resolve<Resource<ResultSummary>>({ status: 'unavailable', message: 'This home does not show approved results.' }) : resource(() => resultSummary(role)),
   ]);
   return { work, results };
 }

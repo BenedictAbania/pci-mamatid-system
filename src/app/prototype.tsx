@@ -34,37 +34,37 @@ const initialResult = computePCI(DEFAULT_SAMPLE, DEFAULT_SAMPLE_AREA);
 
 const palettes = {
   light: {
-    page: '#F7FAFF',
+    page: '#F3F6FC',
     card: '#FFFFFF',
-    cardSoft: '#F3F7FD',
-    text: '#071957',
-    secondary: '#2852A0',
-    muted: '#5071B0',
-    border: '#D6E3F5',
-    primary: '#0D6EFD',
-    primaryDark: '#062D78',
-    blueSoft: '#EAF3FF',
+    cardSoft: '#EEF3FC',
+    text: '#0B1D4D',
+    secondary: '#1038B0',
+    muted: '#4B5B7C',
+    border: '#DBE3F2',
+    primary: '#1850E0',
+    primaryDark: '#0F36A8',
+    blueSoft: '#E9F0FE',
     warning: '#8A3E00',
     warningSurface: '#FFF8E8',
     warningBorder: '#F6D991',
-    track: '#DFE8F3',
-    shadow: '#173D7A',
+    track: '#E1E8F5',
+    shadow: '#0A1B4D',
   },
   dark: {
-    page: '#071127',
-    card: '#0E1B35',
-    cardSoft: '#112441',
-    text: '#F4F7FF',
-    secondary: '#A9C4F5',
-    muted: '#8FA9D5',
-    border: '#263C61',
-    primary: '#3B82F6',
-    primaryDark: '#102F65',
-    blueSoft: '#122D59',
+    page: '#060F2E',
+    card: '#0C1A42',
+    cardSoft: '#11214F',
+    text: '#F1F5FE',
+    secondary: '#9DBBFF',
+    muted: '#A8B5D6',
+    border: '#1F3366',
+    primary: '#2A5FF0',
+    primaryDark: '#1038B0',
+    blueSoft: '#13265A',
     warning: '#FBBF24',
     warningSurface: '#3B2B10',
     warningBorder: '#8B5C13',
-    track: '#243857',
+    track: '#1F3366',
     shadow: '#000000',
   },
 };
@@ -310,16 +310,20 @@ export default function PrototypePage() {
         <View style={[styles.contour, styles.contourThree, { borderColor: palette.border }]} />
       </View>
 
-      <View style={[styles.header, isPhone && styles.headerMobile, { backgroundColor: isDark ? '#0E1B35' : '#FFFFFF', borderBottomColor: palette.border }]}>
+      <View style={[styles.header, isPhone && styles.headerMobile, { backgroundColor: isDark ? '#0A1638' : '#FFFFFF', borderBottomColor: palette.border }]}>
         <View style={[styles.headerLeft, isPhone && styles.headerLeftMobile]}>
-          <Brand compact={isPhone} inverse={isDark} />
-          <View style={[styles.prototypeBadge, isPhone && styles.prototypeBadgeMobile, isNarrowPhone && styles.prototypeBadgeNarrow, { backgroundColor: palette.blueSoft }]}>
-            <Text style={[styles.prototypeBadgeText, isPhone && styles.prototypeBadgeTextMobile, { color: palette.text }]}>Prototype</Text>
-          </View>
+          <Pressable accessibilityRole="link" accessibilityLabel="Back to Home" hitSlop={6} onPress={() => router.push('/')} style={styles.homeLink}>
+            {({ hovered, pressed }: any) => (
+              <>
+                <Feather color={palette.text} name="arrow-left" size={20} style={{ transform: [{ translateX: hovered && !pressed ? -3 : 0 }] }} />
+                <Text style={[styles.homeLinkText, { color: palette.text, textDecorationLine: hovered ? 'underline' : 'none' }]}>Back to Home</Text>
+              </>
+            )}
+          </Pressable>
         </View>
         <View style={[styles.headerRight, isPhone && styles.headerRightMobile]}>
           <ThemeSwitch iconColor={palette.text} isDark={isDark} onPress={() => setIsDark((current) => !current)} />
-          <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }: any) => [styles.backButton, isPhone && styles.backButtonMobile, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ scale: 1.02 }], backgroundColor: '#3B82F6' }] as any}>
+          <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }: any) => [styles.backButton, isPhone && styles.backButtonMobile, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ translateY: -1 }], backgroundColor: '#1038B0', boxShadow: '0 8px 20px rgba(24,80,224,0.32)' }] as any}>
             <Feather color="#FFFFFF" name="arrow-left" size={17} />
             <Text style={styles.backButtonText}>Sign In</Text>
           </Pressable>
@@ -424,7 +428,7 @@ export default function PrototypePage() {
                 <Pressable
                   onPress={() => setShowDistressMenu((current) => !current)}
                   style={[styles.selectBox, { backgroundColor: palette.card, borderColor: palette.border }]}>
-                  <View style={[styles.roadMiniIcon, { backgroundColor: '#8FA1BF' }]}>
+                  <View style={[styles.roadMiniIcon, { backgroundColor: palette.primary }]}>
                     <Feather color="#FFFFFF" name="activity" size={17} />
                   </View>
                   <Text numberOfLines={1} style={[styles.selectText, { color: palette.text }]}>{selectedDistress.name}</Text>
@@ -606,7 +610,7 @@ export default function PrototypePage() {
           </View>
         </View>
 
-        <View style={[styles.footer, isPhone && styles.footerMobile, { borderTopColor: palette.border, backgroundColor: isDark ? '#0A1730' : '#FFFFFF' }]}>
+        <View style={[styles.footer, isPhone && styles.footerMobile, { borderTopColor: palette.border, backgroundColor: isDark ? '#0A1638' : '#FFFFFF' }]}>
           <View style={[styles.footerBrand, isPhone && styles.footerBrandMobile]}><Image contentFit="contain" source={logoImage} style={styles.footerLogo} /><Text style={[styles.footerName, { color: palette.text }]}>LAKAD</Text>{!isNarrowPhone ? <View style={[styles.footerDivider, { backgroundColor: palette.border }]} /> : null}<Text style={[styles.footerDescription, isPhone && styles.footerDescriptionMobile, { color: palette.secondary }]}>Local Asphalt Konditioning Assessment and Data-Driven Prioritization</Text></View>
           <View style={[styles.footerRight, isPhone && styles.footerRightMobile]}><Text style={[styles.footerText, { color: palette.secondary }]}>Where Data Meets the Road</Text><Text style={[styles.footerText, { color: palette.secondary }]}>v1.0 (Prototype)</Text></View>
         </View>
@@ -631,39 +635,36 @@ const styles = StyleSheet.create({
   brand: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   brandLogo: { height: 55, width: 55 },
   brandLogoCompact: { height: 52, width: 52 },
-  brandName: { color: '#071957', fontSize: 29, fontWeight: '900', letterSpacing: 0.4, lineHeight: 30 },
-  brandNameCompact: { color: '#071957', fontSize: 24, fontWeight: '900', lineHeight: 25 },
-  brandTag: { color: '#071957', fontSize: 10.5, fontWeight: '700' },
-  brandTagCompact: { color: '#071957', fontSize: 9, fontWeight: '700' },
+  brandName: { color: '#0B1D4D', fontSize: 29, fontWeight: '900', letterSpacing: 0.4, lineHeight: 30 },
+  brandNameCompact: { color: '#0B1D4D', fontSize: 24, fontWeight: '900', lineHeight: 25 },
+  brandTag: { color: '#1850E0', fontSize: 10.5, fontWeight: '700' },
+  brandTagCompact: { color: '#1850E0', fontSize: 9, fontWeight: '700' },
   brandInverse: { color: '#FFFFFF' },
-  prototypeBadge: { borderRadius: 10, paddingHorizontal: 17, paddingVertical: 9 },
-  prototypeBadgeMobile: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
-  prototypeBadgeNarrow: { paddingHorizontal: 8, paddingVertical: 6 },
-  prototypeBadgeText: { fontSize: 16, fontWeight: '800' },
-  prototypeBadgeTextMobile: { fontSize: 14 },
+  homeLink: { alignItems: 'center', flexDirection: 'row', gap: 10, minHeight: 44 },
+  homeLinkText: { fontSize: 15, fontWeight: '600' },
   themeControls: { alignItems: 'center', flexDirection: 'row', gap: 8 },
-  toggleTrack: { backgroundColor: '#0C3D83', borderRadius: 12, height: 20, justifyContent: 'center', paddingHorizontal: 2, width: 37 },
+  toggleTrack: { backgroundColor: '#1850E0', borderRadius: 12, height: 20, justifyContent: 'center', paddingHorizontal: 2, width: 37 },
   toggleThumb: { backgroundColor: '#FFFFFF', borderRadius: 8, height: 16, width: 16 },
   toggleThumbDark: { alignSelf: 'flex-end' },
-  backButton: { alignItems: 'center', backgroundColor: '#082B64', borderRadius: 6, boxShadow: '0 3px 8px rgba(11,46,100,0.18)', flexDirection: 'row', gap: 10, height: 40, justifyContent: 'center', paddingHorizontal: 18 },
+  backButton: { alignItems: 'center', backgroundColor: '#1850E0', borderRadius: 10, boxShadow: '0 4px 12px rgba(24,80,224,0.25)', flexDirection: 'row', gap: 10, height: 40, justifyContent: 'center', paddingHorizontal: 18 },
   backButtonMobile: { height: 36, minWidth: 100, paddingHorizontal: 14 },
   backButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
   buttonPressed: { opacity: 0.82 },
   scrollContent: { flexGrow: 1 },
-  hero: { backgroundColor: '#062A58', minHeight: 160, overflow: 'hidden', position: 'relative', width: '100%', justifyContent: 'center', paddingVertical: 24 },
+  hero: { backgroundColor: '#0A1B4D', minHeight: 160, overflow: 'hidden', position: 'relative', width: '100%', justifyContent: 'center', paddingVertical: 24 },
   heroMobile: { minHeight: 150, paddingVertical: 22 },
   heroBackdropTexture: { height: '100%', opacity: 0.35, position: 'absolute', width: '100%' },
-  heroOverlay: { alignItems: 'center', backgroundColor: 'rgba(2, 38, 82, 0.48)', flex: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 45 },
+  heroOverlay: { alignItems: 'center', backgroundColor: 'rgba(6, 15, 46, 0.58)', flex: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 45 },
   heroOverlayMobile: { paddingHorizontal: 18 },
   heroLeft: { flex: 1 },
-  heroTitle: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', letterSpacing: -0.5, lineHeight: 41 },
+  heroTitle: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', letterSpacing: -0.8, lineHeight: 41 },
   heroTitleMobile: { fontSize: 28, lineHeight: 34 },
   heroSubtitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', lineHeight: 24 },
   heroSubtitleMobile: { fontSize: 14, lineHeight: 20, marginTop: 5 },
   heroRight: { alignItems: 'center', flexDirection: 'row', gap: 28 },
   quoteWrap: { alignItems: 'center', minWidth: 320 },
   quote: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
-  quoteUnderline: { backgroundColor: '#FFFFFF', height: 3, marginTop: 8, width: 28 },
+  quoteUnderline: { backgroundColor: '#4E8BFE', height: 3, marginTop: 8, width: 28 },
   heroDivider: { backgroundColor: 'rgba(255,255,255,0.42)', height: 78, width: 1 },
   main: { gap: 11, paddingHorizontal: 36, paddingTop: 11, width: '100%' },
   mainCompact: { paddingHorizontal: 16 },
@@ -671,7 +672,7 @@ const styles = StyleSheet.create({
   warning: { alignItems: 'center', borderRadius: 8, borderWidth: 1, flexDirection: 'row', marginHorizontal: 7, minHeight: 56, paddingHorizontal: 15, paddingVertical: 8 },
   warningMobile: { alignItems: 'flex-start', marginHorizontal: 0, paddingHorizontal: 11, paddingVertical: 10 },
   warningIcon: { alignItems: 'center', backgroundColor: '#FFA300', borderRadius: 16, height: 30, justifyContent: 'center', marginRight: 14, width: 30 },
-  warningIconText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  warningIconText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
   warningCopy: { flex: 1 },
   warningTitle: { fontSize: 14, fontWeight: '800', lineHeight: 19 },
   warningText: { fontSize: 12, lineHeight: 17 },
@@ -796,18 +797,18 @@ const styles = StyleSheet.create({
   cdvCol: { flex: 1.25 },
   maxCdv: { alignItems: 'center', borderRadius: 4, flexDirection: 'row', height: 30, justifyContent: 'space-between', marginTop: 4, paddingHorizontal: 10 },
   maxCdvLabel: { fontSize: 11, fontWeight: '700' },
-  maxCdvValue: { fontSize: 19, fontWeight: '900' },
+  maxCdvValue: { fontSize: 19, fontWeight: '800' },
   cdvFootnote: { fontSize: 9, lineHeight: 11, marginTop: 3 },
   gaugeArea: { alignItems: 'center', height: 152, justifyContent: 'center', marginTop: 1, overflow: 'hidden', position: 'relative' },
   gaugeRing: { borderRadius: 95, height: 190, position: 'absolute', top: 4, width: 190 },
   gaugeCutout: { borderRadius: 73, height: 146, left: 22, position: 'absolute', top: 22, width: 146 },
   gaugeValueWrap: { alignItems: 'center', marginTop: 13 },
-  gaugeValue: { fontSize: 56, fontWeight: '900', letterSpacing: -1, lineHeight: 59 },
+  gaugeValue: { fontSize: 56, fontWeight: '800', letterSpacing: -1, lineHeight: 59 },
   gaugeOutOf: { fontSize: 18, lineHeight: 23 },
   ratingSummary: { alignItems: 'center', marginTop: -3 },
   conditionLabel: { fontSize: 11, fontWeight: '700' },
   ratingBadge: { alignItems: 'center', borderRadius: 5, borderWidth: 1, minHeight: 36, justifyContent: 'center', marginTop: 4, minWidth: 116, paddingHorizontal: 12, paddingVertical: 4 },
-  ratingBadgeText: { fontSize: 18, fontWeight: '900', textAlign: 'center' },
+  ratingBadgeText: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
   ratingDescription: { fontSize: 11, lineHeight: 14, marginTop: 5, paddingHorizontal: 20, textAlign: 'center' },
   legend: { borderRadius: 6, borderWidth: 1, marginTop: 7, padding: 6 },
   legendHeading: { alignItems: 'center', flexDirection: 'row', gap: 9, marginBottom: 5 },
@@ -842,7 +843,7 @@ const styles = StyleSheet.create({
   footerBrand: { alignItems: 'center', flexDirection: 'row' },
   footerBrandMobile: { flexWrap: 'wrap', justifyContent: 'center' },
   footerLogo: { height: 20, width: 20 },
-  footerName: { fontSize: 12, fontWeight: '900', marginLeft: 4 },
+  footerName: { fontSize: 12, fontWeight: '700', marginLeft: 4 },
   footerDivider: { height: 16, marginHorizontal: 8, width: 1 },
   footerDescription: { fontSize: 10 },
   footerDescriptionMobile: { marginVertical: 3, textAlign: 'center' },

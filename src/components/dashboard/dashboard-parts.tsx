@@ -48,9 +48,9 @@ export function StatusBadge({ state, palette }: { state: WorkflowState; palette:
 }
 export function statusColors(state: WorkflowState, p: AdminPalette) {
   if (state === 'returned') return { background: p.amberSoft, text: p.amber };
-  if (state === 'submitted') return { background: p.purpleSoft, text: p.purple };
+  if (state === 'submitted') return { background: p.blueSoft, text: p.blue };
   if (state === 'approved' || state === 'published') return { background: p.greenSoft, text: p.green };
-  if (state === 'draft') return { background: p.blueSoft, text: p.blue };
+  if (state === 'draft') return { background: p.panelAlt, text: p.text };
   return { background: p.panelAlt, text: p.muted };
 }
 export function WorkflowProgress({ states, palette }: { states: Record<WorkflowState, number>; palette: AdminPalette }) {

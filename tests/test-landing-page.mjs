@@ -59,13 +59,13 @@ async function close({ host, root }) { await React.act(async () => root.unmount(
 let checks = 0;
 const check = (value, message) => { assert.ok(value, message); checks++; };
 let page = await renderPage();
-check(getByText(page.host, /Smarter Roads/), 'Public landing hero renders');
+check(getByText(page.host, /Better Road Decisions/), 'Public landing hero renders');
 check(!queryByText(page.host, /Prototype \/ Provisional:/), 'Removed landing-page warning stays absent');
 check(!queryByText(page.host, /Average PCI|486|72\.4|Surveyed Road Map/), 'No copied sample metrics or map');
 await React.act(async () => page.user.click(getByRole(page.host, 'button', { name: 'Sign in' })));
 check(destinations.at(-1) === '/login', 'Signed-out sign-in opens login route');
-await React.act(async () => page.user.click(getByRole(page.host, 'button', { name: 'Explore road sections' })));
-check(destinations.at(-1) === '/login', 'Public road action opens login route');
+await React.act(async () => page.user.click(getByRole(page.host, 'button', { name: 'Access Your Workspace' })));
+check(destinations.at(-1) === '/login', 'Public hero action opens login route');
 await close(page);
 
 role = 'reviewer'; session = { user: { id: 'synthetic-session' } }; width = 390; destinations = [];

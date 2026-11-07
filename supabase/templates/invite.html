@@ -1,0 +1,64 @@
+<!--
+  LAKAD invitation email. Paste into Supabase Dashboard -> Authentication -> Emails -> "Invite user".
+  Subject: You're invited to join LAKAD
+  Variables are filled in by Supabase Auth: {{ .ConfirmationURL }}, {{ .Data.full_name }}, {{ .Email }}.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>You're invited to join LAKAD</title>
+  </head>
+  <body style="margin:0;padding:0;background:#F3F6FC;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0B1D4D;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F6FC;padding:32px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border:1px solid #DBE3F2;border-radius:16px;overflow:hidden;">
+            <tr>
+              <td style="background:#1850E0;background-image:linear-gradient(135deg,#1038B0 0%,#1850E0 55%,#4E8BFE 100%);padding:28px 32px;">
+                <div style="font-size:30px;font-weight:900;letter-spacing:2px;color:#FFFFFF;line-height:1;">LAKAD</div>
+                <div style="font-size:13px;font-weight:600;color:#DCE6FF;margin-top:6px;">Where Data Meets the Road</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <div style="font-size:12px;font-weight:800;letter-spacing:1.6px;color:#1850E0;">YOU'RE INVITED</div>
+                <h1 style="margin:10px 0 14px;font-size:26px;line-height:1.25;font-weight:900;color:#0B1D4D;">
+                  Hi{{ if .Data.full_name }} {{ .Data.full_name }}{{ end }}, welcome to the team!
+                </h1>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#4B5B7C;">
+                  You've been invited to LAKAD, the pavement condition and maintenance planning system of
+                  Barangay Mamatid, Cabuyao, Laguna.
+                </p>
+                <p style="margin:0 0 26px;font-size:15px;line-height:1.6;color:#4B5B7C;">
+                  Accept the invitation below, then create your password to finish setting up your account.
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="border-radius:10px;background:#1850E0;">
+                      <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:800;color:#FFFFFF;text-decoration:none;border-radius:10px;">Accept invitation</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:26px 0 0;font-size:13px;line-height:1.6;color:#4B5B7C;">
+                  Button not working? Copy this link into your browser:<br />
+                  <a href="{{ .ConfirmationURL }}" style="color:#1850E0;word-break:break-all;">{{ .ConfirmationURL }}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 32px;border-top:1px solid #DBE3F2;background:#F8FAFE;">
+                <p style="margin:0;font-size:12px;line-height:1.6;color:#4B5B7C;">
+                  This invitation was sent to {{ .Email }}. The link can be used once and expires after a while.
+                  If you weren't expecting it, you can ignore this email.
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:18px 0 0;font-size:12px;color:#4B5B7C;">LAKAD · Barangay Mamatid, Cabuyao, Laguna</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

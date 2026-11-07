@@ -1,19 +1,15 @@
 import { canAccess, type Role } from './access';
 
-export type NavigationItem = { label: string; route: string; icon: 'home' | 'layers' | 'clipboard' | 'file-text' | 'users' | 'settings' | 'alert-triangle' };
+export type NavigationItem = { label: string; route: string; icon: 'home' | 'layers' | 'clipboard' | 'file-text' | 'users' | 'settings' | 'map' | 'alert-triangle' };
 const items: Record<Role, NavigationItem[]> = {
   admin: [
-    { label: 'Home', route: '/dashboard', icon: 'home' },
-    { label: 'Roads', route: '/road-network', icon: 'layers' },
-    { label: 'Results & Reports', route: '/pci-results', icon: 'file-text' },
-    { label: 'Users', route: '/users', icon: 'users' },
-    { label: 'Settings', route: '/settings', icon: 'settings' },
+    { label: 'Dashboard', route: '/dashboard', icon: 'home' },
+    { label: 'User Accounts', route: '/users', icon: 'users' },
+    { label: 'Reference Data', route: '/settings', icon: 'layers' },
   ],
   reviewer: [
-    { label: 'Home', route: '/workspace', icon: 'home' },
-    { label: 'Sampling Plans', route: '/sampling', icon: 'layers' },
-    { label: 'Inspections to Review', route: '/field-inspections', icon: 'clipboard' },
-    { label: 'Results', route: '/pci-results', icon: 'file-text' },
+    { label: 'Dashboard', route: '/dashboard', icon: 'home' },
+    { label: 'Road Network', route: '/road-network', icon: 'map' },
   ],
   encoder: [
     { label: 'Home', route: '/workspace', icon: 'home' },
@@ -30,6 +26,6 @@ export function navigationForRole(role: Role) { return items[role].filter(item =
 export function navigationRoute(role: Role, pathname: string) {
   if (pathname === '/reports' || (pathname === '/maintenance-plan' && role !== 'viewer')) return '/pci-results';
   if (pathname === '/dashboard' && role === 'viewer') return '/workspace';
-  if (pathname === '/road-network' && role === 'reviewer') return '/sampling';
+  if (pathname === '/workspace' && role === 'reviewer') return '/dashboard';
   return pathname;
 }

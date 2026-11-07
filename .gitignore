@@ -54,3 +54,6 @@ supabase/.temp/
 
 # Private ASTM references, backups and briefs (never commit)
 /private-astm/
+
+# Provisional ASTM-derived curve values (never commit)
+/src/lib/d6433-07/cdv-preview.ts

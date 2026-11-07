@@ -8,6 +8,12 @@ export type BranchRecord = {
   description: string | null;
   location: string | null;
   administrative_status: string;
+  branch_code: string | null;
+  classification: string | null;
+  length_meters: number | null;
+  start_description: string | null;
+  end_description: string | null;
+  notes: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -31,6 +37,13 @@ export type SectionRecord = {
   total_sample_units: number | null;
   recommended_sample_units: number | null;
   notes: string | null;
+  pavement_design: string | null;
+  construction_history: string | null;
+  traffic_classification: string | null;
+  pavement_condition: string | null;
+  sampling_method: 'all' | 'confidence' | 'reduced' | null;
+  sampling_interval: number | null;
+  sampling_start_unit: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -100,21 +113,39 @@ function unwrap<T>(data: T | null, error: { message: string } | null) {
   return data;
 }
 
-export async function saveBranch(
-  values: { id?: string; name: string; description: string; location: string; administrative_status: string }
-) {
+export type BranchFormValues = {
+  id?: string;
+  branch_code: string;
+  name: string;
+  location: string;
+  classification: string;
+  length_meters: string;
+  start_description: string;
+  end_description: string;
+  notes: string;
+};
+
+/** Returns the saved branch id. */
+export async function saveBranch(values: BranchFormValues): Promise<string> {
+  const text = (value: string) => value.trim() || null;
   const payload = {
+    branch_code: text(values.branch_code),
     name: values.name.trim(),
-    description: values.description.trim() || null,
-    location: values.location.trim() || null,
-    administrative_status: values.administrative_status.trim().toLowerCase(),
+    location: text(values.location),
+    classification: text(values.classification),
+    length_meters: values.length_meters.trim() ? Number(values.length_meters) : null,
+    start_description: text(values.start_description),
+    end_description: text(values.end_description),
+    notes: text(values.notes),
     updated_at: new Date().toISOString(),
   };
   const result = values.id
     ? await supabase.from('branches').update(payload).eq('id', values.id).select('id').maybeSingle()
     : await supabase.from('branches').insert(payload).select('id').maybeSingle();
+  if (result.error?.code === '23505') throw new Error(`Branch ID ${payload.branch_code} is already in use.`);
   const saved = unwrap(result.data, result.error);
-  if (!saved) throw new Error('Road branch was not saved. Check your Civil Engineer access and retry.');
+  if (!saved) throw new Error('Road branch was not saved. Check your Reviewer access and retry.');
+  return saved.id;
 }
 
 export async function removeBranch(id: string) {
@@ -122,36 +153,56 @@ export async function removeBranch(id: string) {
   if (error) throw new Error(error.message);
 }
 
-export async function saveSection(
-  values: {
-    id?: string;
-    branch_id: string;
-    name: string;
-    description: string;
-    length_meters: string;
-    width_meters: string;
-    start_description: string;
-    end_description: string;
-    latitude: string;
-    longitude: string;
-    notes: string;
-  },
-  userId: string
-) {
-  const length = values.length_meters ? Number(values.length_meters) : null;
-  const width = values.width_meters ? Number(values.width_meters) : null;
+export type EncoderWorkload = Record<string, { sections: number; units: number }>;
+
+/** Open (not yet approved/published) sample units per active encoder. */
+export async function loadEncoderWorkload(): Promise<EncoderWorkload> {
+  const { data, error } = await supabase.rpc('lakad_encoder_workload');
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as { encoder_id: string; sections: number; units: number }[];
+  return Object.fromEntries(rows.map((row) => [row.encoder_id, { sections: row.sections, units: row.units }]));
+}
+
+export type RoadNetworkCounts ={ branches: number; sections: number; sampleUnits: number };
+
+/** Exact totals within the signed-in user's RLS scope, independent of page size. */
+export async function loadRoadNetworkCounts(): Promise<RoadNetworkCounts> {
+  const [branches, sections, sampleUnits] = await Promise.all(['branches', 'sections', 'sample_units'].map(async (table) => {
+    const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }));
+  return { branches, sections, sampleUnits };
+}
+
+export type SectionFormValues = {
+  id?: string;
+  branch_id: string;
+  name: string;
+  length_meters: string;
+  width_meters: string;
+  area_sqm: string;
+  pavement_design: string;
+  construction_history: string;
+  traffic_classification: string;
+  pavement_condition: string;
+  notes: string;
+};
+
+/** Writes only the form's fields, so untouched columns (e.g. locked chainage) never change on edit. */
+export async function saveSection(values: SectionFormValues, userId: string) {
+  const number = (value: string) => value.trim() ? Number(value) : null;
   const payload = {
     branch_id: values.branch_id,
     name: values.name.trim(),
-    description: values.description.trim() || null,
-    start_description: values.start_description.trim() || null,
-    end_description: values.end_description.trim() || null,
     pavement_type: 'asphalt',
-    length_meters: length,
-    width_meters: width,
-    area_sqm: length !== null && width !== null ? length * width : null,
-    latitude: values.latitude ? Number(values.latitude) : null,
-    longitude: values.longitude ? Number(values.longitude) : null,
+    length_meters: number(values.length_meters),
+    width_meters: number(values.width_meters),
+    area_sqm: number(values.area_sqm),
+    pavement_design: values.pavement_design.trim() || null,
+    construction_history: values.construction_history.trim() || null,
+    traffic_classification: values.traffic_classification.trim() || null,
+    pavement_condition: values.pavement_condition.trim() || null,
     notes: values.notes.trim() || null,
     updated_at: new Date().toISOString(),
   };
@@ -159,7 +210,7 @@ export async function saveSection(
     ? await supabase.from('sections').update(payload).eq('id', values.id).select('id').maybeSingle()
     : await supabase.from('sections').insert({ ...payload, created_by: userId }).select('id').maybeSingle();
   const saved = unwrap(result.data, result.error);
-  if (!saved) throw new Error('Road section was not saved. Check your Civil Engineer access and retry.');
+  if (!saved) throw new Error('Road section was not saved. Check your Reviewer access and retry.');
 }
 
 export async function removeSection(id: string) {

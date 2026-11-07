@@ -3,6 +3,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useAdminPalette } from '@/components/admin/admin-shell';
+import { layout } from '@/lib/ui/design-system';
 import { loadWorkflow, type WorkflowPage, type WorkflowScope } from '@/lib/data/workflow-data';
 
 export function useWorkflow(sampleId?: string, sectionId?: string, status?: string) {
@@ -91,7 +92,7 @@ export function CatalogDropdown({ label, value, options, onChange }: { label: st
       <Text style={{ color: value ? p.text : p.muted }}>{options.find(option => option.value === value)?.label ?? 'Choose a distress type'} ▾</Text>
     </Pressable>
     <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+      <View style={{ flex: 1, backgroundColor: layout.scrim, justifyContent: 'flex-end' }}>
         <View style={{ maxHeight: '75%', padding: 16, borderTopLeftRadius: 18, borderTopRightRadius: 18, backgroundColor: p.panel, gap: 8 }}>
           <Text accessibilityRole="header" style={{ color: p.text, fontWeight: '700', fontSize: 18 }}>{label}</Text>
           <ScrollView keyboardShouldPersistTaps="handled">{options.map(option => <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected: option.value === value }} accessibilityLabel={option.label} onPress={() => { onChange(option.value); setOpen(false); }} style={{ minHeight: 48, padding: 12, borderBottomWidth: 1, borderColor: p.border }}><Text style={{ color: p.text, fontSize: 16 }}>{option.label}</Text></Pressable>)}</ScrollView>

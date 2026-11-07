@@ -23,7 +23,7 @@ const native = require('react-native-web');
 function load(file, deps = {}) {
   const filename = (before ? 'private-astm/defect-fixes-2026-10-07/before/' : '') + file + (before ? '.source' : '');
   const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const context = { exports: {}, require: n => n in deps ? deps[n] : require(n), window, document };
+  const context = { exports: {}, require: n => n in deps ? deps[n] : /\.png$|\.jpg$/.test(n) ? 'synthetic-asset' : require(n), window, document };
   vm.runInNewContext(code, context, { filename }); return context.exports;
 }
 let checks = 0;

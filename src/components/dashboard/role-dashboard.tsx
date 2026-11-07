@@ -1,18 +1,18 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AdminButton, AdminPanel, AdminShell, useAdminPalette, type AdminPalette } from '@/components/admin/admin-shell';
 import { canAccess, type Role } from '@/lib/auth/access';
 import { formatDate } from '@/lib/utils/admin-utils';
 import { getPciConditionCategory } from '@/lib/pci/pci-classification';
 import { currentApprovedResults } from '@/lib/data/approved-results';
 import { dashboardLayout, layout } from '@/lib/ui/design-system';
-import { loadDashboardData, loadDashboardRegister, resource, type DashboardData, type RegisterPage, type Resource, type ResultSummary } from '@/lib/data/dashboard';
+import { loadDashboardData, loadDashboardRegister, resource, type DashboardData, type RegisterPage, type Resource, type ResultSummary, type WorkSummary } from '@/lib/data/dashboard';
 import { useAuth } from '@/providers/AuthProvider';
 import { DashboardNotice, DashboardState, MetricCard, PanelHeader, StatusBadge, WorkflowProgress, type DashboardIcon } from './dashboard-parts';
 
 const roleCopy = {
-  admin: ['View roads, manage accounts, and check system tasks.', 'View roads', '/road-network'],
+  admin: ['Manage user accounts and the reference data inspectors use.', 'Manage user accounts', '/users'],
   reviewer: ['Plan sampling and review inspections waiting for your decision.', 'Review submitted inspections', '/field-inspections?status=submitted'],
   encoder: ['Start assigned inspections, finish drafts, and correct returned work.', 'Open my inspections', '/field-inspections'],
   viewer: ['Explore published pavement results and maintenance priorities.', 'Browse published results', '/pci-results'],
@@ -38,7 +38,68 @@ function MaintenancePriorityPanel({ results, palette, retry, viewer }: { results
 }
 export function RoleDashboard() {
   const { role, user } = useAuth();
-  return role && user ? <DashboardContent key={user.id + ':' + role} role={role} userId={user.id} /> : null;
+  if (!role || !user) return null;
+  return role === 'admin' ? <AdminDashboard key={user.id} userId={user.id} /> : <DashboardContent key={user.id + ':' + role} role={role} userId={user.id} />;
+}
+
+const roleOrder: Role[] = ['admin', 'reviewer', 'encoder', 'viewer'];
+const roleNames: Record<Role, string> = { admin: 'Admin', reviewer: 'Reviewer', encoder: 'Encoder', viewer: 'Viewer' };
+
+/** Admin home: four system totals and active users by role. Kept simple on purpose. */
+function AdminDashboard({ userId }: { userId: string }) {
+  const p = useAdminPalette(), { width } = useWindowDimensions(), responsive = dashboardLayout(width);
+  const [work, setWork] = useState<Resource<WorkSummary>>({ status: 'loading' });
+  const [refreshing, setRefreshing] = useState(false);
+  const request = useRef(0);
+  const refresh = useCallback(async (initial = false) => {
+    const current = ++request.current;
+    if (!initial) setRefreshing(true);
+    const next = await loadDashboardData('admin', userId);
+    if (current === request.current) { setWork(next.work); setRefreshing(false); }
+  }, [userId]);
+  useEffect(() => {
+    // Initial synchronization with the remote data source.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refresh(true);
+    const current = request;
+    return () => { ++current.current; };
+  }, [refresh]);
+
+  const stats: [string, (d: WorkSummary) => number | null][] = [
+    ['Active Accounts', d => d.activeAccounts],
+    ['Road Sections', d => d.sections],
+    ['Approved Inspections', d => d.states.approved + d.states.published],
+    ['Awaiting Review', d => d.states.submitted],
+  ];
+  const cardWidth = responsive.metricColumns === 4 ? '23.8%' : responsive.metricColumns === 2 ? '48.7%' : '100%';
+  const roleCounts = work.status === 'ready' ? work.data.roles : null;
+  const most = roleCounts ? Math.max(1, ...roleOrder.map(r => roleCounts[r])) : 1;
+
+  return <AdminShell dashboard title="Dashboard" subtitle="LAKAD at a glance." onRefresh={() => void refresh()}>
+    {refreshing && <Text accessibilityLiveRegion="polite" style={[styles.body, { color: p.muted }]}>Updating overview…</Text>}
+    {work.status === 'error' || work.status === 'unavailable'
+      ? <AdminPanel palette={p}><DashboardState palette={p} status={work.status} title="Totals unavailable" message={work.message} retry={() => void refresh()} /></AdminPanel>
+      : <>
+        <View style={styles.metricGrid}>
+          {stats.map(([label, pick]) => <View key={label} style={[styles.stat, { width: cardWidth, backgroundColor: p.panel, borderColor: p.border }]}>
+            <Text style={[styles.statLabel, { color: p.text }]}>{label}</Text>
+            {work.status === 'ready'
+              ? <Text accessibilityLabel={`${label}: ${pick(work.data) ?? 'not available'}`} style={[styles.statValue, { color: p.text }]}>{pick(work.data) ?? '—'}</Text>
+              : <ActivityIndicator accessibilityLabel={`Loading ${label}`} color={p.blue} style={styles.statLoading} />}
+          </View>)}
+        </View>
+        <AdminPanel palette={p} style={[styles.rolePanel, responsive.phone && styles.rolePanelFull]}>
+          <Text accessibilityRole="header" aria-level={2} style={[styles.roleTitle, { color: p.text }]}>Users by Role</Text>
+          {roleCounts ? roleOrder.map(r => <View key={r} style={styles.roleRow}>
+            <Text style={[styles.roleName, { color: p.text }]}>{roleNames[r]}</Text>
+            <View aria-hidden accessibilityElementsHidden style={[styles.roleTrack, { backgroundColor: p.panelAlt }]}>
+              <View style={[styles.roleFill, { width: `${roleCounts[r] / most * 100}%`, backgroundColor: p.blue }]} />
+            </View>
+            <Text accessibilityLabel={`${roleNames[r]}: ${roleCounts[r]} active accounts`} style={[styles.roleCount, { color: p.text }]}>{roleCounts[r]}</Text>
+          </View>) : <ActivityIndicator accessibilityLabel="Loading users by role" color={p.blue} style={styles.statLoading} />}
+        </AdminPanel>
+      </>}
+  </AdminShell>;
 }
 function DashboardContent({ role, userId }: { role: Role; userId: string }) {
   const p = useAdminPalette(), router = useRouter(), { width } = useWindowDimensions(), copy = roleCopy[role];
@@ -97,11 +158,6 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
     metric('Awaiting your review', 'Submitted and assigned to you', 'clipboard', value(work, d => d.states.submitted)),
     metric('Returned for correction', 'Your review assignments', 'rotate-ccw', value(work, d => d.states.returned)),
     metric('Review assignments', 'All units assigned for your review', 'users', value(work, d => d.samples)),
-  ] : role === 'admin' ? [
-    metric('Road sections', 'Full authorized inventory', 'layers', value(work, d => d.sections)),
-    metric('Accounts', 'Current account records', 'users', value(work, d => d.accounts)),
-    metric('Awaiting review', 'Submitted across plans', 'clipboard', value(work, d => d.states.submitted)),
-    metric('Published results', 'Current approved publications', 'file-text', value(results, d => d.published)),
   ] : [
     metric('Published results', 'Current published approvals', 'file-text', value(results, d => d.published)),
     metric('Average published PCI', 'Full eligible scope; — if none', 'activity', value(results, d => d.average === null ? null : d.average.toFixed(1))),
@@ -117,16 +173,15 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
     [work.data.states.submitted + ' inspections awaiting your review', 'Check evidence and the next eligible decision.', '/field-inspections?status=submitted'],
     [work.data.plansRequiringAttention + ' plans needing attention', 'Review boundaries, sampling counts, and assignments.', '/sampling?attention=unconfirmed'],
   ] : [
-    ['View ' + work.data.sections + ' road sections', 'Check the Civil Engineer-maintained inventory.', '/road-network'],
     ['Manage ' + work.data.accounts + ' accounts', 'Review active accounts and role assignments.', '/users'],
-    ['Review system settings', 'Check catalog and workflow configuration.', '/settings'],
+    ['Review reference data', 'Check the distress catalog and PCI scale.', '/settings'],
   ] : [];
-  return <AdminShell dashboard title={role === 'viewer' ? 'Overview' : 'Home'} subtitle={copy[0]} onRefresh={() => void refresh()}>
+  return <AdminShell dashboard title={role === 'viewer' ? 'Overview' : role === 'encoder' ? 'Home' : 'Dashboard'} subtitle={copy[0]} onRefresh={() => void refresh()}>
     {refreshing && <Text accessibilityLiveRegion="polite" style={[styles.body, { color: p.muted }]}>Updating overview…</Text>}
     <View style={styles.intro}><Text style={[styles.body, styles.lead, { color: p.muted }]}>{role === 'viewer' ? 'Published information only. Internal inspection and review records are excluded.' : 'Choose your next task. Counts cover your full authorized scope.'}</Text><AdminButton label={primary[0]} palette={p} onPress={() => go(primary[1])} /></View>
     <View style={styles.metricGrid}>{metrics.map(item => <View key={item.title} style={{ width: responsive.metricColumns === 4 ? '23.8%' : responsive.metricColumns === 2 ? '48.7%' : '100%' }}><MetricCard {...item} palette={p} compact={responsive.phone} /></View>)}</View>
     <View style={[styles.columns, !responsive.twoColumns && styles.stack]}>
-      <View style={styles.column}>
+      <View style={[styles.column, !responsive.twoColumns && styles.columnStacked]}>
         <AdminPanel palette={p}><PanelHeader title="Next actions" icon="arrow-right-circle" palette={p} />
           {role === 'viewer' ? <>{state(results, 'Published information unavailable')}{results.status === 'ready' && <Text style={[styles.body, { color: p.muted }]}>{results.data.published ? 'Open Published Results for saved snapshots, downloads, and printable reports.' : 'No current published results yet. Check Published Results again after eligible results are published.'}</Text>}<AdminButton tone="secondary" label="Open maintenance priorities" palette={p} onPress={() => go('/maintenance-plan')} /></> : <>{state(work, 'Tasks unavailable')}{tasks.map(([label, detail, route]) => <Pressable key={route} accessibilityRole="button" accessibilityLabel={label} onPress={() => go(route)} style={[styles.task, { borderColor: p.border }]}><Text style={[styles.rowTitle, { color: p.text }]}>{label} →</Text><Text style={[styles.body, { color: p.muted }]}>{detail}</Text></Pressable>)}{work.status === 'ready' && work.data.samples === 0 ? <Text style={[styles.body, { color: p.muted }]}>{role === 'encoder' ? 'No assignments yet. Ask your Reviewer to confirm a plan and assign sample units, then refresh.' : role === 'reviewer' ? 'No review assignments yet. Open Sampling Plans to prepare or check assignments.' : 'No inspections have been planned yet. Start with the road inventory.'}</Text> : null}</>}
         </AdminPanel>
@@ -138,7 +193,7 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
           {register.status === 'ready' && (pageIndex > 0 || register.data.next) ? <View style={styles.pagination}><AdminButton label="Previous inspections" palette={p} tone="secondary" disabled={pageIndex === 0} onPress={() => changePage(-1)} /><Text style={{ color: p.muted }}>Page {pageIndex + 1}</Text><AdminButton label="Next inspections" palette={p} tone="secondary" disabled={!register.data.next} onPress={() => changePage(1)} /></View> : null}
         </AdminPanel>}
       </View>
-      <View style={styles.column}>
+      <View style={[styles.column, !responsive.twoColumns && styles.columnStacked]}>
         {role === 'viewer' ? <>
           <AdminPanel palette={p}><PanelHeader title="Published pavement results" icon="file-text" palette={p} />{state(results, 'Results unavailable')}{results.status === 'ready' && (results.data.published ? currentApprovedResults(results.data.rows, true).map(row => <View key={row.id} style={[styles.task, { borderColor: p.border }]}><Text style={[styles.rowTitle, { color: p.text }]}>{row.report_snapshot.road.section_name} · SU-{row.report_snapshot.sample.unit_number}</Text><Text style={[styles.body, { color: p.muted }]}>PCI {row.report_snapshot.output.pci.toFixed(1)} · {row.report_snapshot.output.condition || getPciConditionCategory(row.report_snapshot.output.pci).rating}</Text><StatusBadge state="published" palette={p} /></View>) : <DashboardState palette={p} status="empty" title="No published results yet" message="Results appear after eligible calculation approval and separate publication." />)}</AdminPanel>
         </> : <>
@@ -154,6 +209,13 @@ const styles = StyleSheet.create({
   intro: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'space-between' }, lead: { flex: 1, minWidth: 180 },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: layout.spacing.sm },
   columns: { flexDirection: 'row', gap: layout.spacing.lg, alignItems: 'flex-start' }, stack: { flexDirection: 'column', alignItems: 'stretch' },
-  column: { flex: 1, minWidth: 0, gap: layout.spacing.lg }, task: { paddingVertical: 16, borderBottomWidth: 1, gap: 8 },
+  column: { flex: 1, minWidth: 0, gap: layout.spacing.lg }, columnStacked: { flexBasis: 'auto', flexGrow: 0, flexShrink: 0 }, task: { paddingVertical: 16, borderBottomWidth: 1, gap: 8 },
+  stat: { ...layout.shadow, borderRadius: layout.radius.card, borderWidth: 1, gap: 6, minHeight: 112, paddingHorizontal: 20, paddingVertical: 18 },
+  statLabel: { fontSize: 16 }, statValue: { fontSize: 40, fontWeight: '800', letterSpacing: -1, lineHeight: 46 }, statLoading: { alignSelf: 'flex-start', minHeight: 46 },
+  rolePanel: { gap: 12, maxWidth: 440, width: '100%' }, rolePanelFull: { maxWidth: '100%' as const },
+  roleTitle: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  roleRow: { alignItems: 'center', flexDirection: 'row', gap: 12 }, roleName: { fontSize: 15, width: 80 },
+  roleTrack: { borderRadius: 4, flex: 1, height: 8, overflow: 'hidden' }, roleFill: { borderRadius: 4, height: '100%' },
+  roleCount: { fontSize: 15, fontWeight: '700', minWidth: 28, textAlign: 'right' },
   rowTitle: { fontSize: 15, fontWeight: '700', lineHeight: 23 }, body: { fontSize: 14, lineHeight: 22 }, pagination: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 16 },
 });

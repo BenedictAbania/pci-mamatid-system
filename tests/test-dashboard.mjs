@@ -57,10 +57,13 @@ for(const role of ['admin','reviewer','encoder','viewer']) {
     if(role!=='admin') for(const c of calls.filter(c=>c.table==='sample_units')) check(c.filters.some(x=>x[1]===(role==='encoder'?'assigned_to':'reviewer_id')&&x[2]===userId),'Staff summary carries explicit assignment filter');
     check(role==='admin'||!calls.some(c=>c.table==='profiles'),'Non-admin has no account query');
     if(role==='encoder') check(data.results.status==='unavailable' && !calls.some(c=>c.rpc||c.table==='approved_results'),'Encoder does not query reports');
+    if(role==='admin') check(data.results.status==='unavailable' && !calls.some(c=>c.rpc||c.table==='approved_results'),'Admin home does not query reports');
+    if(role==='admin') check(Number.isInteger(data.work.data.activeAccounts) && ['admin','reviewer','encoder','viewer'].every(r=>Number.isInteger(data.work.data.roles[r])),'Admin home has active and per-role account totals');
+    if(role!=='admin') check(data.work.data.activeAccounts===null && data.work.data.roles===null,'Non-admin has no account totals');
   }
   check(calls.filter(c=>c.table&&c.head).every(c=>c.exact==='exact'&&!c.limit),'All totals are exact/head, not client pages');
   check(calls.filter(c=>c.table&&!c.head).every(c=>c.limit===3),'Summary previews bounded to three');
-  if(role==='admin'||role==='reviewer'||role==='viewer') check(calls.some(c=>c.rpc==='lakad_section_reports'&&c.args.page_size===3),'Authorized priorities use bounded eligible server ranking');
+  if(role==='reviewer'||role==='viewer') check(calls.some(c=>c.rpc==='lakad_section_reports'&&c.args.page_size===3),'Authorized priorities use bounded eligible server ranking');
   cases.push({role,scenario:'Authorized summary query contract',status:'PASS'});
 }
 for(const role of ['admin','encoder','reviewer']) {
@@ -79,7 +82,7 @@ for(const code of ['42P01','42703','42883','PGRST202','PGRST205']) {const r=awai
 check((await resource(()=>Promise.reject(new Error('network')))).status==='error','Transport failure is error, not empty');
 noCount=true;check((await loadDashboardData('admin',userId)).work.status==='error','Missing exact count never becomes zero');noCount=false;
 failure={table:'sample_units',error:{code:'503',message:'PRIVATE failure'}};
-const partial=await loadDashboardData('admin',userId);check(partial.work.status==='error'&&partial.results.status==='ready','Independent authorized result group survives work failure');failure=null;
+const partial=await loadDashboardData('reviewer',userId);check(partial.work.status==='error'&&partial.results.status==='ready','Independent authorized result group survives work failure');failure=null;
 const {accountDisplayName}=load('src/lib/auth/account-display.ts');
 check(accountDisplayName('  SYNTHETIC User  ','x@example.test')==='SYNTHETIC User','Real account name trimmed');
 check(accountDisplayName(17,'synthetic@example.test')==='synthetic','Malformed metadata has email fallback');
@@ -89,7 +92,7 @@ const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)
 for(const dark of [false,true]) {
   const p=createPalette(dark);
   for(const surface of ['background','panel','panelAlt','input','blueSoft','amberSoft']) for(const text of ['text','muted']) check(contrast(p[text],p[surface])>=4.5,`${dark?'dark':'light'} ${text}/${surface} contrast`);
-  for(const color of ['blue','amber','green','red','purple']) check(contrast(p[color],p[color+'Soft'])>=4.5,'Status label contrast '+color);
+  for(const color of ['blue','amber','green','red','teal']) check(contrast(p[color],p[color+'Soft'])>=4.5,'Status label contrast '+color);
   check(contrast('#FFFFFF',p.action)>=4.5,'White action text contrast');
 }
 for(const [width,columns,two] of [[1672,4,true],[1366,4,true],[1180,2,true],[1024,2,false],[820,2,false],[650,2,false],[390,2,false],[320,2,false]]) {

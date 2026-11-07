@@ -13,13 +13,13 @@ async function moduleFrom(path) {
 }
 const access = await moduleFrom('src/lib/auth/access.ts');
 for (const role of ['admin', 'reviewer', 'encoder', 'viewer']) {
-  check(access.homeForRole(role) === (role === 'admin' ? '/dashboard' : '/workspace'), `${role} lands on the correct dashboard`);
+  check(access.homeForRole(role) === (role === 'admin' || role === 'reviewer' ? '/dashboard' : '/workspace'), `${role} lands on the correct dashboard`);
   check(access.canAccess(role, '/workspace') === (role !== 'admin'), `${role} role workspace access`);
   check(access.canAccess(role, '/users') === (role === 'admin'), `${role} user management`);
-  check(access.canAccess(role, '/road-network') === (role === 'admin' || role === 'reviewer'), `${role} road inventory access`);
+  check(access.canAccess(role, '/road-network') === (role === 'reviewer'), `${role} road inventory access`);
   check(access.canAccess(role, '/sampling') === (role === 'reviewer'), `${role} sample planning access`);
   check(access.canAccess(role, '/field-inspections') === (role === 'reviewer' || role === 'encoder'), `${role} assigned inspection access`);
-  check(access.canAccess(role, '/pci-results') === (role === 'admin' || role === 'reviewer' || role === 'viewer'), `${role} approved/result access`);
+  check(access.canAccess(role, '/pci-results') === (role === 'reviewer' || role === 'viewer'), `${role} approved/result access`);
   check(!access.canAccess(role, '/inspections'), `${role} cannot use the legacy inspection CRUD route`);
   check(!access.canAccess(role, '/unlisted-route'), 'unknown routes denied');
 }

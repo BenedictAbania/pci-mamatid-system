@@ -1,18 +1,19 @@
 export type Role = 'admin' | 'reviewer' | 'encoder' | 'viewer';
 export const roleLabels: Record<Role, string> = { admin: 'System Administrator', reviewer: 'Civil Engineer', encoder: 'Field Inspector', viewer: 'Decision-maker' };
 export function isRole(value: unknown): value is Role { return typeof value === 'string' && Object.hasOwn(roleLabels, value); }
-export function homeForRole(role: Role) { return role === 'admin' ? '/dashboard' : '/workspace'; }
+export function homeForRole(role: Role) { return role === 'admin' || role === 'reviewer' ? '/dashboard' : '/workspace'; }
+/** Admins only see Dashboard, User Accounts and Reference Data (/settings). */
 const routes: Record<string, readonly Role[]> = {
-  '/dashboard': ['admin', 'viewer'],
+  '/dashboard': ['admin', 'reviewer', 'viewer'],
   '/workspace': ['reviewer', 'encoder', 'viewer'],
   '/field-inspections': ['reviewer', 'encoder'],
   '/sampling': ['reviewer'],
-  '/road-network': ['admin', 'reviewer'],
-  '/pci-results': ['admin', 'reviewer', 'viewer'],
-  '/demo-priorities': ['admin', 'reviewer'],
-  '/maintenance-plan': ['admin', 'reviewer', 'viewer'],
+  '/road-network': ['reviewer'],
+  '/pci-results': ['reviewer', 'viewer'],
+  '/demo-priorities': ['reviewer'],
+  '/maintenance-plan': ['reviewer', 'viewer'],
   '/users': ['admin'],
-  '/reports': ['admin', 'reviewer', 'viewer'],
+  '/reports': ['reviewer', 'viewer'],
   '/settings': ['admin'],
   '/rls-test': ['admin'],
 };

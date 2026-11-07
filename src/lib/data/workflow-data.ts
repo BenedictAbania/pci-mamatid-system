@@ -10,8 +10,8 @@ export type Computation = { id: string; sample_unit_id: string; input_revision: 
 export type History = { id: string; sample_unit_id: string; actor_id: string; action: string; comments: string | null; revision: number; created_at: string };
 export type Photo = { id: string; sample_unit_id: string; photo_path: string; caption: string | null };
 export type SectionResult = { id: string; section_id: string; edition: string; pci: number; condition: string; safety: boolean; high_severity: number; affected_area: number; sample_computation_ids: string[]; method: string; weights: Record<string, number>; published_at: string };
-export type Settings = { active_edition: string; priority_safety: boolean; priority_area: boolean };
-export type CatalogType = DistressTypeRecord & ReferenceDistress & { severity_descriptions?: Partial<Record<'low' | 'medium' | 'high', string>> };
+export type Settings = { active_edition: string; priority_safety: boolean; priority_area: boolean; updated_at?: string };
+export type CatalogType = DistressTypeRecord & ReferenceDistress & { severity_descriptions?: Partial<Record<'low' | 'medium' | 'high', string>>; updated_at?: string };
 export type WorkflowData = { samples: Sample[]; sections: RoadSection[]; branches: BranchRecord[]; profiles: ProfileRecord[]; types: CatalogType[]; distresses: (DistressRecord & { measurement_details: DistressDetails })[]; computations: Computation[]; history: History[]; photos: Photo[]; results: SectionResult[]; settings: Settings; audit: { id: string; action: string; created_at: string }[] };
 
 export const WORKFLOW_PAGE_SIZE = 50;

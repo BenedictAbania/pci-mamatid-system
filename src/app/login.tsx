@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
-import { Image, ImageBackground } from 'expo-image';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Platform,
@@ -18,87 +18,66 @@ import {
 import { supabase } from '@/lib/data/supabase';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
-const heroImage = require('../../assets/images/lakad_hero_bg.jpg');
 const logoImage = require('../../assets/images/LAKAD.png');
-
-const FEATURES = [
-  { icon: 'clipboard' as const, label: 'Standardized\nInspection' },
-  { icon: 'bar-chart-2' as const, label: 'Automatic\nPCI Computation' },
-  { icon: 'map-pin' as const, label: 'Data-Driven\nPrioritization' },
-];
 
 const palettes = {
   light: {
-    page: '#F7FAFF',
+    // Page ground is a placeholder; the final background is designed later.
+    page: '#F3F6FC',
     card: '#FFFFFF',
-    text: '#101B3D',
-    secondary: '#64748B',
-    label: '#172554',
-    border: '#CEDBF0',
-    input: '#FFFFFF',
-    icon: '#7183A5',
-    primary: '#2563EB',
-    primaryPressed: '#1D4ED8',
-    focus: '#3B82F6',
-    error: '#B42318',
-    errorSurface: '#FEF3F2',
+    cardBorder: '#E1E6F2',
+    text: '#0B1D4D',
+    secondary: '#4B5B7C',
+    label: '#0B1D4D',
+    input: '#F3F5F9',
+    inputFocus: '#FFFFFF',
+    inputBorder: '#F3F5F9',
+    placeholder: '#7A87A6',
+    icon: '#5B6E98',
+    primary: '#1850E0',
+    primaryHover: '#1038B0',
+    primaryPressed: '#0B2C8C',
+    focus: '#1850E0',
+    ring: 'rgba(24,80,224,0.16)',
+    link: '#1850E0',
+    divider: '#E1E6F2',
+    error: '#B62135',
+    errorSurface: '#FFF0F2',
     errorBorder: '#FDA29B',
-    themeButton: '#FFFFFF',
+    chip: '#FFFFFF',
+    chipHover: '#E9F0FE',
   },
   dark: {
-    page: '#071127',
-    card: '#12203D',
+    page: '#060F2E',
+    card: '#0C1A42',
+    cardBorder: '#1F3366',
     text: '#F8FAFC',
-    secondary: '#94A3B8',
-    label: '#E2E8F0',
-    border: '#233451',
-    input: '#0E1A33',
-    icon: '#94A3B8',
-    primary: '#3B82F6',
-    primaryPressed: '#2563EB',
-    focus: '#60A5FA',
+    secondary: '#A8B5D6',
+    label: '#E3EAFB',
+    input: '#091536',
+    inputFocus: '#0A1A44',
+    inputBorder: '#14275A',
+    placeholder: '#7F8FB8',
+    icon: '#8FA1CC',
+    primary: '#2A5FF0',
+    primaryHover: '#3D72FF',
+    primaryPressed: '#1850E0',
+    focus: '#7DA8FF',
+    ring: 'rgba(125,168,255,0.22)',
+    link: '#8FB4FF',
+    divider: '#1F3366',
     error: '#FECACA',
     errorSurface: '#451A1A',
     errorBorder: '#7F1D1D',
-    themeButton: '#12203D',
+    chip: '#0C1A42',
+    chipHover: '#13265A',
   },
 } as const;
 
-type BrandMarkProps = {
-  compact?: boolean;
-  inverse?: boolean;
-};
-
-function BrandMark({ compact = false, inverse = false }: BrandMarkProps) {
-  const router = useRouter();
-  return (
-    <Pressable accessibilityRole="link" accessibilityLabel="LAKAD home" onPress={() => router.replace('/')} style={styles.brandMark}>
-      <Image
-        accessibilityLabel="LAKAD logo"
-        contentFit="contain"
-        source={logoImage}
-        style={compact ? styles.brandIconCompact : styles.brandIcon}
-      />
-      <View style={styles.brandCopy}>
-        <Text
-          style={[
-            styles.brandName,
-            compact && styles.brandNameCompact,
-            { color: inverse ? '#FFFFFF' : '#101B3D' },
-          ]}>
-          LAKAD
-        </Text>
-        <Text
-          style={[
-            styles.brandTagline,
-            compact && styles.brandTaglineCompact,
-            { color: inverse ? '#BFDBFE' : '#2563EB' },
-          ]}>
-          Where Data Meets the Road
-        </Text>
-      </View>
-    </Pressable>
-  );
+/** Sends the visitor to the Contact section of the landing page. */
+function openContact(push: (href: '/') => void) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.assign('/#contact');
+  else push('/');
 }
 
 export default function LoginScreen() {
@@ -107,12 +86,7 @@ export default function LoginScreen() {
   const { colorScheme, toggleColorScheme } = useAppTheme();
   const colors = palettes[colorScheme];
   const isDark = colorScheme === 'dark';
-  const isWide = width >= 920;
   const isCompact = width < 520;
-  const loginCardWidth = Math.max(
-    280,
-    Math.min(590, isWide ? width * 0.48 - 76 : width - 44)
-  );
   const passwordRef = useRef<TextInputInstance>(null);
 
   const [email, setEmail] = useState('');
@@ -124,11 +98,6 @@ export default function LoginScreen() {
 
   // On native Fabric, changing a TextInput parent's shadowColor during onFocus
   // can immediately blur the input. Focus feedback below changes its border only.
-
-  const pageStyle = useMemo(
-    () => [styles.page, { backgroundColor: colors.page, minHeight: height }],
-    [colors.page, height]
-  );
 
   const handleLogin = async () => {
     if (loading) return;
@@ -179,103 +148,80 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={[pageStyle, { flexDirection: isWide ? 'row' : 'column' }]}>
-      {isWide ? (
-        <ImageBackground
-          contentFit="cover"
-          source={heroImage}
-          style={styles.heroPanel}
-          transition={180}>
-          <View style={styles.heroOverlay}>
-            <View style={styles.heroInner}>
-              <BrandMark inverse />
-
-              <View style={styles.heroMessage}>
-                <View style={styles.accentLine} />
-                <Text style={styles.heroHeading}>Smarter Roads{`\n`}Through Better Data</Text>
-                <Text style={styles.heroDescription}>
-                  Assess pavement conditions, compute PCI, and prioritize maintenance with
-                  confidence.
+    <View style={[styles.page, { backgroundColor: colors.page, minHeight: height }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { minHeight: height }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <View style={[styles.topBar, isCompact && styles.topBarCompact]}>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Back to Home"
+            hitSlop={6}
+            onPress={() => router.push('/')}
+            style={styles.backLink}>
+            {({ hovered, pressed }: any) => (
+              <>
+                <Feather
+                  color={colors.text}
+                  name="arrow-left"
+                  size={20}
+                  style={{ transform: [{ translateX: hovered && !pressed ? -3 : 0 }] }}
+                />
+                <Text style={[styles.backText, { color: colors.text, textDecorationLine: hovered ? 'underline' : 'none' }]}>
+                  Back to Home
                 </Text>
+              </>
+            )}
+          </Pressable>
 
-                <View style={styles.features}>
-                  {FEATURES.map((feature, index) => (
-                    <View key={feature.label} style={styles.featureWrapper}>
-                      {index > 0 ? <View style={styles.featureDivider} /> : null}
-                      <View style={styles.feature}>
-                        <View style={styles.featureIcon}>
-                          <Feather color="#EAF2FF" name={feature.icon} size={26} />
-                        </View>
-                        <Text style={styles.featureLabel}>{feature.label}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
+          <Pressable
+            accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={toggleColorScheme}
+            style={({ pressed, hovered }: any) => [
+              styles.themeButton,
+              {
+                backgroundColor: hovered ? colors.chipHover : colors.chip,
+                borderColor: hovered ? colors.focus : colors.cardBorder,
+                transform: [{ scale: pressed ? 0.94 : 1 }],
+              },
+            ] as any}>
+            <Feather color={isDark ? '#FFD66B' : colors.text} name={isDark ? 'sun' : 'moon'} size={18} />
+          </Pressable>
+        </View>
 
-              <Text style={styles.locationLabel}>BARANGAY MAMATID · CABUYAO, LAGUNA</Text>
-            </View>
-          </View>
-        </ImageBackground>
-      ) : null}
-
-      <View style={[styles.formPanel, { backgroundColor: colors.page }]}>
-        <Pressable
-          accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={toggleColorScheme}
-          style={({ pressed, hovered }: any) => [
-            styles.themeButton,
-            {
-              backgroundColor: hovered ? (isDark ? '#1E293B' : '#E2E8F0') : colors.themeButton,
-              borderColor: pressed ? colors.focus : hovered ? '#91A4C8' : colors.border,
-              transform: hovered && !pressed ? [{ scale: 1.05 }] : [{ scale: 1 }],
-            },
-            pressed && styles.themeButtonPressed,
-          ] as any}>
-          <Feather color={colors.text} name={isDark ? 'sun' : 'moon'} size={20} />
-        </Pressable>
-
-        <ScrollView
-          contentContainerStyle={[
-            styles.formScrollContent,
-            !isWide && styles.formScrollContentNarrow,
-            { minHeight: height },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+        <View style={styles.center}>
           <View
             style={[
-              styles.loginCard,
-              isCompact && styles.loginCardCompact,
+              styles.card,
+              isCompact && styles.cardCompact,
               {
                 backgroundColor: colors.card,
-                borderColor: colors.border,
+                borderColor: colors.cardBorder,
                 ...(Platform.OS === 'web'
-                  ? { boxShadow: `0 14px 35px ${isDark ? 'rgba(0,0,0,0.20)' : 'rgba(49,89,143,0.10)'}` }
-                  : { shadowColor: isDark ? '#000000' : '#31598F' }),
-                width: loginCardWidth,
+                  ? { boxShadow: `0 20px 48px ${isDark ? 'rgba(0,0,0,0.30)' : 'rgba(10,27,77,0.08)'}` }
+                  : { shadowColor: isDark ? '#000000' : '#0A1B4D' }),
               },
             ]}>
-            <View style={styles.formBrand}>
-              <BrandMark compact={isCompact} inverse={isDark} />
+            <View accessible accessibilityLabel="LAKAD, Where Data Meets the Road" style={styles.brand}>
+              <Image contentFit="contain" source={logoImage} style={isCompact ? styles.logoCompact : styles.logo} />
+              <View>
+                <Text style={[styles.brandName, isCompact && styles.brandNameCompact, { color: colors.text }]}>LAKAD</Text>
+                <Text style={[styles.brandTagline, { color: isDark ? '#B9C9F2' : '#1850E0' }]}>Where Data Meets the Road</Text>
+              </View>
             </View>
 
-            <View style={styles.formHeader}>
-              <Text style={[styles.welcomeHeading, { color: colors.text }]}>Welcome back</Text>
-              <Text style={[styles.welcomeDescription, { color: colors.secondary }]}>
-                Sign in to access the LAKAD system.
-              </Text>
-            </View>
+            <Text accessibilityRole="header" style={[styles.heading, isCompact && styles.headingCompact, { color: colors.text }]}>
+              Welcome Back
+            </Text>
+            <Text style={[styles.subheading, { color: colors.secondary }]}>Sign in to access the LAKAD system.</Text>
 
             {errorMessage ? (
               <View
                 accessibilityLiveRegion="polite"
-                style={[
-                  styles.errorBanner,
-                  { backgroundColor: colors.errorSurface, borderColor: colors.errorBorder },
-                ]}>
+                style={[styles.errorBanner, { backgroundColor: colors.errorSurface, borderColor: colors.errorBorder }]}>
                 <Feather color={colors.error} name="alert-circle" size={18} />
                 <Text style={[styles.errorText, { color: colors.error }]}>{errorMessage}</Text>
               </View>
@@ -288,15 +234,13 @@ export default function LoginScreen() {
               <View
                 style={[
                   styles.inputShell,
-                  { backgroundColor: colors.input, borderColor: colors.border },
+                  { backgroundColor: colors.input, borderColor: colors.inputBorder },
                   focusedField === 'email' && {
+                    backgroundColor: colors.inputFocus,
                     borderColor: colors.focus,
-                    ...(Platform.OS === 'web'
-                      ? { boxShadow: `0 0 3px ${colors.focus}` }
-                      : {}),
+                    ...(Platform.OS === 'web' ? { boxShadow: `0 0 0 3px ${colors.ring}` } : {}),
                   },
                 ]}>
-                <Feather color={colors.icon} name="mail" size={20} />
                 <TextInput
                   accessibilityLabelledBy="email-label"
                   autoCapitalize="none"
@@ -308,8 +252,8 @@ export default function LoginScreen() {
                   onChangeText={updateEmail}
                   onFocus={() => setFocusedField('email')}
                   onSubmitEditing={() => passwordRef.current?.focus()}
-                  placeholder="Enter your email"
-                  placeholderTextColor={colors.icon}
+                  placeholder="name@example.com"
+                  placeholderTextColor={colors.placeholder}
                   returnKeyType="next"
                   style={[styles.textInput, { color: colors.text }]}
                   textContentType="emailAddress"
@@ -325,15 +269,13 @@ export default function LoginScreen() {
               <View
                 style={[
                   styles.inputShell,
-                  { backgroundColor: colors.input, borderColor: colors.border },
+                  { backgroundColor: colors.input, borderColor: colors.inputBorder },
                   focusedField === 'password' && {
+                    backgroundColor: colors.inputFocus,
                     borderColor: colors.focus,
-                    ...(Platform.OS === 'web'
-                      ? { boxShadow: `0 0 3px ${colors.focus}` }
-                      : {}),
+                    ...(Platform.OS === 'web' ? { boxShadow: `0 0 0 3px ${colors.ring}` } : {}),
                   },
                 ]}>
-                <Feather color={colors.icon} name="lock" size={20} />
                 <TextInput
                   ref={passwordRef}
                   accessibilityLabelledBy="password-label"
@@ -344,7 +286,7 @@ export default function LoginScreen() {
                   onFocus={() => setFocusedField('password')}
                   onSubmitEditing={() => void handleLogin()}
                   placeholder="Enter your password"
-                  placeholderTextColor={colors.icon}
+                  placeholderTextColor={colors.placeholder}
                   returnKeyType="go"
                   secureTextEntry={!showPassword}
                   style={[styles.textInput, { color: colors.text }]}
@@ -357,11 +299,7 @@ export default function LoginScreen() {
                   hitSlop={8}
                   onPress={() => setShowPassword((isVisible) => !isVisible)}
                   style={styles.passwordToggle}>
-                  <Feather
-                    color={colors.icon}
-                    name={showPassword ? 'eye-off' : 'eye'}
-                    size={20}
-                  />
+                  <Feather color={colors.icon} name={showPassword ? 'eye-off' : 'eye'} size={18} />
                 </Pressable>
               </View>
             </View>
@@ -375,9 +313,9 @@ export default function LoginScreen() {
               style={({ pressed, hovered }: any) => [
                 styles.submitButton,
                 {
-                  backgroundColor: pressed ? colors.primaryPressed : hovered ? colors.focus : colors.primary,
+                  backgroundColor: pressed ? colors.primaryPressed : hovered ? colors.primaryHover : colors.primary,
                   opacity: loading ? 0.72 : 1,
-                  transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }],
+                  transform: [{ translateY: hovered && !pressed ? -1 : 0 }, { scale: pressed ? 0.98 : 1 }],
                 },
               ] as any}>
               {loading ? (
@@ -390,37 +328,20 @@ export default function LoginScreen() {
               )}
             </Pressable>
 
-            <Pressable
-              accessibilityLabel="How Automated PCI Works"
-              accessibilityRole="button"
-              onPress={() => router.push('/prototype')}
-              style={({ pressed, hovered }: any) => [
-                styles.prototypeButton,
-                {
-                  backgroundColor: pressed ? '#F1F5F9' : hovered ? '#F8FAFC' : '#FFFFFF',
-                  borderColor: hovered ? '#CBD5E1' : '#DCE5F2',
-                  opacity: pressed ? 0.8 : 1,
-                  transform: hovered && !pressed ? [{ scale: 1.01 }] : [{ scale: 1 }],
-                },
-              ] as any}>
-              <Text style={styles.prototypeButtonText}>How Automated PCI Works</Text>
-            </Pressable>
-
-            <View style={[styles.accessHelp, { borderTopColor: colors.border }]}>
+            <View style={[styles.accessHelp, { borderTopColor: colors.divider }]}>
               <Text style={[styles.accessHelpText, { color: colors.secondary }]}>
-                Need access? Contact your system administrator.
+                Need access?{' '}
+                <Text
+                  accessibilityRole="link"
+                  onPress={() => openContact(router.push)}
+                  style={[styles.accessLink, { color: colors.link }]}>
+                  Contact your system administrator.
+                </Text>
               </Text>
             </View>
           </View>
-
-          <View style={styles.authorizationFooter}>
-            <Text style={[styles.footerText, { color: colors.secondary }]}>Authorized personnel only</Text>
-            <Text style={[styles.footerText, { color: colors.secondary }]}>
-              Barangay Mamatid, Cabuyao, Laguna
-            </Text>
-          </View>
-        </ScrollView>
-      </View>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -428,201 +349,109 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    overflow: 'hidden',
     width: '100%',
   },
-  heroPanel: {
-    flex: 1.08,
-    minWidth: 0,
+  scrollContent: {
+    paddingBottom: 40,
   },
-  heroOverlay: {
-    backgroundColor: 'rgba(6, 33, 94, 0.64)',
-    flex: 1,
-  },
-  heroInner: {
-    flex: 1,
+  topBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingBottom: 48,
-    paddingHorizontal: 64,
-    paddingTop: 56,
+    paddingHorizontal: 36,
+    paddingTop: Platform.OS === 'web' ? 28 : 52,
   },
-  brandMark: {
+  topBarCompact: {
+    paddingHorizontal: 18,
+  },
+  backLink: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 10,
+    minHeight: 44,
   },
-  brandIcon: {
-    height: 86,
-    marginRight: 14,
-    width: 86,
-  },
-  brandIconCompact: {
-    height: 64,
-    marginRight: 10,
-    width: 64,
-  },
-  brandCopy: {
-    justifyContent: 'center',
-  },
-  brandName: {
-    fontSize: 48,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-    lineHeight: 49,
-  },
-  brandNameCompact: {
-    fontSize: 36,
-    lineHeight: 38,
-  },
-  brandTagline: {
-    fontSize: 16,
+  backText: {
+    fontSize: 15,
     fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-  brandTaglineCompact: {
-    fontSize: 12,
-  },
-  heroMessage: {
-    maxWidth: 590,
-  },
-  accentLine: {
-    backgroundColor: '#60A5FA',
-    borderRadius: 3,
-    height: 6,
-    marginBottom: 22,
-    width: 62,
-  },
-  heroHeading: {
-    color: '#FFFFFF',
-    fontSize: 49,
-    fontWeight: '800',
-    letterSpacing: -1,
-    lineHeight: 56,
-    marginBottom: 16,
-  },
-  heroDescription: {
-    color: '#C4D4F3',
-    fontSize: 19,
-    lineHeight: 29,
-    marginBottom: 40,
-    maxWidth: 560,
-  },
-  features: {
-    alignItems: 'stretch',
-    flexDirection: 'row',
-    marginHorizontal: -12,
-  },
-  featureWrapper: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  featureDivider: {
-    alignSelf: 'center',
-    backgroundColor: 'rgba(191, 219, 254, 0.3)',
-    height: 96,
-    width: 1,
-  },
-  feature: {
-    alignItems: 'center',
-    flex: 1,
-    paddingHorizontal: 12,
-  },
-  featureIcon: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderColor: 'rgba(191, 219, 254, 0.45)',
-    borderRadius: 30,
-    borderWidth: 1,
-    height: 58,
-    justifyContent: 'center',
-    marginBottom: 12,
-    width: 58,
-  },
-  featureLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-  locationLabel: {
-    color: '#93C5FD',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 2.2,
-    textAlign: 'right',
-  },
-  formPanel: {
-    flex: 1,
-    minWidth: 0,
-    position: 'relative',
-  },
-  formScrollContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 28,
-    paddingHorizontal: 38,
-    paddingTop: 76,
-  },
-  formScrollContentNarrow: {
-    paddingHorizontal: 22,
-    paddingTop: 88,
   },
   themeButton: {
     alignItems: 'center',
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
-    height: 44,
+    height: 40,
     justifyContent: 'center',
-    position: 'absolute',
-    right: 24,
-    ...Platform.select({
-      web: { boxShadow: '0 2px 7px rgba(15,23,42,0.08)' },
-      default: { shadowColor: '#0F172A', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.08, shadowRadius: 7 },
-    }),
-    top: Platform.OS === 'web' ? 24 : 42,
-    width: 44,
-    zIndex: 10,
+    width: 40,
   },
-  themeButtonPressed: {
-    transform: [{ scale: 0.96 }],
+  center: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 20,
   },
-  loginCard: {
+  card: {
     borderRadius: 22,
     borderWidth: 1,
-    boxSizing: 'border-box',
-    maxWidth: 590,
+    maxWidth: 440,
     paddingBottom: 30,
-    paddingHorizontal: 42,
-    paddingTop: 38,
+    paddingHorizontal: 38,
+    paddingTop: 40,
+    width: '100%',
     ...Platform.select({
       web: {},
-      default: { shadowOffset: { height: 14, width: 0 }, shadowOpacity: 0.1, shadowRadius: 35 },
+      default: { shadowOffset: { height: 14, width: 0 }, shadowOpacity: 0.1, shadowRadius: 30 },
     }),
   },
-  loginCardCompact: {
+  cardCompact: {
     borderRadius: 18,
     paddingHorizontal: 22,
     paddingTop: 30,
   },
-  formBrand: {
+  brand: {
     alignItems: 'center',
-    marginBottom: 22,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 10,
   },
-  formHeader: {
-    alignItems: 'center',
-    marginBottom: 26,
+  logo: {
+    height: 66,
+    width: 62,
   },
-  welcomeHeading: {
-    fontSize: 37,
+  logoCompact: {
+    height: 54,
+    width: 50,
+  },
+  brandName: {
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    lineHeight: 37,
+  },
+  brandNameCompact: {
+    fontSize: 29,
+    lineHeight: 32,
+  },
+  brandTagline: {
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  heading: {
+    fontSize: 30,
     fontWeight: '800',
-    letterSpacing: -0.8,
-    lineHeight: 44,
-    marginBottom: 5,
+    letterSpacing: -0.6,
+    lineHeight: 36,
+    marginTop: 28,
     textAlign: 'center',
   },
-  welcomeDescription: {
-    fontSize: 16,
-    lineHeight: 24,
+  headingCompact: {
+    fontSize: 26,
+    lineHeight: 32,
+  },
+  subheading: {
+    fontSize: 15.5,
+    lineHeight: 23,
+    marginBottom: 28,
+    marginTop: 8,
     textAlign: 'center',
   },
   errorBanner: {
@@ -630,7 +459,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 18,
     paddingHorizontal: 14,
     paddingVertical: 11,
   },
@@ -641,21 +470,20 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   fieldGroup: {
-    marginBottom: 19,
+    marginBottom: 18,
   },
   fieldLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
-    lineHeight: 21,
-    marginBottom: 8,
+    lineHeight: 20,
+    marginBottom: 7,
   },
   inputShell: {
     alignItems: 'center',
-    borderRadius: 11,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
-    height: 58,
-    paddingLeft: 16,
+    height: 50,
     ...Platform.select({
       web: {},
       default: { shadowOffset: { height: 0, width: 0 }, shadowOpacity: 0.2, shadowRadius: 3 },
@@ -663,44 +491,30 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15.5,
     height: '100%',
-    paddingLeft: 12,
-    paddingRight: 13,
-    marginLeft: 12,
+    paddingHorizontal: 14,
+    ...Platform.select({ web: { outlineStyle: 'none' } as object, default: {} }),
   },
   passwordToggle: {
     alignItems: 'center',
     alignSelf: 'stretch',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
   },
   submitButton: {
     alignItems: 'center',
-    borderRadius: 11,
-    height: 56,
+    borderRadius: 12,
+    height: 50,
     justifyContent: 'center',
-    marginTop: 7,
+    marginTop: 6,
     ...Platform.select({
-      web: { boxShadow: '0 5px 10px rgba(37,99,235,0.22)' },
-      default: { shadowColor: '#2563EB', shadowOffset: { height: 5, width: 0 }, shadowOpacity: 0.22, shadowRadius: 10 },
+      web: { boxShadow: '0 10px 22px rgba(24,80,224,0.26)' },
+      default: { shadowColor: '#1850E0', shadowOffset: { height: 5, width: 0 }, shadowOpacity: 0.2, shadowRadius: 10 },
     }),
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  prototypeButton: {
-    alignItems: 'center',
-    borderRadius: 11,
-    borderWidth: 1,
-    height: 56,
-    justifyContent: 'center',
-    marginTop: 12,
-  },
-  prototypeButtonText: {
-    color: '#071957',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -712,21 +526,15 @@ const styles = StyleSheet.create({
   accessHelp: {
     alignItems: 'center',
     borderTopWidth: 1,
-    marginTop: 27,
-    paddingTop: 22,
+    marginTop: 26,
+    paddingTop: 20,
   },
   accessHelpText: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 13.5,
+    lineHeight: 20,
     textAlign: 'center',
   },
-  authorizationFooter: {
-    alignItems: 'center',
-    marginTop: 22,
-  },
-  footerText: {
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
+  accessLink: {
+    fontWeight: '600',
   },
 });
