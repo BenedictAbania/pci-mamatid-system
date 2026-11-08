@@ -7,6 +7,7 @@ const { calculateSample } = await import(await moduleUrl('src/lib/d6433-07/sampl
 const { sampleFromSnapshot } = await import(await moduleUrl('src/lib/d6433-07/snapshot.ts'));
 const { ReferenceUnavailable } = await import(await moduleUrl('src/lib/d6433-07/curves.ts'));
 const { handler } = await import(await moduleUrl('supabase/functions/calculate-pci/handler.ts'));
+const { calculateSection } = await import(await moduleUrl('src/lib/d6433-07/section.ts'));
 const { d07GuidanceSnapshot } = await import(await moduleUrl('src/lib/d6433-07/severity-guidance.ts'));
 const db = new PGlite();
 await db.exec('create role service_role');
@@ -26,6 +27,10 @@ const severityMigration = (await fs.readdir('supabase/migrations')).find(name =>
 await db.exec(await fs.readFile(`supabase/migrations/${severityMigration}`, 'utf8'));
 const partsMigration = (await fs.readdir('supabase/migrations')).find(name => name.endsWith('_d6433_07_measurement_parts.sql'));
 await db.exec(await fs.readFile(`supabase/migrations/${partsMigration}`, 'utf8'));
+const previewMigration = (await fs.readdir('supabase/migrations')).find(name => name.endsWith('_inspection_preview_context.sql'));
+await db.exec(await fs.readFile(`supabase/migrations/${previewMigration}`, 'utf8'));
+const photoMigration = (await fs.readdir('supabase/migrations')).find(name => name.endsWith('_distress_photos.sql'));
+await db.exec(await fs.readFile(`supabase/migrations/${photoMigration}`, 'utf8'));
 let checks = 0;
 const eq = (actual, expected) => { assert.deepEqual(actual, expected); checks++; };
 const reject = async (fn, pattern) => { await assert.rejects(fn, pattern); checks++; };
@@ -67,6 +72,16 @@ await reject(() => action(first, 'distress', { distress_type_id: newTypes[18].id
 await reject(() => action(first, 'distress', { distress_type_id: newTypes[18].id, severity: 'low', quantity: 10, severity_guidance: d07GuidanceSnapshot(19, 'low') }), /measured parts/i);
 await action(first, 'distress', { distress_type_id: newTypes[18].id, severity: 'low', quantity: 999, measurement_parts: [{ mode: 'rectangle', length_m: 2, width_m: 3 }, { mode: 'irregular', area_sqm: 4 }], severity_guidance: d07GuidanceSnapshot(19, 'low') });
 eq((await db.query('select quantity,measurement_details from distress_records where sample_unit_id=$1', [first])).rows[0].quantity, '10');
+// Photos per distress: linked to a record of this sample unit, or general.
+const firstRecord = (await db.query('select id from distress_records where sample_unit_id=$1', [first])).rows[0].id;
+await db.exec('reset role');
+for (const name of ['distress.jpg', 'general.jpg']) await db.query("insert into storage.objects(bucket_id,name) values('sample-unit-photos',$1)", [`${first}/${name}`]);
+await as('encoder');
+await reject(() => action(first, 'photo', { path: `${first}/distress.jpg`, caption: 'FICTIONAL', distress_record_id: '00000000-0000-4000-8000-0000000000ff' }), /Distress record not found in this sample unit/);
+await action(first, 'photo', { path: `${first}/distress.jpg`, caption: 'Weathering and Raveling · Low', distress_record_id: firstRecord });
+await action(first, 'photo', { path: `${first}/general.jpg`, caption: 'FICTIONAL general view' });
+eq((await db.query('select photo_path,distress_record_id from distress_photos where sample_unit_id=$1 order by photo_path', [first])).rows,
+  [{ photo_path: `${first}/distress.jpg`, distress_record_id: firstRecord }, { photo_path: `${first}/general.jpg`, distress_record_id: null }]);
 await action(first, 'submit');
 const ctx = (await db.query('select lakad_calculation_context($1,$2) as c', [first, 'sample'])).rows[0].c;
 eq(ctx.edition, 'ASTM D6433-07');
@@ -115,6 +130,15 @@ await reject(() => action(second,'distress',{ ...potholeBase, measurement_parts:
 await reject(() => action(second,'distress',{ ...potholeBase, measurement_parts:[{mode:'small_pothole',count:1,diameter_mm:150,depth_mm:20}] }),/severity/);
 await reject(() => action(second,'distress',{ distress_type_id:newTypes[0].id, severity:'medium', quantity:1, measurement_parts:[{mode:'rectangle',length_m:0,width_m:1}], severity_guidance:d07GuidanceSnapshot(1,'medium') }),/positive/);
 eq((await db.query('select count(*)::integer as n from distress_records where sample_unit_id=$1', [second])).rows[0].n,19);
+// Finish inspection preview: the assigned inspector's draft, read without saving anything.
+const preview = (await db.query('select lakad_preview_context($1) as c', [second])).rows[0].c;
+eq([preview.kind, preview.id, preview.edition, preview.input.distresses.length], ['preview', second, 'ASTM D6433-07', 19]);
+eq(sampleFromSnapshot(preview.input, preview.edition).observations.length, 19);
+eq((await db.query('select count(*)::integer as n from inspection_computations where sample_unit_id=$1', [second])).rows[0].n, 0);
+await reject(() => db.query('select lakad_preview_context($1)', [first]), /draft or returned/);
+await as('reviewer');
+await reject(() => db.query('select lakad_preview_context($1)', [second]), /assigned inspector/);
+await as('encoder');
 // The HTTP handler must keep D07 no-distress, missing-reference, and stale-write paths distinct.
 const target = '11111111-1111-4111-8111-111111111111';
 const request = (body, auth = true) => new Request('https://fictional.test/calculate', {
@@ -145,5 +169,50 @@ const viewerApi = handler({ authenticate: async () => ids.viewer,
   reference: async () => reader, save: async () => { writes++; } });
 eq((await viewerApi(request({ kind: 'sample', target }))).status, 403);
 eq(writes, 1);
+const previewApi = handler({ authenticate: async () => ids.encoder, context: async () => ({ ...noDistress, kind: 'preview' }),
+  reference: async () => reader, save: async () => { writes++; } });
+const previewResponse = await previewApi(request({ kind: 'preview', target }));
+eq([previewResponse.status, (await previewResponse.json()).pci, writes], [200, 100, 1]);
+// Defense switch: provisional results can be approved, published and aggregated into a section PCI.
+await db.exec('reset role');
+for (const suffix of ['_section_summaries.sql', '_provisional_publication.sql']) {
+  const file = (await fs.readdir('supabase/migrations')).find(name => name.endsWith(suffix));
+  await db.exec(await fs.readFile(`supabase/migrations/${file}`, 'utf8'));
+}
+eq((await db.query('select allow_provisional_publication as on from lakad_settings')).rows[0].on, true);
+await as('encoder');
+await action(second, 'submit');
+await db.exec('reset role');
+for (const id of [first, second]) {
+  const sampleCtx = (await db.query("select lakad_private.calculation_context($1,$2,'sample') as c", [ids.encoder, id])).rows[0].c;
+  await db.query('select lakad_record_provisional_calculation($1,$2,$3)', [ids.encoder, sampleCtx, calculateSample(sampleFromSnapshot(sampleCtx.input, sampleCtx.edition), reader)]);
+}
+await db.exec('update lakad_settings set allow_provisional_publication=false');
+await as('reviewer');
+await reject(() => action(first, 'approve'), /validation|provisional|Preliminary/);
+await db.exec('reset role');
+await db.exec('update lakad_settings set allow_provisional_publication=true');
+await as('reviewer');
+for (const id of [first, second]) { await action(id, 'approve'); await action(id, 'publish'); }
+eq((await db.query("select count(*)::integer as n from approved_results where is_current and published_at is not null and report_snapshot->'output'->>'status'='provisional'")).rows[0].n, 2);
+await db.exec('reset role');
+eq((await db.query("select p->>'distress_record_id' as record from approved_results a, jsonb_array_elements(a.report_snapshot->'photos') p where a.sample_unit_id=$1 and a.is_current order by p->>'photo_path'", [first])).rows.map(r => r.record), [firstRecord, null]);
+await as('reviewer');
+await reject(() => db.query('select lakad_publish_section_result($1)', [section]), /Compute the section PCI first/);
+await db.exec('reset role');
+const sectionCtx = (await db.query("select lakad_private.calculation_context($1,$2,'section') as c", [ids.reviewer, section])).rows[0].c;
+await db.query('select lakad_record_provisional_calculation($1,$2,$3)', [ids.reviewer, sectionCtx, calculateSection(sectionCtx.input)]);
+await as('encoder');
+await reject(() => db.query('select lakad_publish_section_result($1)', [section]), /Civil Engineer/);
+await as('reviewer');
+await db.query('select lakad_publish_section_result($1)', [section]);
+await as('viewer');
+const viewerSections = (await db.query('select lakad_section_summaries() as s')).rows[0].s;
+eq([viewerSections.total, viewerSections.rows[0].inspected, viewerSections.rows[0].total_sample_units], [1, 2, 2]);
+await db.exec('reset role');
+await db.exec('update lakad_settings set allow_provisional_publication=false');
+await as('reviewer');
+await reject(() => db.query('select lakad_publish_section_result($1)', [section]), /validated/);
+await db.exec('reset role');
 console.log(`Passed ${checks} D6433-07 migration and submission checks in fictional local PGlite.`);
 await db.close();

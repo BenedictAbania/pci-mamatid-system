@@ -83,6 +83,7 @@ export function calculateSample(input: SampleInput, reader?: CurveReader) {
     reference_digest:reader?.digest ?? null, source_rules:RULES,
     observed_groups:original.map(r=>({...r,density:r.quantity/input.area_sqm*100})),
     precision_policy:'full precision; round display only; no extrapolation',
+    provisional_notes:[...(reader?.notes ?? [])],
   };
 }
 export type SampleOutput = ReturnType<typeof calculateSample>;

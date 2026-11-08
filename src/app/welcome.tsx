@@ -118,7 +118,7 @@ export default function WelcomeScreen() {
             <Text style={[styles.eyebrow, { color: c.accent }]}>INVITATION ACCEPTED</Text>
             <Text style={[styles.heading, { color: c.text }]}>Congratulations{firstName ? `, ${firstName}` : ''}!</Text>
             <Text style={[styles.body, { color: c.muted }]}>
-              You’re now part of the LAKAD team for Barangay Mamatid{role ? ` as a ${roleLabels[role]}` : ''}. Together we turn road inspections into clear, data-driven maintenance decisions.
+              You’re now part of the LAKAD team for Barangay Mamatid{role ? ` as ${role === 'admin' || role === 'encoder' ? 'an' : 'a'} ${roleLabels[role]}` : ''}. Together we turn road inspections into clear, data-driven maintenance decisions.
             </Text>
             <Text style={[styles.body, { color: c.text, fontWeight: '700', marginTop: 4 }]}>Create a password to finish setting up your account.</Text>
 

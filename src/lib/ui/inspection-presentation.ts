@@ -16,13 +16,14 @@ export const statusGuidance: Record<WorkflowState, string> = {
   approved: 'Approved and locked. Publication is a separate Reviewer action.',
   published: 'Published and locked. Corrections require a new revision and review.',
 };
-/** D07 cues are versioned, provisional paraphrases. Other editions use only
- * their own catalog descriptions; a missing cue never borrows from D07. */
+/** An administrator's wording (severity_descriptions) wins. Otherwise D07 types use the versioned,
+ * provisional built-in cues; other editions use only their own catalog descriptions. */
 export function severityChoices(type: CatalogType) {
   const codes: Record<string, string> = { low: 'L', medium: 'M', high: 'H' };
   const draft = d07GuidanceFor(type.astm_edition, type.astm_code);
   return type.allowed_severities.filter(value => codes[value]).map(value => {
-    const text = draft?.[value as 'low' | 'medium' | 'high'] ?? (type.astm_edition === 'ASTM D6433-07' ? undefined : type.severity_descriptions?.[value as 'low' | 'medium' | 'high']);
+    const custom = type.severity_descriptions?.[value as 'low' | 'medium' | 'high']?.trim();
+    const text = custom || (draft?.[value as 'low' | 'medium' | 'high'] ?? (type.astm_edition === 'ASTM D6433-07' ? undefined : type.severity_descriptions?.[value as 'low' | 'medium' | 'high']));
     const description = typeof text === 'string' ? text.trim() : undefined;
     const name = value[0].toUpperCase() + value.slice(1);
     return { value, label: codes[value] + ' — ' + name, description };

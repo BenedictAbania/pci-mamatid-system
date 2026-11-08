@@ -41,9 +41,11 @@ export function d07GuidanceFor(edition: string | null | undefined, code: number 
   return edition === 'ASTM D6433-07' && code != null ? D07_SEVERITY_GUIDANCE[code] : undefined;
 }
 
-export function d07GuidanceSnapshot(code: number, severity: SeverityCode | null): SeverityGuidanceSnapshot | null {
+/** `override` is the administrator's wording for this level (distress_types.severity_descriptions); it replaces the built-in cue. */
+export function d07GuidanceSnapshot(code: number, severity: SeverityCode | null, override?: string | null): SeverityGuidanceSnapshot | null {
   const guidance = D07_SEVERITY_GUIDANCE[code];
-  const text = severity ? guidance?.[severity] : guidance?.none;
+  const custom = severity && typeof override === 'string' ? override.trim() : '';
+  const text = custom || (severity ? guidance?.[severity] : guidance?.none);
   if (!guidance || !text) return null;
   return { version: D07_GUIDANCE_VERSION, status: D07_GUIDANCE_STATUS, severity, text, source: guidance.source };
 }

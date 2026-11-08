@@ -15,22 +15,27 @@ import {
 import {
   ALTERNATE_SAMPLE,
   ASPHALT_DISTRESSES,
-  computePCI,
+  computeDemoPci,
   CONDITION_RATINGS,
   DEFAULT_SAMPLE,
   DEFAULT_SAMPLE_AREA,
   generateUID,
-  type DistressEntry,
-  type PCIResult,
+  type DemoEntry,
+  type DemoResult,
   type Severity,
 } from '@/lib/pci/pci-engine';
-import { getPciConditionCategory, getPciConditionVisual } from '@/lib/pci/pci-classification';
-import { SAMPLE_UNIT_GUIDANCE } from '@/lib/pci/pci-service';
+import { getPciConditionVisual } from '@/lib/pci/pci-classification';
+import { isSampleUnitAreaAllowed, SAMPLE_UNIT_GUIDANCE } from '@/lib/pci/pci-service';
 import { getDistressSeverityColors } from '@/lib/pci/severity-colors';
+import { useAppTheme } from '@/providers/ThemeProvider';
 
-const heroImage = require('../../assets/images/lakad_hero_bg.jpg');
+const heroImage = require('../../assets/images/lakad_hero_bg.png');
 const logoImage = require('../../assets/images/LAKAD.png');
-const initialResult = computePCI(DEFAULT_SAMPLE, DEFAULT_SAMPLE_AREA);
+const initialResult = computeDemoPci(DEFAULT_SAMPLE, DEFAULT_SAMPLE_AREA);
+
+/** Same six steps as the authenticated ASTM D6433-07 inspection workflow. */
+const STEPS = ['Sample Unit', 'Distress Data', 'Deduct Values', 'Maximum CDV', 'Pavement Condition Index', 'PCI Rating'];
+const SEVERITIES: readonly Severity[] = ['low', 'medium', 'high'];
 
 const palettes = {
   light: {
@@ -74,11 +79,27 @@ type Palette = typeof palettes.light;
 const sectionIcons = {
   sample: 'map' as const,
   distress: 'clipboard' as const,
-  density: 'list' as const,
+  deduct: 'list' as const,
   total: 'hash' as const,
   correction: 'bar-chart-2' as const,
+  pci: 'activity' as const,
   rating: 'target' as const,
 };
+
+/** Full precision is kept in the engine; screens round for display only. */
+function fixed(value: number, digits = 1) {
+  return value.toFixed(digits);
+}
+/** Rounds to one decimal place without a trailing ".0" (62, 34.4, 100). */
+function short(value: number) {
+  return String(Math.round(value * 10) / 10);
+}
+function severityLabel(severity: Severity | null) {
+  return severity ? severity.charAt(0).toUpperCase() + severity.slice(1) : 'N/A';
+}
+function rowKey(code: number, severity: Severity | null) {
+  return `${code}:${severity ?? 'none'}`;
+}
 
 function Brand({ compact = false, inverse = false }: { compact?: boolean; inverse?: boolean }) {
   return (
@@ -113,7 +134,7 @@ function SectionHeading({
   title,
 }: {
   icon: keyof typeof sectionIcons;
-  number: number;
+  number?: number;
   palette: Palette;
   subtitle: string;
   title: string;
@@ -124,22 +145,35 @@ function SectionHeading({
         {icon === 'total' ? <Text style={styles.sigmaIcon}>Σ</Text> : <Feather color="#FFFFFF" name={sectionIcons[icon]} size={20} />}
       </View>
       <View style={styles.sectionHeadingCopy}>
-        <Text style={[styles.sectionTitle, { color: palette.text }]}>{number}. {title}</Text>
+        <Text style={[styles.sectionTitle, { color: palette.text }]}>{number ? `${number}. ` : ''}{title}</Text>
         <Text style={[styles.sectionSubtitle, { color: palette.secondary }]}>{subtitle}</Text>
       </View>
     </View>
   );
 }
 
-function ThemeSwitch({ iconColor, isDark, onPress }: { iconColor: string; isDark: boolean; onPress: () => void }) {
+/** Sun/moon button; same style as the landing and sign-in theme buttons, sized to the Sign In button. */
+function ThemeToggle({ compact = false, isDark, onPress, palette }: { compact?: boolean; isDark: boolean; onPress: () => void; palette: Palette }) {
   return (
-    <View style={styles.themeControls}>
-      <Feather color={iconColor} name="sun" size={17} />
-      <Pressable accessibilityLabel="Toggle color theme" onPress={onPress} style={styles.toggleTrack}>
-        <View style={[styles.toggleThumb, isDark && styles.toggleThumbDark]} />
-      </Pressable>
-      <Feather color={iconColor} name="moon" size={17} />
-    </View>
+    <Pressable
+      accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      accessibilityRole="button"
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed, hovered }: any) => [
+        styles.themeButton,
+        compact && styles.themeButtonCompact,
+        {
+          backgroundColor: hovered ? palette.blueSoft : palette.card,
+          borderColor: hovered ? palette.primary : palette.border,
+          boxShadow: hovered ? '0 8px 20px rgba(24,80,224,0.18)' : 'none',
+          transform: [{ translateY: hovered && !pressed ? -1 : 0 }, { scale: pressed ? 0.94 : 1 }],
+        },
+      ] as any}>
+      {({ hovered }: any) => (
+        <Feather color={isDark ? '#FFD66B' : palette.primary} name={isDark ? 'sun' : 'moon'} size={18} style={{ transform: [{ rotate: hovered ? (isDark ? '45deg' : '-18deg') : '0deg' }] }} />
+      )}
+    </Pressable>
   );
 }
 
@@ -154,11 +188,20 @@ function InputShell({ children, palette, suffix }: { children: ReactNode; palett
   );
 }
 
+function StatBox({ label, palette, value }: { label: string; palette: Palette; value: string }) {
+  return (
+    <View style={[styles.statBox, { backgroundColor: palette.card, borderColor: palette.border }]}>
+      <Text style={[styles.statLabel, { color: palette.secondary }]}>{label}</Text>
+      <Text style={[styles.statValue, { color: palette.text }]}>{value}</Text>
+    </View>
+  );
+}
+
 function Notes({ compact, palette, stacked }: { compact: boolean; palette: Palette; stacked: boolean }) {
   const notes = [
-    'This prototype uses sample data only.',
-    'Deduct Values are illustrative unless supplied by the verified PCI engine.',
-    'The complete ASTM lookup tables are not publicly displayed.',
+    'Follows the ASTM D6433-07 sample procedure (§§9.1–9.6) used in official inspections.',
+    'Deduct and CDV curves here are illustrative, not ASTM D6433-07 readings.',
+    'The ASTM curves stay on the server and are not publicly displayed.',
     'No information is saved.',
     'This demonstration does not affect official inspection records.',
     'Official inspections require authentication and authorized user access.',
@@ -182,9 +225,10 @@ function Notes({ compact, palette, stacked }: { compact: boolean; palette: Palet
   );
 }
 
-function RatingGauge({ isDark, palette, result }: { isDark: boolean; palette: Palette; result: PCIResult }) {
-  const resultColor = getPciConditionVisual(getPciConditionCategory(result.pci), isDark).accentColor;
-  const progressDegrees = Math.round((Math.max(0, Math.min(100, result.pci)) / 100) * 270);
+function RatingGauge({ isDark, palette, result }: { isDark: boolean; palette: Palette; result: DemoResult | null }) {
+  const pci = result?.pci ?? 0;
+  const resultColor = result ? getPciConditionVisual(result.category, isDark).accentColor : palette.track;
+  const progressDegrees = Math.round((Math.max(0, Math.min(100, pci)) / 100) * 270);
   const gaugeStyle = {
     backgroundImage: `conic-gradient(from 225deg, ${resultColor} 0deg ${progressDegrees}deg, ${palette.track} ${progressDegrees}deg 270deg, transparent 270deg 360deg)`,
   } as never;
@@ -195,7 +239,7 @@ function RatingGauge({ isDark, palette, result }: { isDark: boolean; palette: Pa
         <View style={[styles.gaugeCutout, { backgroundColor: palette.card }]} />
       </View>
       <View style={styles.gaugeValueWrap}>
-        <Text style={[styles.gaugeValue, { color: palette.text }]}>{result.pci}</Text>
+        <Text style={[styles.gaugeValue, { color: palette.text }]}>{result ? short(pci) : '—'}</Text>
         <Text style={[styles.gaugeOutOf, { color: palette.secondary }]}>/ 100</Text>
       </View>
     </View>
@@ -205,7 +249,8 @@ function RatingGauge({ isDark, palette, result }: { isDark: boolean; palette: Pa
 export default function PrototypePage() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [isDark, setIsDark] = useState(false);
+  const { colorScheme, toggleColorScheme } = useAppTheme();
+  const isDark = colorScheme === 'dark';
   const palette = isDark ? palettes.dark : palettes.light;
   const isDesktop = width >= 1180;
   const isTablet = width >= 760;
@@ -213,94 +258,107 @@ export default function PrototypePage() {
   const isNarrowPhone = width < 390;
 
   const [sampleArea, setSampleArea] = useState(String(DEFAULT_SAMPLE_AREA));
-  const [entries, setEntries] = useState<DistressEntry[]>([...DEFAULT_SAMPLE]);
-  const [selectedDistressId, setSelectedDistressId] = useState(1);
-  const [selectedSeverity, setSelectedSeverity] = useState<Severity>('Low');
+  const [entries, setEntries] = useState<DemoEntry[]>([...DEFAULT_SAMPLE]);
+  const [selectedCode, setSelectedCode] = useState(1);
+  const [selectedSeverity, setSelectedSeverity] = useState<Severity>('low');
   const [quantity, setQuantity] = useState('5');
-  const [result, setResult] = useState<PCIResult | null>(() => initialResult);
-  const [isComputed, setIsComputed] = useState(true);
+  const [result, setResult] = useState<DemoResult | null>(() => initialResult);
   const [showDetails, setShowDetails] = useState(true);
   const [showDistressMenu, setShowDistressMenu] = useState(false);
   const [isAlternate, setIsAlternate] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const isComputed = result !== null;
 
   const selectedDistress = useMemo(
-    () => ASPHALT_DISTRESSES.find((item) => item.id === selectedDistressId) ?? ASPHALT_DISTRESSES[0],
-    [selectedDistressId]
+    () => ASPHALT_DISTRESSES.find((item) => item.code === selectedCode) ?? ASPHALT_DISTRESSES[0],
+    [selectedCode]
   );
+  const hasSeverity = selectedDistress.severities.length > 0;
 
-  const invalidateResult = () => {
-    setIsComputed(false);
-    setResult(null);
-  };
+  const invalidateResult = () => setResult(null);
+
+  const showSample = useCallback((sample: readonly DemoEntry[]) => {
+    setEntries([...sample]);
+    setSampleArea(String(DEFAULT_SAMPLE_AREA));
+    setResult(computeDemoPci(sample, DEFAULT_SAMPLE_AREA));
+    setShowDetails(true);
+    setError('');
+    setNotice('');
+  }, []);
 
   const handleAdd = useCallback(() => {
     const parsedQuantity = Number(quantity);
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+    if (!quantity.trim() || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
       setError('Enter a measured quantity greater than zero.');
       return;
     }
+    if (selectedDistress.unit === 'No.' && !Number.isInteger(parsedQuantity)) {
+      setError('Count potholes as whole numbers in this demonstration.');
+      return;
+    }
 
-    const entry: DistressEntry = {
-      uid: generateUID(),
-      distressId: selectedDistress.id,
-      distressName: selectedDistress.name,
-      quantity: parsedQuantity,
-      severity: selectedSeverity,
-      unit: selectedDistress.unit,
-    };
-
-    setEntries((current) => [...current, entry]);
+    const severity = hasSeverity ? selectedSeverity : null;
+    const existing = entries.find((entry) => entry.code === selectedDistress.code && entry.severity === severity);
+    if (existing) {
+      setEntries((current) => current.map((entry) => (entry === existing ? { ...entry, quantity: entry.quantity + parsedQuantity } : entry)));
+      setNotice(`Added to the existing ${selectedDistress.name}${severity ? ` (${severityLabel(severity)})` : ''} row. ASTM D6433-07 §9.1 records each distress and severity once.`);
+    } else {
+      setEntries((current) => [...current, { uid: generateUID(), code: selectedDistress.code, severity, quantity: parsedQuantity }]);
+      setNotice('');
+    }
     setQuantity('');
     setError('');
-    setIsComputed(false);
     setResult(null);
-  }, [quantity, selectedDistress, selectedSeverity]);
+  }, [entries, hasSeverity, quantity, selectedDistress, selectedSeverity]);
 
   const handleCompute = useCallback(() => {
     const parsedArea = Number(sampleArea);
-    if (!Number.isFinite(parsedArea) || parsedArea <= 0) {
-      setError('Enter a valid asphalt sample-unit area.');
+    if (!isSampleUnitAreaAllowed(parsedArea)) {
+      setError('Enter a sample-unit area from 135 to 315 m² (ASTM D6433-07 §2.1.7).');
       return;
     }
-    if (!entries.length) {
-      setError('Add at least one pavement distress before computing PCI.');
-      return;
+    try {
+      setResult(computeDemoPci(entries, parsedArea));
+      setShowDetails(true);
+      setError('');
+      setNotice('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The PCI could not be computed.');
     }
-    setResult(computePCI(entries, parsedArea));
-    setIsComputed(true);
-    setShowDetails(true);
-    setError('');
   }, [entries, sampleArea]);
 
   const handleReset = useCallback(() => {
-    setSampleArea(String(DEFAULT_SAMPLE_AREA));
-    setEntries([...DEFAULT_SAMPLE]);
-    setSelectedDistressId(1);
-    setSelectedSeverity('Low');
+    showSample(DEFAULT_SAMPLE);
+    setSelectedCode(1);
+    setSelectedSeverity('low');
     setQuantity('5');
-    setResult(computePCI(DEFAULT_SAMPLE, DEFAULT_SAMPLE_AREA));
-    setIsComputed(true);
-    setShowDetails(true);
     setIsAlternate(false);
-    setError('');
-  }, []);
+  }, [showSample]);
 
   const handleTryAnother = useCallback(() => {
-    const nextEntries = isAlternate ? [...DEFAULT_SAMPLE] : [...ALTERNATE_SAMPLE];
-    setEntries(nextEntries);
-    setSampleArea(String(DEFAULT_SAMPLE_AREA));
-    setResult(computePCI(nextEntries, DEFAULT_SAMPLE_AREA));
-    setIsComputed(true);
-    setShowDetails(true);
+    showSample(isAlternate ? DEFAULT_SAMPLE : ALTERNATE_SAMPLE);
     setIsAlternate((current) => !current);
-    setError('');
-  }, [isAlternate]);
+  }, [isAlternate, showSample]);
 
-  const computedRows = result?.distresses ?? entries.map((entry) => ({ ...entry, density: 0, deductValue: 0 }));
-  const displayedResult = result ?? initialResult;
-  const displayedCondition = getPciConditionCategory(displayedResult.pci);
-  const displayedConditionVisual = getPciConditionVisual(displayedCondition, isDark);
+  const tableRows = result
+    ? result.rows.map((row) => ({ key: rowKey(row.code, row.severity), code: row.code, name: row.name, severity: row.severity, quantity: row.quantity, unit: row.unit, density: fixed(row.density, 2), deduct: fixed(row.deduct_value, 2) }))
+    : entries.map((entry) => {
+        const item = ASPHALT_DISTRESSES.find((d) => d.code === entry.code)!;
+        return { key: rowKey(entry.code, entry.severity), code: entry.code, name: item.name, severity: entry.severity, quantity: entry.quantity, unit: item.unit, density: '—', deduct: '—' };
+      });
+  const removeRow = (code: number, severity: Severity | null) => {
+    setEntries((current) => current.filter((entry) => !(entry.code === code && entry.severity === severity)));
+    setNotice('');
+    invalidateResult();
+  };
+  const conditionVisual = result ? getPciConditionVisual(result.category, isDark) : null;
+
+  const stepper = STEPS.map((label, index) => {
+    const complete = isComputed && index < STEPS.length - 1;
+    const active = isComputed ? index === STEPS.length - 1 : index < 2;
+    return { label, index, complete, active };
+  });
 
   return (
     <View style={[styles.page, { backgroundColor: palette.page }]}>
@@ -322,7 +380,7 @@ export default function PrototypePage() {
           </Pressable>
         </View>
         <View style={[styles.headerRight, isPhone && styles.headerRightMobile]}>
-          <ThemeSwitch iconColor={palette.text} isDark={isDark} onPress={() => setIsDark((current) => !current)} />
+          <ThemeToggle compact={isPhone} isDark={isDark} onPress={toggleColorScheme} palette={palette} />
           <Pressable onPress={() => router.push('/login')} style={({ pressed, hovered }: any) => [styles.backButton, isPhone && styles.backButtonMobile, pressed && styles.buttonPressed, hovered && !pressed && { transform: [{ translateY: -1 }], backgroundColor: '#1038B0', boxShadow: '0 8px 20px rgba(24,80,224,0.32)' }] as any}>
             <Feather color="#FFFFFF" name="arrow-left" size={17} />
             <Text style={styles.backButtonText}>Sign In</Text>
@@ -336,7 +394,7 @@ export default function PrototypePage() {
           <View style={[styles.heroOverlay, isPhone && styles.heroOverlayMobile]}>
             <View style={styles.heroLeft}>
               <Text style={[styles.heroTitle, isPhone && styles.heroTitleMobile]}>PCI Calculation Prototype</Text>
-              <Text style={[styles.heroSubtitle, isPhone && styles.heroSubtitleMobile]}>Try the PCI computation process step by step using sample asphalt-pavement data.</Text>
+              <Text style={[styles.heroSubtitle, isPhone && styles.heroSubtitleMobile]}>Try the ASTM D6433-07 PCI procedure step by step using sample asphalt-pavement data.</Text>
             </View>
             {isDesktop ? (
               <View style={styles.heroRight}>
@@ -364,35 +422,27 @@ export default function PrototypePage() {
 
           {isPhone ? (
             <ScrollView horizontal contentContainerStyle={styles.stepperMobile} showsHorizontalScrollIndicator={false}>
-              {['Sample Unit', 'Distress Data', 'Density and Deduct Values', 'Total Deduct Value', 'CDV Correction', 'PCI and Rating'].map((label, index) => {
-                const complete = isComputed && index < 5;
-                const active = isComputed ? index === 5 : index < 2;
-                return (
-                  <View key={label} style={styles.stepItemMobile}>
-                    <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
-                      {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
-                    </View>
-                    <Text numberOfLines={2} style={[styles.stepLabel, styles.stepLabelMobile, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
-                    {index < 5 ? <View style={[styles.stepLine, styles.stepLineMobile, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
+              {stepper.map(({ label, index, complete, active }) => (
+                <View key={label} style={styles.stepItemMobile}>
+                  <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
+                    {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
                   </View>
-                );
-              })}
+                  <Text numberOfLines={2} style={[styles.stepLabel, styles.stepLabelMobile, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
+                  {index < STEPS.length - 1 ? <View style={[styles.stepLine, styles.stepLineMobile, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
+                </View>
+              ))}
             </ScrollView>
           ) : (
             <View style={styles.stepper}>
-              {['Sample Unit', 'Distress Data', 'Density and Deduct Values', 'Total Deduct Value', 'CDV Correction', 'PCI and Rating'].map((label, index) => {
-                const complete = isComputed && index < 5;
-                const active = isComputed ? index === 5 : index < 2;
-                return (
-                  <View key={label} style={[styles.stepItem, !isDesktop && styles.stepItemCompact]}>
-                    <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
-                      {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
-                    </View>
-                    <Text numberOfLines={1} style={[styles.stepLabel, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
-                    {index < 5 ? <View style={[styles.stepLine, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
+              {stepper.map(({ label, index, complete, active }) => (
+                <View key={label} style={[styles.stepItem, !isDesktop && styles.stepItemCompact]}>
+                  <View style={[styles.stepCircle, { backgroundColor: complete || active ? palette.primary : palette.card, borderColor: palette.primary }]}>
+                    {complete ? <Feather color="#FFFFFF" name="check" size={18} /> : <Text style={[styles.stepNumber, { color: active ? '#FFFFFF' : palette.primary }]}>{index + 1}</Text>}
                   </View>
-                );
-              })}
+                  <Text numberOfLines={1} style={[styles.stepLabel, { color: complete || active ? palette.primary : palette.muted }, active && styles.stepLabelActive]}>{index + 1}. {label}</Text>
+                  {index < STEPS.length - 1 ? <View style={[styles.stepLine, { backgroundColor: complete ? palette.primary : palette.border }]} /> : null}
+                </View>
+              ))}
             </View>
           )}
 
@@ -406,10 +456,11 @@ export default function PrototypePage() {
           <View style={[styles.workspace, !isDesktop && styles.workspaceCompact, !isTablet && styles.workspaceMobile]}>
             <View style={[styles.leftColumn, !isDesktop && styles.leftColumnCompact, !isTablet && styles.columnMobile]}>
               <Card palette={palette} style={[styles.sampleCard, isDesktop && { height: 227 }]}>
-                <SectionHeading icon="sample" number={1} palette={palette} subtitle="Enter the sample unit details for the PCI computation." title="Sample Unit Information" />
+                <SectionHeading icon="sample" number={1} palette={palette} subtitle="Enter the measured area of the asphalt sample unit." title="Sample Unit Information" />
                 <Text style={[styles.fieldLabel, { color: palette.text }]}>Sample Unit Area (Asphalt)</Text>
                 <InputShell palette={palette} suffix="m²">
                   <TextInput
+                    accessibilityLabel="Sample unit area in square meters"
                     keyboardType="numeric"
                     onChangeText={(value) => { setSampleArea(value); invalidateResult(); }}
                     style={[styles.textInput, { color: palette.text }]}
@@ -423,13 +474,14 @@ export default function PrototypePage() {
               </Card>
 
               <Card palette={palette} style={[styles.distressCard, isDesktop && { height: 331 }]}>
-                <SectionHeading icon="distress" number={2} palette={palette} subtitle="Select an asphalt distress, set its details, and add it to the list." title="Distress Data" />
+                <SectionHeading icon="distress" number={2} palette={palette} subtitle="Choose an ASTM D6433-07 asphalt distress, set its severity and quantity, then add it." title="Distress Data" />
                 <Text style={[styles.fieldLabel, { color: palette.text }]}>Asphalt Distress Type</Text>
                 <Pressable
+                  accessibilityLabel={`Distress type: ${selectedDistress.name}`}
                   onPress={() => setShowDistressMenu((current) => !current)}
                   style={[styles.selectBox, { backgroundColor: palette.card, borderColor: palette.border }]}>
                   <View style={[styles.roadMiniIcon, { backgroundColor: palette.primary }]}>
-                    <Feather color="#FFFFFF" name="activity" size={17} />
+                    <Text style={styles.codeBadgeText}>{selectedDistress.code}</Text>
                   </View>
                   <Text numberOfLines={1} style={[styles.selectText, { color: palette.text }]}>{selectedDistress.name}</Text>
                   <Feather color={palette.text} name="chevron-down" size={17} />
@@ -438,14 +490,13 @@ export default function PrototypePage() {
                   <ScrollView style={[styles.selectMenu, { backgroundColor: palette.card, borderColor: palette.border }]}>
                     {ASPHALT_DISTRESSES.map((item) => (
                       <Pressable
-                        key={item.id}
+                        key={item.code}
                         onPress={() => {
-                          setSelectedDistressId(item.id);
-                          setSelectedSeverity(item.severities[0] ?? 'Low');
+                          setSelectedCode(item.code);
                           setShowDistressMenu(false);
                         }}
                         style={[styles.selectOption, { borderBottomColor: palette.border }]}>
-                        <Text style={[styles.selectOptionText, { color: palette.text }]}>{item.name}</Text>
+                        <Text style={[styles.selectOptionText, { color: palette.text }]}>{item.code}. {item.name} ({item.unit})</Text>
                       </Pressable>
                     ))}
                   </ScrollView>
@@ -453,41 +504,50 @@ export default function PrototypePage() {
 
                 <View style={[styles.inlineField, isPhone && styles.inlineFieldMobile]}>
                   <Text style={[styles.inlineLabel, isPhone && styles.inlineLabelMobile, { color: palette.text }]}>Severity Level</Text>
-                  <View style={[styles.segmented, { borderColor: palette.border }]}>
-                    {(['Low', 'Medium', 'High'] as const).map((severity) => {
-                      const selected = selectedSeverity === severity;
-                      const severityColors = getDistressSeverityColors(severity);
-                      return (
-                        <Pressable
-                          key={severity}
-                          onPress={() => setSelectedSeverity(severity)}
-                          style={[styles.segment, { borderColor: selected ? severityColors.borderColor : palette.border }, selected && { backgroundColor: severityColors.backgroundColor }]}>
-                          <Text style={[styles.segmentText, { color: selected ? severityColors.textColor : palette.text }]}>{severity}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                  {hasSeverity ? (
+                    <View style={[styles.segmented, { borderColor: palette.border }]}>
+                      {SEVERITIES.map((severity) => {
+                        const selected = selectedSeverity === severity;
+                        const severityColors = getDistressSeverityColors(severity);
+                        return (
+                          <Pressable
+                            accessibilityRole="radio"
+                            accessibilityState={{ selected }}
+                            key={severity}
+                            onPress={() => setSelectedSeverity(severity)}
+                            style={[styles.segment, { borderColor: selected ? severityColors.borderColor : palette.border }, selected && { backgroundColor: severityColors.backgroundColor }]}>
+                            <Text style={[styles.segmentText, { color: selected ? severityColors.textColor : palette.text }]}>{severityLabel(severity)}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View style={[styles.segmented, styles.notApplicable, { borderColor: palette.border, backgroundColor: palette.cardSoft }]}>
+                      <Text style={[styles.segmentText, { color: palette.muted }]}>Not applicable ({selectedDistress.severityRule})</Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={[styles.inlineField, isPhone && styles.inlineFieldMobile]}>
                   <Text style={[styles.inlineLabel, isPhone && styles.inlineLabelMobile, { color: palette.text }]}>Measured Quantity</Text>
                   <View style={styles.quantityInput}>
                     <InputShell palette={palette} suffix={selectedDistress.unit}>
-                      <TextInput keyboardType="numeric" onChangeText={setQuantity} placeholder="0" placeholderTextColor={palette.muted} style={[styles.textInput, { color: palette.text }]} value={quantity} />
+                      <TextInput accessibilityLabel={`Measured quantity in ${selectedDistress.unit}`} keyboardType="numeric" onChangeText={setQuantity} placeholder="0" placeholderTextColor={palette.muted} style={[styles.textInput, { color: palette.text }]} value={quantity} />
                     </InputShell>
                   </View>
                 </View>
-                <Text style={[styles.quantityHelp, isPhone && styles.quantityHelpMobile, { color: palette.secondary }]}>Enter the measured area, length, or number of the distress.</Text>
+                <Text style={[styles.quantityHelp, isPhone && styles.quantityHelpMobile, { color: palette.secondary }]}>Measure in {selectedDistress.unit} (ASTM D6433-07 {selectedDistress.measurementRule}). The same distress and severity is combined into one row.</Text>
                 <Pressable onPress={handleAdd} style={({ pressed, hovered }: any) => [styles.addButton, { backgroundColor: pressed ? palette.primaryDark : hovered ? palette.secondary : palette.primary, transform: hovered && !pressed ? [{ scale: 1.02 }] : [{ scale: 1 }] }] as any}>
                   <View style={styles.addIcon}><Feather color={palette.primary} name="plus" size={15} /></View>
                   <Text style={styles.addButtonText}>Add to List</Text>
                 </Pressable>
+                {notice ? <Text style={[styles.noticeText, { color: palette.secondary }]}>{notice}</Text> : null}
               </Card>
             </View>
 
             <View style={[styles.centerColumn, !isDesktop && styles.centerColumnCompact, !isTablet && styles.columnMobile]}>
               <Card palette={palette} style={[styles.densityCard, isDesktop && { height: 227 }]}>
-                <SectionHeading icon="density" number={3} palette={palette} subtitle="List of distresses and their computed density and deduct values." title="Density and Deduct Values" />
+                <SectionHeading icon="deduct" number={3} palette={palette} subtitle="Density = quantity ÷ sample area × 100 (§§9.1–9.2), then the deduct value for each distress and severity." title="Deduct Values" />
                 <ScrollView contentContainerStyle={styles.tableScrollContent} horizontal nestedScrollEnabled showsHorizontalScrollIndicator={!isDesktop} style={styles.tableViewport}>
                 <View style={[styles.table, { borderColor: palette.border, width: isDesktop ? '100%' : 760 }]}>
                   <View style={[styles.tableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
@@ -501,23 +561,24 @@ export default function PrototypePage() {
                     <Text style={[styles.cellHeader, styles.actionCol, { color: palette.text }]}>Action</Text>
                   </View>
                   <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 240 }}>
-                    {computedRows.map((entry, index) => {
-                      const severityColors = getDistressSeverityColors(entry.severity);
+                    {tableRows.map((row, index) => {
+                      const severityColors = row.severity ? getDistressSeverityColors(row.severity) : null;
                       return (
-                        <View key={entry.uid} style={[styles.tableRow, { borderBottomColor: palette.border }]}>
+                        <View key={row.key} style={[styles.tableRow, { borderBottomColor: palette.border }]}>
                           <Text style={[styles.cell, styles.numberCol, { color: palette.text }]}>{index + 1}</Text>
-                          <Text numberOfLines={1} style={[styles.cell, styles.distressCol, { color: palette.text }]}>{entry.distressName}</Text>
-                          <View style={styles.severityCol}><View style={[styles.severityBadge, { backgroundColor: severityColors.backgroundColor, borderColor: severityColors.borderColor }]}><Text style={[styles.severityBadgeText, { color: severityColors.textColor }]}>{entry.severity}</Text></View></View>
-                          <Text style={[styles.cell, styles.quantityCol, { color: palette.text }]}>{entry.quantity}</Text>
-                          <Text style={[styles.cell, styles.unitCol, { color: palette.text }]}>{entry.unit}</Text>
-                          <Text style={[styles.cell, styles.densityCol, { color: palette.text }]}>{isComputed ? `${entry.density.toFixed(2)}%` : '—'}</Text>
-                          <Text style={[styles.cell, styles.dvCol, styles.boldCell, { color: palette.text }]}>{isComputed ? entry.deductValue : '—'}</Text>
-                          <Pressable onPress={() => { setEntries((current) => current.filter((item) => item.uid !== entry.uid)); invalidateResult(); }} style={[styles.actionCol, styles.deleteButton]}>
+                          <Text numberOfLines={1} style={[styles.cell, styles.distressCol, { color: palette.text }]}>{row.name}</Text>
+                          <View style={styles.severityCol}><View style={[styles.severityBadge, { backgroundColor: severityColors?.backgroundColor ?? palette.cardSoft, borderColor: severityColors?.borderColor ?? palette.border }]}><Text style={[styles.severityBadgeText, { color: severityColors?.textColor ?? palette.muted }]}>{severityLabel(row.severity)}</Text></View></View>
+                          <Text style={[styles.cell, styles.quantityCol, { color: palette.text }]}>{short(row.quantity)}</Text>
+                          <Text style={[styles.cell, styles.unitCol, { color: palette.text }]}>{row.unit}</Text>
+                          <Text style={[styles.cell, styles.densityCol, { color: palette.text }]}>{row.density}</Text>
+                          <Text style={[styles.cell, styles.dvCol, styles.boldCell, { color: palette.text }]}>{row.deduct}</Text>
+                          <Pressable accessibilityLabel={`Remove ${row.name}`} onPress={() => removeRow(row.code, row.severity)} style={[styles.actionCol, styles.deleteButton]}>
                             <Feather color="#F01616" name="trash-2" size={16} />
                           </Pressable>
                         </View>
                       );
                     })}
+                    {!tableRows.length ? <Text style={[styles.emptyTable, { color: palette.muted }]}>{isComputed ? 'No distress recorded. Every deduct value is zero.' : 'No distress added yet.'}</Text> : null}
                   </ScrollView>
                 </View>
                 </ScrollView>
@@ -525,76 +586,91 @@ export default function PrototypePage() {
 
               <View style={[styles.centerBottom, isDesktop && { height: 331 }, !isTablet && styles.centerBottomCompact]}>
                 <Card palette={palette} style={[styles.totalCard, !isTablet && styles.cardAuto]}>
-                  <SectionHeading icon="total" number={4} palette={palette} subtitle="Sum of the individual deduct values for the sample unit." title="Total Deduct Value" />
+                  <SectionHeading icon="total" number={4} palette={palette} subtitle="Deduct values, q and allowable deducts m for the CDV correction (§9.5)." title="Maximum Corrected Deduct Value" />
                   <View style={[styles.formulaPanel, { backgroundColor: palette.cardSoft }]}>
-                    <Text style={[styles.formulaLabel, { color: palette.text }]}>Individual Deduct Values</Text>
+                    <Text style={[styles.formulaLabel, { color: palette.text }]}>Deduct Values (highest first)</Text>
                     <View style={styles.formulaRow}>
-                      {displayedResult.distresses.map((entry, index) => (
-                        <View key={entry.uid} style={styles.formulaPart}>
-                          <View style={[styles.formulaBox, { backgroundColor: palette.card, borderColor: palette.border }]}><Text style={[styles.formulaValue, { color: palette.text }]}>{isComputed ? entry.deductValue : '—'}</Text></View>
-                          {index < displayedResult.distresses.length - 1 ? <Text style={[styles.formulaOperator, { color: palette.text }]}>+</Text> : null}
-                        </View>
-                      ))}
-                      <Text style={[styles.formulaOperator, { color: palette.text }]}>=</Text>
-                      <View style={[styles.formulaTotal, { backgroundColor: palette.blueSoft }]}><Text style={[styles.formulaTotalText, { color: palette.primary }]}>{isComputed ? displayedResult.totalDeductValue : '—'}</Text></View>
+                      {result && result.sortedDeducts.length ? result.sortedDeducts.map((value, index) => (
+                        <View key={index} style={[styles.formulaBox, styles.deductChip, { backgroundColor: palette.card, borderColor: palette.border }]}><Text style={[styles.formulaValue, { color: palette.text }]}>{fixed(value)}</Text></View>
+                      )) : <View style={[styles.formulaBox, styles.deductChip, { backgroundColor: palette.card, borderColor: palette.border }]}><Text style={[styles.formulaValue, { color: palette.text }]}>—</Text></View>}
                     </View>
-                    <Text style={[styles.formulaHelp, { color: palette.secondary }]}>TDV is the sum of the individual Deduct Values{`\n`}recorded for the sample unit.</Text>
+                    <View style={styles.statGrid}>
+                      <StatBox label="Highest DV" palette={palette} value={result ? fixed(result.highest_deduct_value) : '—'} />
+                      <StatBox label="q (DV > 2)" palette={palette} value={result ? String(result.q) : '—'} />
+                      <StatBox label="m (allowable)" palette={palette} value={result ? (result.shortcut ? 'n/a' : fixed(result.allowable_deducts, 2)) : '—'} />
+                      <StatBox label="Total DV" palette={palette} value={result ? fixed(result.total_deduct_value) : '—'} />
+                    </View>
+                    <View style={[styles.maxCdv, styles.maxCdvTotal, { backgroundColor: palette.blueSoft }]}>
+                      <Text style={[styles.maxCdvLabel, { color: palette.text }]}>Maximum CDV</Text>
+                      <Text style={[styles.maxCdvValue, { color: palette.primary }]}>{result ? fixed(result.max_corrected_deduct_value) : '—'}</Text>
+                    </View>
                   </View>
                 </Card>
 
                 <Card palette={palette} style={[styles.cdvCard, !isTablet && styles.cardAuto]}>
-                  <SectionHeading icon="correction" number={5} palette={palette} subtitle="Illustrative prototype procedure; not verified D6433-07 reference values." title="CDV Correction" />
-                  <View style={[styles.cdvStats, isPhone && styles.cdvStatsMobile, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
-                    <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Highest DV:</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.highestDV}</Text></View>
-                    <View style={[styles.cdvStatWide, isPhone && styles.cdvStatWideMobile, { borderLeftColor: palette.border, borderTopColor: palette.border }]}>
-                      <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Calculated allowable deducts (m):</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.allowableDeducts.toFixed(2)}</Text></View>
-                      <View style={styles.cdvStat}><Text style={[styles.cdvLabel, { color: palette.secondary }]}>Actual available deducts:</Text><Text style={[styles.cdvValue, { color: palette.text }]}>{displayedResult.actualDeducts}</Text></View>
-                      <View style={styles.cdvNote}><Feather color={palette.primary} name="info" size={14} /><Text style={[styles.cdvNoteText, { color: palette.secondary }]}>Therefore, all four DVs are retained.</Text></View>
-                    </View>
+                  <SectionHeading icon="correction" palette={palette} subtitle="§9.5.5: reduce the smallest deduct value above 2 to 2 until q = 1. Illustrative curves." title="CDV Correction Details" />
+                  <View style={[styles.cdvNoteBox, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
+                    <Feather color={palette.primary} name="info" size={14} />
+                    <Text style={[styles.cdvNoteText, styles.cdvNoteBody, { color: palette.secondary }]}>{result ? result.retention : 'Compute the PCI to see which deduct values are kept.'}</Text>
                   </View>
-                  <Pressable onPress={() => setShowDetails((current) => !current)} style={[styles.detailToggle, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
-                    <Feather color={palette.primary} name={showDetails ? 'chevron-up' : 'chevron-down'} size={16} />
-                    <Text style={[styles.detailToggleText, { color: palette.text }]}>View CDV Correction Details</Text>
-                  </Pressable>
-                  {showDetails ? (
-                    <ScrollView contentContainerStyle={styles.cdvTableScrollContent} horizontal nestedScrollEnabled showsHorizontalScrollIndicator={isPhone} style={styles.cdvTableViewport}>
-                    <View style={[styles.cdvTable, { borderColor: palette.border, width: isPhone ? 500 : '100%' }]}>
-                      <View style={[styles.cdvTableRow, styles.cdvTableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
-                        <Text style={[styles.cdvHead, styles.iterCol, { color: palette.text }]}>Iteration</Text><Text style={[styles.cdvHead, styles.adjustedCol, { color: palette.text }]}>Adjusted Deduct Values</Text><Text style={[styles.cdvHead, styles.qCol, { color: palette.text }]}>q</Text><Text style={[styles.cdvHead, styles.tdvCol, { color: palette.text }]}>TDV</Text><Text style={[styles.cdvHead, styles.cdvCol, { color: palette.text }]}>CDV (Illustrative)</Text>
-                      </View>
-                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 200 }}>
-                        {displayedResult.cdvIterations.map((iteration) => (
-                          <View key={iteration.iteration} style={[styles.cdvTableRow, { borderBottomColor: palette.border }]}>
-                            <Text style={[styles.cdvCell, styles.iterCol, { color: palette.text }]}>{iteration.iteration}</Text><Text style={[styles.cdvCell, styles.adjustedCol, { color: palette.text }]}>{iteration.adjustedDVs.join(', ')}</Text><Text style={[styles.cdvCell, styles.qCol, { color: palette.text }]}>{iteration.q}</Text><Text style={[styles.cdvCell, styles.tdvCol, { color: palette.text }]}>{iteration.tdv}</Text><Text style={[styles.cdvCell, styles.cdvCol, styles.boldCell, { color: palette.text }]}>{iteration.cdv}</Text>
+                  {result && !result.shortcut ? (
+                    <>
+                      <Pressable onPress={() => setShowDetails((current) => !current)} style={[styles.detailToggle, { backgroundColor: palette.cardSoft, borderColor: palette.border }]}>
+                        <Feather color={palette.primary} name={showDetails ? 'chevron-up' : 'chevron-down'} size={16} />
+                        <Text style={[styles.detailToggleText, { color: palette.text }]}>{showDetails ? 'Hide' : 'View'} CDV iterations</Text>
+                      </Pressable>
+                      {showDetails ? (
+                        <ScrollView contentContainerStyle={styles.cdvTableScrollContent} horizontal nestedScrollEnabled showsHorizontalScrollIndicator={isPhone} style={styles.cdvTableViewport}>
+                        <View style={[styles.cdvTable, { borderColor: palette.border, width: isPhone ? 500 : '100%' }]}>
+                          <View style={[styles.cdvTableRow, styles.cdvTableHeader, { backgroundColor: palette.cardSoft, borderBottomColor: palette.border }]}>
+                            <Text style={[styles.cdvHead, styles.iterCol, { color: palette.text }]}>Iteration</Text><Text style={[styles.cdvHead, styles.adjustedCol, { color: palette.text }]}>Adjusted Deduct Values</Text><Text style={[styles.cdvHead, styles.tdvCol, { color: palette.text }]}>TDV</Text><Text style={[styles.cdvHead, styles.qCol, { color: palette.text }]}>q</Text><Text style={[styles.cdvHead, styles.cdvCol, { color: palette.text }]}>CDV</Text>
                           </View>
-                        ))}
-                      </ScrollView>
-                    </View>
-                    </ScrollView>
+                          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true} style={{ maxHeight: 200 }}>
+                            {result.iterations.map((iteration, index) => {
+                              const isMax = index === result.maxIteration;
+                              return (
+                                <View key={index} style={[styles.cdvTableRow, { borderBottomColor: palette.border }, isMax && { backgroundColor: palette.blueSoft }]}>
+                                  <Text style={[styles.cdvCell, styles.iterCol, { color: palette.text }]}>{index + 1}</Text><Text style={[styles.cdvCell, styles.adjustedCol, { color: palette.text }]}>{iteration.adjusted_deducts.map((value) => fixed(value)).join(', ')}</Text><Text style={[styles.cdvCell, styles.tdvCol, { color: palette.text }]}>{fixed(iteration.total_deduct_value)}</Text><Text style={[styles.cdvCell, styles.qCol, { color: palette.text }]}>{iteration.q}</Text><Text style={[styles.cdvCell, styles.cdvCol, styles.boldCell, { color: isMax ? palette.primary : palette.text }]}>{fixed(iteration.corrected_deduct_value)}{isMax ? ' (max)' : ''}</Text>
+                                </View>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                        </ScrollView>
+                      ) : null}
+                    </>
                   ) : null}
-                  <View style={[styles.maxCdv, { backgroundColor: palette.cardSoft }]}><Text style={[styles.maxCdvLabel, { color: palette.text }]}>Maximum CDV (Illustrative)</Text><Text style={[styles.maxCdvValue, { color: palette.text }]}>{displayedResult.maxCDV}</Text></View>
-                  <Text style={[styles.cdvFootnote, { color: palette.secondary }]}>This prototype uses illustrative CDV approximations, not D6433-07 reference curves. Its displayed values cannot be submitted as verified PCI.</Text>
+                  <Text style={[styles.cdvFootnote, { color: palette.secondary }]}>Illustrative CDV curves, not ASTM D6433-07 Fig. X3.26 readings. These values cannot be submitted as an official PCI.</Text>
                 </Card>
               </View>
             </View>
 
             <View style={[styles.rightColumn, !isDesktop && styles.rightColumnCompact, !isTablet && styles.columnMobile]}>
               <Card palette={palette} style={styles.ratingCard}>
-                <SectionHeading icon="rating" number={6} palette={palette} subtitle="Final PCI value and corresponding condition rating." title="PCI and Condition Rating" />
-                <RatingGauge isDark={isDark} palette={palette} result={displayedResult} />
+                <SectionHeading icon="pci" number={5} palette={palette} subtitle="PCI = 100 − maximum CDV (§9.6)." title="Pavement Condition Index" />
+                <View style={[styles.pciFormula, { backgroundColor: palette.cardSoft }]}>
+                  <Text style={[styles.pciFormulaText, { color: palette.text }]}>100 − {result ? fixed(result.max_corrected_deduct_value) : '—'} =</Text>
+                  <Text style={[styles.pciFormulaValue, { color: palette.primary }]}>{result ? fixed(result.pci) : '—'}</Text>
+                </View>
+                <View style={[styles.cardDivider, { backgroundColor: palette.border }]} />
+                <SectionHeading icon="rating" number={6} palette={palette} subtitle="ASTM D6433-07 Fig. 1 condition rating." title="PCI Rating" />
+                <RatingGauge isDark={isDark} palette={palette} result={result} />
                 <View style={styles.ratingSummary}>
                   <Text style={[styles.conditionLabel, { color: palette.text }]}>Condition Rating</Text>
-                  <View style={[styles.ratingBadge, { backgroundColor: isComputed ? displayedConditionVisual.backgroundColor : palette.cardSoft, borderColor: isComputed ? displayedConditionVisual.borderColor : palette.border }]}><Text style={[styles.ratingBadgeText, { color: isComputed ? displayedConditionVisual.foregroundColor : palette.muted }]}>{isComputed ? displayedResult.rating.toUpperCase() : 'PENDING'}</Text></View>
-                  <Text style={[styles.ratingDescription, { color: palette.secondary }]}>{isComputed ? displayedResult.ratingDescription : 'Compute the sample to display its pavement condition.'}</Text>
+                  <View style={[styles.ratingBadge, { backgroundColor: conditionVisual?.backgroundColor ?? palette.cardSoft, borderColor: conditionVisual?.borderColor ?? palette.border }]}><Text style={[styles.ratingBadgeText, { color: conditionVisual?.foregroundColor ?? palette.muted }]}>{result ? result.condition.toUpperCase() : 'PENDING'}</Text></View>
+                  <Text style={[styles.ratingDescription, { color: palette.secondary }]}>{result ? result.category.description : 'Compute the sample to display its pavement condition.'}</Text>
                 </View>
                 <View style={[styles.legend, { borderColor: palette.border }]}>
                   <View style={styles.legendHeading}><Feather color={palette.primary} name="info" size={17} /><Text style={[styles.legendTitle, { color: palette.text }]}>PCI Condition Rating Legend</Text></View>
-                  {CONDITION_RATINGS.map((rating) => (
-                    <View key={rating.rating} style={[styles.legendRow, { backgroundColor: getPciConditionVisual(rating, isDark).backgroundColor, borderColor: getPciConditionVisual(rating, isDark).borderColor }]}>
-                      <View style={styles.legendName}><View style={[styles.legendDot, { backgroundColor: getPciConditionVisual(rating, isDark).accentColor }]} /><Text style={[styles.legendText, { color: getPciConditionVisual(rating, isDark).foregroundColor }]}>{rating.rating}</Text></View>
-                      <Text style={[styles.legendRange, { color: getPciConditionVisual(rating, isDark).foregroundColor }]}>{rating.range}</Text>
-                    </View>
-                  ))}
+                  {CONDITION_RATINGS.map((rating) => {
+                    const visual = getPciConditionVisual(rating, isDark);
+                    return (
+                      <View key={rating.rating} style={[styles.legendRow, { backgroundColor: visual.backgroundColor, borderColor: visual.borderColor }]}>
+                        <View style={styles.legendName}><View style={[styles.legendDot, { backgroundColor: visual.accentColor }]} /><Text style={[styles.legendText, { color: visual.foregroundColor }]}>{rating.rating}</Text></View>
+                        <Text style={[styles.legendRange, { color: visual.foregroundColor }]}>{rating.range}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
               </Card>
             </View>
@@ -642,10 +718,8 @@ const styles = StyleSheet.create({
   brandInverse: { color: '#FFFFFF' },
   homeLink: { alignItems: 'center', flexDirection: 'row', gap: 10, minHeight: 44 },
   homeLinkText: { fontSize: 15, fontWeight: '600' },
-  themeControls: { alignItems: 'center', flexDirection: 'row', gap: 8 },
-  toggleTrack: { backgroundColor: '#1850E0', borderRadius: 12, height: 20, justifyContent: 'center', paddingHorizontal: 2, width: 37 },
-  toggleThumb: { backgroundColor: '#FFFFFF', borderRadius: 8, height: 16, width: 16 },
-  toggleThumbDark: { alignSelf: 'flex-end' },
+  themeButton: { alignItems: 'center', borderRadius: 10, borderWidth: 1, height: 40, justifyContent: 'center', width: 40 },
+  themeButtonCompact: { height: 36, width: 36 },
   backButton: { alignItems: 'center', backgroundColor: '#1850E0', borderRadius: 10, boxShadow: '0 4px 12px rgba(24,80,224,0.25)', flexDirection: 'row', gap: 10, height: 40, justifyContent: 'center', paddingHorizontal: 18 },
   backButtonMobile: { height: 36, minWidth: 100, paddingHorizontal: 14 },
   backButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
@@ -765,21 +839,8 @@ const styles = StyleSheet.create({
   formulaPanel: { borderRadius: 6, marginTop: 8, padding: 10 },
   formulaLabel: { fontSize: 11, marginBottom: 12 },
   formulaRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
-  formulaPart: { alignItems: 'center', flexDirection: 'row', gap: 3 },
   formulaBox: { alignItems: 'center', borderRadius: 5, borderWidth: 1, height: 40, justifyContent: 'center', minWidth: 36 },
   formulaValue: { fontSize: 15, fontWeight: '600' },
-  formulaOperator: { fontSize: 16, fontWeight: '700' },
-  formulaTotal: { alignItems: 'center', borderRadius: 5, height: 42, justifyContent: 'center', minWidth: 45 },
-  formulaTotalText: { fontSize: 20, fontWeight: '800' },
-  formulaHelp: { fontSize: 11, lineHeight: 17, marginTop: 13 },
-  cdvStats: { borderRadius: 6, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', minHeight: 56, padding: 6 },
-  cdvStatsMobile: { alignItems: 'stretch', flexDirection: 'column' },
-  cdvStat: { alignItems: 'center', flexDirection: 'row', gap: 9 },
-  cdvStatWide: { borderLeftWidth: 1, flex: 1, marginLeft: 10, paddingLeft: 11 },
-  cdvStatWideMobile: { borderLeftWidth: 0, borderTopWidth: 1, marginLeft: 0, marginTop: 7, paddingLeft: 0, paddingTop: 7 },
-  cdvLabel: { fontSize: 10 },
-  cdvValue: { fontSize: 14, fontWeight: '800' },
-  cdvNote: { alignItems: 'center', flexDirection: 'row', gap: 5, marginTop: 3 },
   cdvNoteText: { fontSize: 9.5 },
   detailToggle: { alignItems: 'center', borderRadius: 5, borderWidth: 1, flexDirection: 'row', gap: 8, height: 29, marginTop: 5, paddingHorizontal: 8 },
   detailToggleText: { fontSize: 10, fontWeight: '700' },
@@ -850,4 +911,20 @@ const styles = StyleSheet.create({
   footerRight: { flexDirection: 'row', gap: 20 },
   footerRightMobile: { justifyContent: 'center' },
   footerText: { fontSize: 10 },
+  codeBadgeText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  notApplicable: { alignItems: 'center', justifyContent: 'center' },
+  noticeText: { fontSize: 10.5, lineHeight: 14, marginTop: 6 },
+  emptyTable: { fontSize: 11, padding: 14, textAlign: 'center' },
+  deductChip: { paddingHorizontal: 8 },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  statBox: { borderRadius: 5, borderWidth: 1, flexBasis: 80, flexGrow: 1, paddingHorizontal: 8, paddingVertical: 5 },
+  statLabel: { fontSize: 9.5 },
+  statValue: { fontSize: 15, fontWeight: '800', marginTop: 1 },
+  maxCdvTotal: { height: 38, marginTop: 10 },
+  cdvNoteBox: { alignItems: 'flex-start', borderRadius: 6, borderWidth: 1, flexDirection: 'row', gap: 6, padding: 7 },
+  cdvNoteBody: { flex: 1, fontSize: 10.5, lineHeight: 14 },
+  pciFormula: { alignItems: 'center', borderRadius: 6, flexDirection: 'row', gap: 10, justifyContent: 'center', paddingVertical: 8 },
+  pciFormulaText: { fontSize: 15, fontWeight: '600' },
+  pciFormulaValue: { fontSize: 22, fontWeight: '800' },
+  cardDivider: { height: 1, marginBottom: 10, marginTop: 12 },
 });

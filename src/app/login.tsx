@@ -19,19 +19,19 @@ import { supabase } from '@/lib/data/supabase';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
 const logoImage = require('../../assets/images/LAKAD.png');
+/** Open road under a clear sky: the login backdrop. */
+const roadImage = require('../../assets/images/lakad_hero_bg.png');
 
 const palettes = {
   light: {
-    // Page ground is a placeholder; the final background is designed later.
-    page: '#F3F6FC',
     card: '#FFFFFF',
-    cardBorder: '#E1E6F2',
+    cardBorder: 'rgba(255,255,255,0.7)',
     text: '#0B1D4D',
     secondary: '#4B5B7C',
     label: '#0B1D4D',
     input: '#F3F5F9',
     inputFocus: '#FFFFFF',
-    inputBorder: '#F3F5F9',
+    inputBorder: '#E3E8F2',
     placeholder: '#7A87A6',
     icon: '#5B6E98',
     primary: '#1850E0',
@@ -44,11 +44,9 @@ const palettes = {
     error: '#B62135',
     errorSurface: '#FFF0F2',
     errorBorder: '#FDA29B',
-    chip: '#FFFFFF',
-    chipHover: '#E9F0FE',
+    tint: 'rgba(6,18,58,0.38)',
   },
   dark: {
-    page: '#060F2E',
     card: '#0C1A42',
     cardBorder: '#1F3366',
     text: '#F8FAFC',
@@ -69,8 +67,7 @@ const palettes = {
     error: '#FECACA',
     errorSurface: '#451A1A',
     errorBorder: '#7F1D1D',
-    chip: '#0C1A42',
-    chipHover: '#13265A',
+    tint: 'rgba(3,8,28,0.58)',
   },
 } as const;
 
@@ -147,197 +144,214 @@ export default function LoginScreen() {
     if (errorMessage) setErrorMessage('');
   };
 
+  const edge = isCompact ? 18 : width >= 1024 ? 56 : 32;
+
   return (
-    <View style={[styles.page, { backgroundColor: colors.page, minHeight: height }]}>
+    <View style={[styles.page, { minHeight: height }]}>
+      <Image
+        accessible={false}
+        contentFit="cover"
+        contentPosition={{ left: '50%', top: '52%' }}
+        source={roadImage}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.tint }]} />
+
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { minHeight: height }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <View style={[styles.topBar, isCompact && styles.topBarCompact]}>
-          <Pressable
-            accessibilityRole="link"
-            accessibilityLabel="Back to Home"
-            hitSlop={6}
-            onPress={() => router.push('/')}
-            style={styles.backLink}>
-            {({ hovered, pressed }: any) => (
-              <>
-                <Feather
-                  color={colors.text}
-                  name="arrow-left"
-                  size={20}
-                  style={{ transform: [{ translateX: hovered && !pressed ? -3 : 0 }] }}
-                />
-                <Text style={[styles.backText, { color: colors.text, textDecorationLine: hovered ? 'underline' : 'none' }]}>
-                  Back to Home
-                </Text>
-              </>
-            )}
-          </Pressable>
-
-          <Pressable
-            accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={toggleColorScheme}
-            style={({ pressed, hovered }: any) => [
-              styles.themeButton,
-              {
-                backgroundColor: hovered ? colors.chipHover : colors.chip,
-                borderColor: hovered ? colors.focus : colors.cardBorder,
-                transform: [{ scale: pressed ? 0.94 : 1 }],
-              },
-            ] as any}>
-            <Feather color={isDark ? '#FFD66B' : colors.text} name={isDark ? 'sun' : 'moon'} size={18} />
-          </Pressable>
-        </View>
-
-        <View style={styles.center}>
-          <View
-            style={[
-              styles.card,
-              isCompact && styles.cardCompact,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.cardBorder,
-                ...(Platform.OS === 'web'
-                  ? { boxShadow: `0 20px 48px ${isDark ? 'rgba(0,0,0,0.30)' : 'rgba(10,27,77,0.08)'}` }
-                  : { shadowColor: isDark ? '#000000' : '#0A1B4D' }),
-              },
-            ]}>
-            <View accessible accessibilityLabel="LAKAD, Where Data Meets the Road" style={styles.brand}>
-              <Image contentFit="contain" source={logoImage} style={isCompact ? styles.logoCompact : styles.logo} />
-              <View>
-                <Text style={[styles.brandName, isCompact && styles.brandNameCompact, { color: colors.text }]}>LAKAD</Text>
-                <Text style={[styles.brandTagline, { color: isDark ? '#B9C9F2' : '#1850E0' }]}>Where Data Meets the Road</Text>
-              </View>
-            </View>
-
-            <Text accessibilityRole="header" style={[styles.heading, isCompact && styles.headingCompact, { color: colors.text }]}>
-              Welcome Back
-            </Text>
-            <Text style={[styles.subheading, { color: colors.secondary }]}>Sign in to access the LAKAD system.</Text>
-
-            {errorMessage ? (
-              <View
-                accessibilityLiveRegion="polite"
-                style={[styles.errorBanner, { backgroundColor: colors.errorSurface, borderColor: colors.errorBorder }]}>
-                <Feather color={colors.error} name="alert-circle" size={18} />
-                <Text style={[styles.errorText, { color: colors.error }]}>{errorMessage}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.fieldGroup}>
-              <Text nativeID="email-label" style={[styles.fieldLabel, { color: colors.label }]}>
-                Email address
-              </Text>
-              <View
-                style={[
-                  styles.inputShell,
-                  { backgroundColor: colors.input, borderColor: colors.inputBorder },
-                  focusedField === 'email' && {
-                    backgroundColor: colors.inputFocus,
-                    borderColor: colors.focus,
-                    ...(Platform.OS === 'web' ? { boxShadow: `0 0 0 3px ${colors.ring}` } : {}),
-                  },
-                ]}>
-                <TextInput
-                  accessibilityLabelledBy="email-label"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  autoCorrect={false}
-                  editable={!loading}
-                  keyboardType="email-address"
-                  onBlur={() => setFocusedField(null)}
-                  onChangeText={updateEmail}
-                  onFocus={() => setFocusedField('email')}
-                  onSubmitEditing={() => passwordRef.current?.focus()}
-                  placeholder="name@example.com"
-                  placeholderTextColor={colors.placeholder}
-                  returnKeyType="next"
-                  style={[styles.textInput, { color: colors.text }]}
-                  textContentType="emailAddress"
-                  value={email}
-                />
-              </View>
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text nativeID="password-label" style={[styles.fieldLabel, { color: colors.label }]}>
-                Password
-              </Text>
-              <View
-                style={[
-                  styles.inputShell,
-                  { backgroundColor: colors.input, borderColor: colors.inputBorder },
-                  focusedField === 'password' && {
-                    backgroundColor: colors.inputFocus,
-                    borderColor: colors.focus,
-                    ...(Platform.OS === 'web' ? { boxShadow: `0 0 0 3px ${colors.ring}` } : {}),
-                  },
-                ]}>
-                <TextInput
-                  ref={passwordRef}
-                  accessibilityLabelledBy="password-label"
-                  autoComplete="current-password"
-                  editable={!loading}
-                  onBlur={() => setFocusedField(null)}
-                  onChangeText={updatePassword}
-                  onFocus={() => setFocusedField('password')}
-                  onSubmitEditing={() => void handleLogin()}
-                  placeholder="Enter your password"
-                  placeholderTextColor={colors.placeholder}
-                  returnKeyType="go"
-                  secureTextEntry={!showPassword}
-                  style={[styles.textInput, { color: colors.text }]}
-                  textContentType="password"
-                  value={password}
-                />
-                <Pressable
-                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={() => setShowPassword((isVisible) => !isVisible)}
-                  style={styles.passwordToggle}>
-                  <Feather color={colors.icon} name={showPassword ? 'eye-off' : 'eye'} size={18} />
-                </Pressable>
-              </View>
-            </View>
-
+        <View style={[styles.frame, { paddingHorizontal: edge }]}>
+          <View style={styles.topBar}>
             <Pressable
-              accessibilityLabel={loading ? 'Signing in' : 'Sign in'}
-              accessibilityRole="button"
-              accessibilityState={{ busy: loading, disabled: loading }}
-              disabled={loading}
-              onPress={() => void handleLogin()}
-              style={({ pressed, hovered }: any) => [
-                styles.submitButton,
-                {
-                  backgroundColor: pressed ? colors.primaryPressed : hovered ? colors.primaryHover : colors.primary,
-                  opacity: loading ? 0.72 : 1,
-                  transform: [{ translateY: hovered && !pressed ? -1 : 0 }, { scale: pressed ? 0.98 : 1 }],
-                },
-              ] as any}>
-              {loading ? (
-                <View style={styles.loadingLabel}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                  <Text style={styles.submitButtonText}>Signing in…</Text>
-                </View>
-              ) : (
-                <Text style={styles.submitButtonText}>Sign in</Text>
+              accessibilityRole="link"
+              accessibilityLabel="Back to Home"
+              hitSlop={6}
+              onPress={() => router.push('/')}
+              style={styles.backLink}>
+              {({ hovered, pressed }: any) => (
+                <>
+                  <Feather
+                    color="#FFFFFF"
+                    name="arrow-left"
+                    size={20}
+                    style={{ transform: [{ translateX: hovered && !pressed ? -3 : 0 }] }}
+                  />
+                  <Text style={[styles.backText, { textDecorationLine: hovered ? 'underline' : 'none' }]}>
+                    Back to Home
+                  </Text>
+                </>
               )}
             </Pressable>
 
-            <View style={[styles.accessHelp, { borderTopColor: colors.divider }]}>
-              <Text style={[styles.accessHelpText, { color: colors.secondary }]}>
-                Need access?{' '}
-                <Text
-                  accessibilityRole="link"
-                  onPress={() => openContact(router.push)}
-                  style={[styles.accessLink, { color: colors.link }]}>
-                  Contact your system administrator.
-                </Text>
+            <Pressable
+              accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={toggleColorScheme}
+              style={({ pressed, hovered }: any) => [
+                styles.themeButton,
+                {
+                  backgroundColor: hovered ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.16)',
+                  transform: [{ scale: pressed ? 0.94 : 1 }],
+                },
+              ] as any}>
+              <Feather color={isDark ? '#FFD66B' : '#FFFFFF'} name={isDark ? 'sun' : 'moon'} size={18} />
+            </Pressable>
+          </View>
+
+          <View style={styles.body}>
+            <View
+              style={[
+                styles.card,
+                isCompact && styles.cardCompact,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.cardBorder,
+                  ...(Platform.OS === 'web'
+                    ? { boxShadow: `0 24px 60px ${isDark ? 'rgba(0,0,0,0.45)' : 'rgba(6,18,58,0.28)'}` }
+                    : { shadowColor: '#000000' }),
+                },
+              ]}>
+              <View accessible accessibilityLabel="LAKAD, Where Data Meets the Road" style={styles.brand}>
+                <Image contentFit="contain" source={logoImage} style={isCompact ? styles.logoCompact : styles.logo} />
+                <View>
+                  <Text style={[styles.brandName, isCompact && styles.brandNameCompact, { color: colors.text }]}>LAKAD</Text>
+                  <Text style={[styles.brandTagline, { color: isDark ? '#B9C9F2' : '#1850E0' }]}>Where Data Meets the Road</Text>
+                </View>
+              </View>
+
+              <Text accessibilityRole="header" style={[styles.heading, isCompact && styles.headingCompact, { color: colors.text }]}>
+                Sign in to LAKAD
               </Text>
+              <Text style={[styles.subheading, { color: colors.secondary }]}>Use the account your system administrator created for you.</Text>
+
+              {errorMessage ? (
+                <View
+                  accessibilityLiveRegion="polite"
+                  style={[styles.errorBanner, { backgroundColor: colors.errorSurface, borderColor: colors.errorBorder }]}>
+                  <Feather color={colors.error} name="alert-circle" size={18} />
+                  <Text style={[styles.errorText, { color: colors.error }]}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.fieldGroup}>
+                <Text nativeID="email-label" style={[styles.fieldLabel, { color: colors.label }]}>
+                  Email address
+                </Text>
+                <View
+                  style={[
+                    styles.inputShell,
+                    { backgroundColor: colors.input, borderColor: colors.inputBorder },
+                    focusedField === 'email' && {
+                      backgroundColor: colors.inputFocus,
+                      borderColor: colors.focus,
+                      ...(Platform.OS === 'web' ? { boxShadow: `0 0 0 3px ${colors.ring}` } : {}),
+                    },
+                  ]}>
+                  <Feather color={colors.icon} name="mail" size={17} style={styles.inputIcon} />
+                  <TextInput
+                    accessibilityLabelledBy="email-label"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    autoCorrect={false}
+                    editable={!loading}
+                    keyboardType="email-address"
+                    onBlur={() => setFocusedField(null)}
+                    onChangeText={updateEmail}
+                    onFocus={() => setFocusedField('email')}
+                    onSubmitEditing={() => passwordRef.current?.focus()}
+                    placeholder="name@example.com"
+                    placeholderTextColor={colors.placeholder}
+                    returnKeyType="next"
+                    style={[styles.textInput, { color: colors.text }]}
+                    textContentType="emailAddress"
+                    value={email}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text nativeID="password-label" style={[styles.fieldLabel, { color: colors.label }]}>
+                  Password
+                </Text>
+                <View
+                  style={[
+                    styles.inputShell,
+                    { backgroundColor: colors.input, borderColor: colors.inputBorder },
+                    focusedField === 'password' && {
+                      backgroundColor: colors.inputFocus,
+                      borderColor: colors.focus,
+                      ...(Platform.OS === 'web' ? { boxShadow: `0 0 0 3px ${colors.ring}` } : {}),
+                    },
+                  ]}>
+                  <Feather color={colors.icon} name="lock" size={17} style={styles.inputIcon} />
+                  <TextInput
+                    ref={passwordRef}
+                    accessibilityLabelledBy="password-label"
+                    autoComplete="current-password"
+                    editable={!loading}
+                    onBlur={() => setFocusedField(null)}
+                    onChangeText={updatePassword}
+                    onFocus={() => setFocusedField('password')}
+                    onSubmitEditing={() => void handleLogin()}
+                    placeholder="Enter your password"
+                    placeholderTextColor={colors.placeholder}
+                    returnKeyType="go"
+                    secureTextEntry={!showPassword}
+                    style={[styles.textInput, { color: colors.text }]}
+                    textContentType="password"
+                    value={password}
+                  />
+                  <Pressable
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={() => setShowPassword((isVisible) => !isVisible)}
+                    style={styles.passwordToggle}>
+                    <Feather color={colors.icon} name={showPassword ? 'eye-off' : 'eye'} size={18} />
+                  </Pressable>
+                </View>
+              </View>
+
+              <Pressable
+                accessibilityLabel={loading ? 'Signing in' : 'Sign in'}
+                accessibilityRole="button"
+                accessibilityState={{ busy: loading, disabled: loading }}
+                disabled={loading}
+                onPress={() => void handleLogin()}
+                style={({ pressed, hovered }: any) => [
+                  styles.submitButton,
+                  {
+                    backgroundColor: pressed ? colors.primaryPressed : hovered ? colors.primaryHover : colors.primary,
+                    opacity: loading ? 0.72 : 1,
+                    transform: [{ translateY: hovered && !pressed ? -1 : 0 }, { scale: pressed ? 0.98 : 1 }],
+                  },
+                ] as any}>
+                {loading ? (
+                  <View style={styles.loadingLabel}>
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <Text style={styles.submitButtonText}>Signing in…</Text>
+                  </View>
+                ) : (
+                  <View style={styles.loadingLabel}>
+                    <Text style={styles.submitButtonText}>Sign in</Text>
+                    <Feather color="#FFFFFF" name="arrow-right" size={18} />
+                  </View>
+                )}
+              </Pressable>
+
+              <View style={[styles.accessHelp, { borderTopColor: colors.divider }]}>
+                <Text style={[styles.accessHelpText, { color: colors.secondary }]}>
+                  Need access?{' '}
+                  <Text
+                    accessibilityRole="link"
+                    onPress={() => openContact(router.push)}
+                    style={[styles.accessLink, { color: colors.link }]}>
+                    Contact your system administrator.
+                  </Text>
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -348,21 +362,26 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   page: {
+    backgroundColor: '#0A1B4D',
     flex: 1,
+    overflow: 'hidden',
     width: '100%',
   },
   scrollContent: {
+    flexGrow: 1,
     paddingBottom: 40,
+  },
+  frame: {
+    alignSelf: 'center',
+    flex: 1,
+    maxWidth: 1320,
+    width: '100%',
   },
   topBar: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 36,
-    paddingTop: Platform.OS === 'web' ? 28 : 52,
-  },
-  topBarCompact: {
-    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'web' ? 24 : 52,
   },
   backLink: {
     alignItems: 'center',
@@ -371,87 +390,88 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   backText: {
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
   },
   themeButton: {
     alignItems: 'center',
+    borderColor: 'rgba(255,255,255,0.4)',
     borderRadius: 20,
     borderWidth: 1,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
-  center: {
+  body: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingTop: 24,
   },
   card: {
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     maxWidth: 440,
-    paddingBottom: 30,
-    paddingHorizontal: 38,
-    paddingTop: 40,
+    paddingBottom: 28,
+    paddingHorizontal: 36,
+    paddingTop: 36,
     width: '100%',
     ...Platform.select({
       web: {},
-      default: { shadowOffset: { height: 14, width: 0 }, shadowOpacity: 0.1, shadowRadius: 30 },
+      default: { shadowOffset: { height: 14, width: 0 }, shadowOpacity: 0.22, shadowRadius: 30 },
     }),
   },
   cardCompact: {
     borderRadius: 18,
     paddingHorizontal: 22,
-    paddingTop: 30,
+    paddingTop: 28,
   },
   brand: {
     alignItems: 'center',
-    alignSelf: 'center',
     flexDirection: 'row',
     gap: 10,
+    justifyContent: 'center',
   },
   logo: {
-    height: 66,
-    width: 62,
-  },
-  logoCompact: {
     height: 54,
     width: 50,
   },
+  logoCompact: {
+    height: 48,
+    width: 44,
+  },
   brandName: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '900',
     letterSpacing: 0.8,
-    lineHeight: 37,
+    lineHeight: 31,
   },
   brandNameCompact: {
-    fontSize: 29,
-    lineHeight: 32,
+    fontSize: 25,
+    lineHeight: 28,
   },
   brandTagline: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   heading: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '800',
     letterSpacing: -0.6,
-    lineHeight: 36,
-    marginTop: 28,
+    lineHeight: 34,
+    marginTop: 26,
     textAlign: 'center',
   },
   headingCompact: {
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 25,
+    lineHeight: 31,
   },
   subheading: {
-    fontSize: 15.5,
-    lineHeight: 23,
-    marginBottom: 28,
-    marginTop: 8,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 24,
+    marginTop: 6,
     textAlign: 'center',
   },
   errorBanner: {
@@ -470,7 +490,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   fieldGroup: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   fieldLabel: {
     fontSize: 14,
@@ -489,11 +509,14 @@ const styles = StyleSheet.create({
       default: { shadowOffset: { height: 0, width: 0 }, shadowOpacity: 0.2, shadowRadius: 3 },
     }),
   },
+  inputIcon: {
+    marginLeft: 14,
+  },
   textInput: {
     flex: 1,
     fontSize: 15.5,
     height: '100%',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     ...Platform.select({ web: { outlineStyle: 'none' } as object, default: {} }),
   },
   passwordToggle: {
@@ -507,9 +530,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     height: 50,
     justifyContent: 'center',
-    marginTop: 6,
+    marginTop: 8,
     ...Platform.select({
-      web: { boxShadow: '0 10px 22px rgba(24,80,224,0.26)' },
+      web: { boxShadow: '0 10px 22px rgba(24,80,224,0.30)', transitionDuration: '150ms', transitionProperty: 'transform, background-color' } as object,
       default: { shadowColor: '#1850E0', shadowOffset: { height: 5, width: 0 }, shadowOpacity: 0.2, shadowRadius: 10 },
     }),
   },
@@ -524,10 +547,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   accessHelp: {
-    alignItems: 'center',
     borderTopWidth: 1,
-    marginTop: 26,
-    paddingTop: 20,
+    marginTop: 24,
+    paddingTop: 18,
   },
   accessHelpText: {
     fontSize: 13.5,

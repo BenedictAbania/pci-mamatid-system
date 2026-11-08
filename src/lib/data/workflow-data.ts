@@ -3,15 +3,15 @@ import type { BranchRecord, DistressRecord, DistressTypeRecord, InspectionRecord
 import type { CalculationOutput, ReferenceDistress } from '../pci/pci-service';
 
 export type WorkflowState = 'planned' | 'draft' | 'submitted' | 'returned' | 'approved' | 'published';
-export type Sample = InspectionRecord & { workflow_state: WorkflowState; assigned_to: string | null; reviewer_id: string | null; input_revision: number; action_version: number; current_approved_computation_id: string | null; start_m: number | null; end_m: number | null; inspection_notes: string | null; no_distress_confirmed: boolean; orientation_note: string | null; field_rules_confirmed: boolean; computation_id: string | null };
+export type Sample = InspectionRecord & { workflow_state: WorkflowState; assigned_to: string | null; reviewer_id: string | null; input_revision: number; action_version: number; current_approved_computation_id: string | null; start_m: number | null; end_m: number | null; inspection_notes: string | null; no_distress_confirmed: boolean; orientation_note: string | null; field_rules_confirmed: boolean; computation_id: string | null; survey_round?: number };
 export type RoadSection = SectionRecord & { start_description: string | null; end_description: string | null; homogeneous_confirmed_by: string | null; latitude: number | null; longitude: number | null };
 export type DistressDetails = { location_m?: number | null; potholes?: import('../d6433-07/catalog.ts').PotholeDetails; severity_guidance?: import('../d6433-07/severity-guidance.ts').SeverityGuidanceSnapshot; measurement_parts?: import('../d6433-07/measurement-parts.ts').MeasurementPart[]; severity_evidence?: { metric: string; value_mm: number } | null };
 export type Computation = { id: string; sample_unit_id: string; input_revision: number; edition: string; verification: 'pending' | 'verified'; reference_id: string | null; input_snapshot?: { distresses?: { id: string; distress_type_id: string; severity: string | null; quantity?: number; unit_of_measure?: string; measurement_details?: DistressDetails }[]; report_context?: { distress_names?: Record<string, string> } }; output_snapshot: (CalculationOutput & Partial<import("../d6433-07/sample.ts").SampleOutput>) | null; created_at: string };
 export type History = { id: string; sample_unit_id: string; actor_id: string; action: string; comments: string | null; revision: number; created_at: string };
-export type Photo = { id: string; sample_unit_id: string; photo_path: string; caption: string | null };
+export type Photo = { id: string; sample_unit_id: string; photo_path: string; caption: string | null; distress_record_id?: string | null };
 export type SectionResult = { id: string; section_id: string; edition: string; pci: number; condition: string; safety: boolean; high_severity: number; affected_area: number; sample_computation_ids: string[]; method: string; weights: Record<string, number>; published_at: string };
 export type Settings = { active_edition: string; priority_safety: boolean; priority_area: boolean; updated_at?: string };
-export type CatalogType = DistressTypeRecord & ReferenceDistress & { severity_descriptions?: Partial<Record<'low' | 'medium' | 'high', string>>; updated_at?: string };
+export type CatalogType = DistressTypeRecord & ReferenceDistress & { severity_descriptions?: Partial<Record<'low' | 'medium' | 'high', string>>; severity_photos?: import('./reference-photos').SeverityPhotos; updated_at?: string };
 export type WorkflowData = { samples: Sample[]; sections: RoadSection[]; branches: BranchRecord[]; profiles: ProfileRecord[]; types: CatalogType[]; distresses: (DistressRecord & { measurement_details: DistressDetails })[]; computations: Computation[]; history: History[]; photos: Photo[]; results: SectionResult[]; settings: Settings; audit: { id: string; action: string; created_at: string }[] };
 
 export const WORKFLOW_PAGE_SIZE = 50;
@@ -106,6 +106,70 @@ export async function workflowAction(sample: Sample, action: string, payload: Re
   const { error } = await supabase.rpc('lakad_inspection_action', { target: sample.id, action, payload: { ...payload, revision: sample.input_revision, version: sample.action_version } });
   if (error) throw new Error(error.message);
 }
+/** Reloads one sample so a follow-up action carries its current revision and action tokens. */
+export async function reloadSample(id: string, step: string): Promise<Sample> {
+  const { data, error } = await supabase.from('sample_units').select('*').eq('id', id).single();
+  if (error || !data) throw new Error(`The inspection was ${step}, but its latest revision could not be loaded. Refresh and try again.`);
+  return data as Sample;
+}
+/** Starts a planned unit and returns its fresh revision and action tokens for the next action. */
+export async function startInspection(sample: Sample): Promise<Sample> {
+  await workflowAction(sample, 'start');
+  return reloadSample(sample.id, 'started');
+}
+export type FinishDetails = { orientation_note: string; no_distress_confirmed: boolean };
+export type InspectionPreview = { revision: number; output: import('../d6433-07/sample.ts').SampleOutput };
+/**
+ * Finish inspection: save the remaining required details, then compute the provisional
+ * PCI of the current draft on the server. Nothing is submitted and the preview is not saved.
+ */
+export async function finishInspection(sample: Sample, details: FinishDetails): Promise<InspectionPreview> {
+  let current = sample.workflow_state === 'planned' ? await startInspection(sample) : sample;
+  const orientation = details.orientation_note.trim();
+  if (current.orientation_note !== orientation || !current.field_rules_confirmed || current.no_distress_confirmed !== details.no_distress_confirmed) {
+    await workflowAction(current, 'save', {
+      notes: current.inspection_notes ?? '', surveyed_at: current.surveyed_at?.slice(0, 10) ?? '',
+      latitude: current.latitude?.toString() ?? '', longitude: current.longitude?.toString() ?? '',
+      no_distress_confirmed: details.no_distress_confirmed, area_sqm: Number(current.area_sqm),
+      orientation_note: orientation, field_rules_confirmed: true,
+    });
+    current = await reloadSample(current.id, 'saved');
+  }
+  const output = await calculateProvisional('preview', current.id) as InspectionPreview['output'];
+  return { revision: current.input_revision, output };
+}
+/** Submit Report: lock the revision for engineer review, then record its provisional PCI. */
+export async function submitReport(sample: Sample) {
+  await workflowAction(sample, 'submit');
+  try { return await calculateProvisional('sample', sample.id); }
+  catch (reason) {
+    throw new Error(`The report was submitted for review, but the PCI could not be saved: ${reason instanceof Error ? reason.message : 'calculation failed'}. Use Compute PCI to try again.`);
+  }
+}
+/** Reviewer: compute the provisional section PCI on the server, then publish it. */
+export async function publishSectionResult(sectionId: string) {
+  await calculateProvisional('section', sectionId);
+  await callWorkflow('lakad_publish_section_result', { target: sectionId });
+}
+/** A confirmed plan for round 2 or later (round 1 lives on the section). */
+export type SurveyRoundPlan = { round: number; method: 'all' | 'confidence' | 'reduced'; total: number; required: number; interval: number; first: number; deviation: number | null; previous_count: number; confirmed_at: string };
+/** Current round progress and the §7.5.2.1 Eq. 2 statistics of its random sample units. */
+export type SurveyRounds = { current_round: number; units: number; published: number; ready: boolean; random_count: number; mean: number | null; deviation: number | null; rounds: SurveyRoundPlan[] };
+
+const numberOrNull = (value: unknown) => (value === null || value === undefined ? null : Number(value));
+
+export async function loadSurveyRounds(sectionId: string): Promise<SurveyRounds> {
+  const { data, error } = await supabase.rpc('lakad_survey_rounds', { target: sectionId });
+  if (error) throw new Error(error.message);
+  const raw = data as Omit<SurveyRounds, 'mean' | 'deviation'> & { mean: unknown; deviation: unknown; rounds: (Omit<SurveyRoundPlan, 'deviation'> & { deviation: unknown })[] };
+  return {
+    ...raw,
+    mean: numberOrNull(raw.mean),
+    deviation: numberOrNull(raw.deviation),
+    rounds: (raw.rounds ?? []).map((plan) => ({ ...plan, deviation: numberOrNull(plan.deviation) })),
+  };
+}
+
 export async function callWorkflow(name: string, args: Record<string, unknown>) {
   const { error } = await supabase.rpc(name, args);
   if (error) throw new Error(error.message);
@@ -116,7 +180,7 @@ export function latestSectionResults(results: SectionResult[]) {
   return [...latest.values()];
 }
 
-export async function calculateProvisional(kind: 'sample' | 'section', target: string) {
+export async function calculateProvisional(kind: 'sample' | 'preview' | 'section', target: string) {
   const {data,error}=await supabase.functions.invoke('calculate-pci',{body:{kind,target}});
   if(error) {
     const response=error.context; let message=error.message;

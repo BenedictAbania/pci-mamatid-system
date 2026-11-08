@@ -75,21 +75,21 @@ export function Choices({ label, value, options, onChange }: { label: string; va
 }
 
 /** Native select on web; accessible scrollable choice sheet on phones. */
-export function CatalogDropdown({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
+export function CatalogDropdown({ label, value, options, onChange, placeholder = 'Choose a distress type' }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; placeholder?: string }) {
   const p = useAdminPalette();
   const id = `lakad-catalog-${useId()}`;
   const [open, setOpen] = useState(false);
   if (Platform.OS === 'web') return <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
     <label htmlFor={id} style={{ color: p.text, fontWeight: 700 }}>{label}</label>
     <select id={id} aria-label={label} value={value} onChange={event => onChange(event.currentTarget.value)} style={{ minHeight: 48, width: '100%', maxWidth: 520, borderWidth: 1, borderStyle: 'solid', borderColor: p.border, borderRadius: 8, background: p.panel, color: p.text, padding: 10, fontSize: 16 }}>
-      <option value="">Choose a distress type</option>
+      <option value="">{placeholder}</option>
       {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
   </div>;
   return <View style={{ gap: 7 }}>
     <Text style={{ color: p.text, fontWeight: '700' }}>{label}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${options.find(option => option.value === value)?.label ?? 'Choose a distress type'}`} onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: p.border, borderRadius: 8, backgroundColor: p.panel, padding: 12, justifyContent: 'center' }}>
-      <Text style={{ color: value ? p.text : p.muted }}>{options.find(option => option.value === value)?.label ?? 'Choose a distress type'} ▾</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${options.find(option => option.value === value)?.label ?? placeholder}`} onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: p.border, borderRadius: 8, backgroundColor: p.panel, padding: 12, justifyContent: 'center' }}>
+      <Text style={{ color: value ? p.text : p.muted }}>{options.find(option => option.value === value)?.label ?? placeholder} ▾</Text>
     </Pressable>
     <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
       <View style={{ flex: 1, backgroundColor: layout.scrim, justifyContent: 'flex-end' }}>

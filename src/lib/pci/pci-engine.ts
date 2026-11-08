@@ -1,131 +1,52 @@
 /**
- * PCI Computation Engine
+ * Public prototype PCI engine.
  *
- * Shared module for computing the Pavement Condition Index following the
- * ASTM D6433-07 procedure structure.
+ * Runs the same ASTM D6433-07 sample procedure as official inspections, through the
+ * shared engine in `../d6433-07/sample.ts`: one record per distress and severity
+ * (§9.1), density (§§9.1–9.2), the §9.5.1 shortcut, allowable deducts m (§9.5.3, Eq. 4),
+ * the fractional deduct (§9.5.4), CDV iteration (§9.5.5), PCI = 100 − max CDV (§9.6)
+ * and the Fig. 1 rating. Values keep full precision; screens round for display only.
  *
- * IMPORTANT — The Deduct Value lookup curves in this module are simplified
- * illustrative approximations. They are NOT the verified ASTM D6433 tables.
- * The CDV correction procedure follows the real iterative method but uses
- * approximate correction curves for demonstration purposes.
+ * IMPORTANT: the deduct-value and CDV curves below are simplified illustrative
+ * approximations. They are NOT ASTM D6433-07 curve readings. Official calculations
+ * run on the server with the private curve package; this module never sees it.
  *
- * This module is intentionally free of Supabase or network dependencies so
- * it can be reused in both the public prototype and the authenticated
- * inspection workflow.
+ * This module has no Supabase or network dependency.
  */
 
-import { getPciConditionCategory, PCI_CONDITION_SCALE, type PciConditionCategory } from './pci-classification';
-import type { DistressSeverity } from './severity-colors';
+import { ASPHALT_CATALOG, EDITION, definition, type Severity, type Unit } from '../d6433-07/catalog.ts';
+import type { CurveReader } from '../d6433-07/curves.ts';
+import { calculateSample, type SampleOutput } from '../d6433-07/sample.ts';
+import { getPciConditionCategory, PCI_CONDITION_SCALE, type PciConditionCategory } from './pci-classification.ts';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+export type { Severity, Unit };
 
-export type Severity = DistressSeverity;
-
-export type MeasurementUnit = 'm\u00B2' | 'm' | 'No.';
-
-export interface DistressTypeInfo {
-  id: number;
-  name: string;
-  unit: MeasurementUnit;
-  severities: readonly Severity[];
-}
-
-export interface DistressEntry {
-  /** Client-side unique identifier for list management. */
+/** One distress row in the demonstration list. Severity is null only for Polished Aggregate. */
+export interface DemoEntry {
   uid: string;
-  distressId: number;
-  distressName: string;
-  severity: Severity;
+  code: number;
+  severity: Severity | null;
   quantity: number;
-  unit: MeasurementUnit;
 }
 
-export interface ComputedDistress extends DistressEntry {
-  density: number;
-  deductValue: number;
-}
+export type DemoRow = SampleOutput['groups'][number] & { name: string };
 
-export interface CDVIteration {
-  iteration: number;
-  adjustedDVs: number[];
-  q: number;
-  tdv: number;
-  cdv: number;
-  isMax: boolean;
-}
+export type DemoResult = SampleOutput & {
+  rows: DemoRow[];
+  category: PciConditionCategory;
+  /** Deduct values from highest to lowest. */
+  sortedDeducts: number[];
+  /** True when at most one deduct value exceeds 2 (§9.5.1): max CDV = TDV, no iteration. */
+  shortcut: boolean;
+  /** Index of the iteration with the maximum CDV, or -1 for the shortcut. */
+  maxIteration: number;
+  /** Plain-language account of which deduct values entered the CDV iteration. */
+  retention: string;
+};
 
-export type ConditionCategory = PciConditionCategory;
-
-export interface PCIResult {
-  distresses: ComputedDistress[];
-  totalDeductValue: number;
-  highestDV: number;
-  allowableDeducts: number;
-  actualDeducts: number;
-  cdvIterations: CDVIteration[];
-  maxCDV: number;
-  pci: number;
-  rating: string;
-  ratingColor: string;
-  ratingDarkColor: string;
-  ratingDescription: string;
-}
-
-// ---------------------------------------------------------------------------
-// ASTM D6433-07 Asphalt Distress Catalog (19 types)
-// ---------------------------------------------------------------------------
-
-export const ASPHALT_DISTRESSES: readonly DistressTypeInfo[] = [
-  { id: 1, name: 'Alligator Cracking', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 2, name: 'Bleeding', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 3, name: 'Block Cracking', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 4, name: 'Bumps and Sags', unit: 'm', severities: ['Low', 'Medium', 'High'] },
-  { id: 5, name: 'Corrugation', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 6, name: 'Depression', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 7, name: 'Edge Cracking', unit: 'm', severities: ['Low', 'Medium', 'High'] },
-  { id: 8, name: 'Joint Reflection Cracking', unit: 'm', severities: ['Low', 'Medium', 'High'] },
-  { id: 9, name: 'Lane/Shoulder Drop-Off', unit: 'm', severities: ['Low', 'Medium', 'High'] },
-  { id: 10, name: 'Longitudinal Cracking', unit: 'm', severities: ['Low', 'Medium', 'High'] },
-  { id: 11, name: 'Patching and Utility Cut Patching', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 12, name: 'Polished Aggregate', unit: 'm\u00B2', severities: [] },
-  { id: 13, name: 'Potholes', unit: 'No.', severities: ['Low', 'Medium', 'High'] },
-  { id: 14, name: 'Railroad Crossing', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 15, name: 'Rutting', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 16, name: 'Shoving', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 17, name: 'Slippage Cracking', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 18, name: 'Swell', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-  { id: 19, name: 'Weathering and Raveling', unit: 'm\u00B2', severities: ['Low', 'Medium', 'High'] },
-] as const;
-
-// ---------------------------------------------------------------------------
-// Condition Rating Scale (7 tiers, non-overlapping whole-number ranges)
-// ---------------------------------------------------------------------------
-
-export const CONDITION_RATINGS: readonly ConditionCategory[] = PCI_CONDITION_SCALE;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Linear interpolation on a sorted array of [x, y] points. */
-function interpolate(points: readonly (readonly [number, number])[], x: number): number {
-  if (points.length === 0) return 0;
-  if (x <= points[0][0]) return points[0][1];
-  if (x >= points[points.length - 1][0]) return points[points.length - 1][1];
-
-  for (let i = 1; i < points.length; i++) {
-    if (x <= points[i][0]) {
-      const [x0, y0] = points[i - 1];
-      const [x1, y1] = points[i];
-      const t = (x - x0) / (x1 - x0);
-      return y0 + t * (y1 - y0);
-    }
-  }
-
-  return points[points.length - 1][1];
-}
+export const ASPHALT_DISTRESSES = ASPHALT_CATALOG;
+export const CONDITION_RATINGS: readonly PciConditionCategory[] = PCI_CONDITION_SCALE;
+export const DEMO_REFERENCE_ID = 'lakad-demo-illustrative';
 
 let uidCounter = 0;
 export function generateUID(): string {
@@ -134,18 +55,23 @@ export function generateUID(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Illustrative Deduct Value Lookup
+// Illustrative curves (not ASTM D6433-07 readings)
 // ---------------------------------------------------------------------------
 
-/**
- * Simplified DV lookup curves per distress type.
- *
- * Each entry maps a distress ID to an array of [density, dvLow, dvMedium, dvHigh]
- * anchor points. Values between anchors are linearly interpolated.
- *
- * These are illustrative approximations for demonstration only.
- * The complete ASTM D6433 deduct-value tables are not publicly exposed.
- */
+/** Linear interpolation on sorted [x, y] points; values outside the range are held at the end points. */
+function interpolate(points: readonly (readonly [number, number])[], x: number): number {
+  if (x <= points[0][0]) return points[0][1];
+  for (let i = 1; i < points.length; i++) {
+    if (x <= points[i][0]) {
+      const [x0, y0] = points[i - 1];
+      const [x1, y1] = points[i];
+      return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+    }
+  }
+  return points[points.length - 1][1];
+}
+
+/** Per distress code: [density %, DV low, DV medium, DV high]. Polished Aggregate uses the medium column. */
 const DV_CURVES: Record<number, readonly (readonly [number, number, number, number])[]> = {
   1: [[0,0,0,0],[0.5,3,8,15],[1,6,14,25],[2,12,22,38],[5,22,35,55],[10,33,48,68],[20,42,58,80],[50,52,68,90],[100,58,74,96]],
   2: [[0,0,0,0],[1,1,3,6],[5,3,7,12],[10,5,10,18],[20,7,14,24],[50,10,18,30],[100,12,22,35]],
@@ -168,40 +94,8 @@ const DV_CURVES: Record<number, readonly (readonly [number, number, number, numb
   19: [[0,0,0,0],[1,1,2,4],[3,2,5,9],[4.8,3,8,14],[5,3,8,15],[10,5,12,22],[20,8,16,28],[50,12,22,38],[100,15,26,44]],
 };
 
-/**
- * Returns an illustrative Deduct Value for the given distress type,
- * severity, and density percentage.
- */
-export function lookupDeductValue(
-  distressId: number,
-  severity: Severity | null,
-  density: number,
-): number {
-  if (density <= 0) return 0;
-
-  const curve = DV_CURVES[distressId];
-  if (!curve) return 0;
-
-  // Polished Aggregate (id 12) has no severity — always use medium column
-  const colIdx = severity === 'High' ? 3 : severity === 'Low' ? 1 : 2;
-
-  const points: [number, number][] = curve.map((row) => [row[0], row[colIdx]]);
-  return Math.round(interpolate(points, density));
-}
-
-// ---------------------------------------------------------------------------
-// CDV Correction Curve (illustrative)
-// ---------------------------------------------------------------------------
-
-/**
- * Approximate CDV correction curves.
- * Maps [TDV, CDV] points for each q value.
- *
- * When q = 1, CDV equals TDV (the identity line).
- * For q >= 2, the correction curve reduces CDV relative to TDV.
- */
-const CDV_CORRECTION_CURVES: Record<number, readonly (readonly [number, number])[]> = {
-  1: [[0, 0], [200, 200]],
+/** Per q: [TDV, CDV] points. q = 1 is the identity line; q >= 8 uses the q = 7 curve. */
+const CDV_CURVES: Record<number, readonly (readonly [number, number])[]> = {
   2: [[0, 0], [10, 8], [20, 16], [30, 24], [34, 28], [40, 31], [50, 38], [60, 43], [80, 52], [100, 58], [120, 64], [150, 72], [200, 82]],
   3: [[0, 0], [10, 7], [20, 14], [30, 21], [40, 31], [42, 34], [50, 37], [60, 41], [80, 48], [100, 54], [120, 60], [150, 68], [200, 78]],
   4: [[0, 0], [10, 6], [20, 12], [30, 18], [40, 29], [48, 38], [50, 39], [60, 43], [80, 50], [100, 56], [120, 61], [150, 68], [200, 78]],
@@ -210,161 +104,88 @@ const CDV_CORRECTION_CURVES: Record<number, readonly (readonly [number, number])
   7: [[0, 0], [10, 4], [20, 8], [30, 12], [40, 16], [50, 21], [60, 25], [80, 33], [100, 39], [120, 44], [150, 51], [200, 60]],
 };
 
-function lookupCDV(tdv: number, q: number): number {
-  if (q <= 0 || tdv <= 0) return 0;
+/** Illustrative reader handed to the shared D6433-07 engine in place of the private curve package. */
+const DEMO_READER: CurveReader = {
+  id: DEMO_REFERENCE_ID,
+  digest: '',
+  deduct(code, severity, density) {
+    const column = severity === 'high' ? 3 : severity === 'low' ? 1 : 2;
+    return interpolate(DV_CURVES[code].map((row) => [row[0], row[column]] as const), density);
+  },
+  corrected(total, q) {
+    if (q <= 1) return total;
+    return Math.min(total, interpolate(CDV_CURVES[Math.min(q, 7)], total));
+  },
+};
 
-  const qCapped = Math.min(q, 7);
-  const curve = CDV_CORRECTION_CURVES[qCapped];
-  if (!curve) return Math.min(Math.round(tdv), 100);
+// ---------------------------------------------------------------------------
+// Computation
+// ---------------------------------------------------------------------------
 
-  return Math.max(0, Math.min(Math.round(interpolate(curve, tdv)), 100));
+function plural(count: number, word: string) {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
-// ---------------------------------------------------------------------------
-// Density Computation
-// ---------------------------------------------------------------------------
-
-/** Density (%) = (Quantity / Sample Area) x 100. */
-export function computeDensity(quantity: number, sampleArea: number): number {
-  if (sampleArea <= 0 || quantity <= 0) return 0;
-  return (quantity / sampleArea) * 100;
+/** Explains the §9.5.3–9.5.4 retention of deduct values for the CDV iteration. */
+export function retentionNote(sorted: readonly number[], m: number, shortcut: boolean): string {
+  if (!sorted.length) return 'No distress recorded. Every deduct value is zero.';
+  const aboveTwo = sorted.filter((value) => value > 2).length;
+  if (shortcut) return `${aboveTwo === 0 ? 'No' : 'Only one'} deduct value is greater than 2 (§9.5.1), so the maximum CDV equals the total deduct value. No iteration is needed.`;
+  const whole = Math.floor(m);
+  const fraction = m - whole;
+  if (sorted.length <= whole) return `m = ${m.toFixed(2)} allows ${plural(whole, 'deduct value')}, so all ${plural(sorted.length, 'deduct value')} are kept.`;
+  if (fraction > 0) return `m = ${m.toFixed(2)}: the ${plural(whole, 'highest deduct value')} are kept and the next one is multiplied by ${fraction.toFixed(2)} (§9.5.4).`;
+  return `m = ${m.toFixed(2)}: only the ${plural(whole, 'highest deduct value')} are kept.`;
 }
 
-// ---------------------------------------------------------------------------
-// Condition Rating Lookup
-// ---------------------------------------------------------------------------
-
-export function getConditionRating(pci: number): ConditionCategory {
-  return getPciConditionCategory(pci);
-}
-
-// ---------------------------------------------------------------------------
-// Main PCI Computation
-// ---------------------------------------------------------------------------
-
-export function computePCI(entries: DistressEntry[], sampleArea: number): PCIResult {
-  // 1. Compute density and deduct value for each entry
-  const distresses: ComputedDistress[] = entries.map((entry) => {
-    const density = computeDensity(entry.quantity, sampleArea);
-    const deductValue = lookupDeductValue(entry.distressId, entry.severity, density);
-    return { ...entry, density, deductValue };
-  });
-
-  // 2. Collect and sort deduct values (descending)
-  const dvs = distresses.map((d) => d.deductValue).sort((a, b) => b - a);
-
-  if (dvs.length === 0 || dvs.every((v) => v === 0)) {
-    const cat = getConditionRating(100);
-    return {
-      distresses,
-      totalDeductValue: 0,
-      highestDV: 0,
-      allowableDeducts: 0,
-      actualDeducts: 0,
-      cdvIterations: [],
-      maxCDV: 0,
-      pci: 100,
-      rating: cat.rating,
-      ratingColor: cat.color,
-      ratingDarkColor: cat.darkColor,
-      ratingDescription: cat.description,
-    };
-  }
-
-  // 3. Calculate allowable number of deducts (m)
-  //    m = 1 + (9/98) * (100 - HDV)
-  const highestDV = dvs[0];
-  const allowableDeducts = 1 + (9 / 98) * (100 - highestDV);
-  const actualDeducts = dvs.length;
-
-  // 4. Trim to allowable deducts (if needed)
-  const mInt = Math.min(Math.ceil(allowableDeducts), dvs.length);
-  let workingDVs = dvs.slice(0, mInt);
-
-  // 5. CDV correction iterations
-  const cdvIterations: CDVIteration[] = [];
-  let maxCDV = 0;
-
-  for (let iter = 1; iter <= workingDVs.length; iter++) {
-    const q = workingDVs.filter((v) => v > 2).length;
-    if (q === 0) break;
-
-    const tdv = workingDVs.reduce((sum, v) => sum + v, 0);
-    const cdv = lookupCDV(tdv, q);
-
-    cdvIterations.push({
-      iteration: iter,
-      adjustedDVs: [...workingDVs],
-      q,
-      tdv,
-      cdv,
-      isMax: false,
-    });
-
-    if (cdv > maxCDV) maxCDV = cdv;
-    if (q === 1) break;
-
-    // Reduce the smallest DV > 2 to 2
-    const smallestIdx = workingDVs.reduce(
-      (minIdx, val, idx) => {
-        if (val > 2 && (minIdx === -1 || val < workingDVs[minIdx])) return idx;
-        return minIdx;
-      },
-      -1,
-    );
-
-    if (smallestIdx === -1) break;
-    workingDVs = [...workingDVs];
-    workingDVs[smallestIdx] = 2;
-  }
-
-  // Mark the iteration that produced the maximum CDV
-  for (const it of cdvIterations) {
-    if (it.cdv === maxCDV) {
-      it.isMax = true;
-      break;
-    }
-  }
-
-  // 6. PCI = 100 - max CDV
-  const pci = Math.max(0, Math.min(100, Math.round(100 - maxCDV)));
-  const tdvFinal = distresses.reduce((sum, d) => sum + d.deductValue, 0);
-
-  const cat = getConditionRating(pci);
-
+/**
+ * Computes a demonstration PCI with the shared ASTM D6433-07 procedure.
+ * Throws an Error with a readable message when the input breaks a D6433-07 rule
+ * (for example, a sample area outside 135–315 m²).
+ */
+export function computeDemoPci(entries: readonly DemoEntry[], sampleArea: number): DemoResult {
+  const output = calculateSample(
+    {
+      edition: EDITION,
+      area_sqm: sampleArea,
+      observations: entries.map((entry) => ({ code: entry.code, severity: entry.severity, quantity: entry.quantity, unit: definition(entry.code).unit })),
+      no_distress_confirmed: entries.length === 0,
+      field_rules_confirmed: true,
+    },
+    DEMO_READER,
+  );
+  const sortedDeducts = [...output.deduct_values].sort((a, b) => b - a);
+  const shortcut = output.iterations.length === 0;
+  const maxIteration = shortcut ? -1 : output.iterations.findIndex((it) => it.corrected_deduct_value === output.max_corrected_deduct_value);
   return {
-    distresses,
-    totalDeductValue: tdvFinal,
-    highestDV,
-    allowableDeducts,
-    actualDeducts,
-    cdvIterations,
-    maxCDV,
-    pci,
-    rating: cat.rating,
-    ratingColor: cat.color,
-    ratingDarkColor: cat.darkColor,
-    ratingDescription: cat.description,
+    ...output,
+    rows: output.groups.map((group) => ({ ...group, name: definition(group.code).name })),
+    category: getPciConditionCategory(output.pci),
+    sortedDeducts,
+    shortcut,
+    maxIteration,
+    retention: retentionNote(sortedDeducts, output.allowable_deducts, shortcut),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Sample Datasets
+// Sample datasets
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_SAMPLE: DistressEntry[] = [
-  { uid: 'demo-1', distressId: 1, distressName: 'Alligator Cracking', severity: 'Low', quantity: 5, unit: 'm\u00B2' },
-  { uid: 'demo-2', distressId: 10, distressName: 'Longitudinal Cracking', severity: 'Medium', quantity: 8, unit: 'm' },
-  { uid: 'demo-3', distressId: 13, distressName: 'Potholes', severity: 'High', quantity: 2, unit: 'No.' },
-  { uid: 'demo-4', distressId: 19, distressName: 'Weathering and Raveling', severity: 'Medium', quantity: 12, unit: 'm\u00B2' },
-];
-
-export const ALTERNATE_SAMPLE: DistressEntry[] = [
-  { uid: 'alt-1', distressId: 3, distressName: 'Block Cracking', severity: 'Medium', quantity: 15, unit: 'm\u00B2' },
-  { uid: 'alt-2', distressId: 15, distressName: 'Rutting', severity: 'High', quantity: 8, unit: 'm\u00B2' },
-  { uid: 'alt-3', distressId: 7, distressName: 'Edge Cracking', severity: 'Low', quantity: 10, unit: 'm' },
-  { uid: 'alt-4', distressId: 11, distressName: 'Patching and Utility Cut Patching', severity: 'Medium', quantity: 6, unit: 'm\u00B2' },
-  { uid: 'alt-5', distressId: 5, distressName: 'Corrugation', severity: 'Low', quantity: 4, unit: 'm\u00B2' },
-];
-
 export const DEFAULT_SAMPLE_AREA = 250;
+
+export const DEFAULT_SAMPLE: readonly DemoEntry[] = [
+  { uid: 'demo-1', code: 1, severity: 'low', quantity: 5 },
+  { uid: 'demo-2', code: 10, severity: 'medium', quantity: 8 },
+  { uid: 'demo-3', code: 13, severity: 'high', quantity: 2 },
+  { uid: 'demo-4', code: 19, severity: 'medium', quantity: 12 },
+];
+
+/** Includes a high deduct value, so m falls below the number of deducts and §9.5.4 applies. */
+export const ALTERNATE_SAMPLE: readonly DemoEntry[] = [
+  { uid: 'alt-1', code: 1, severity: 'high', quantity: 15 },
+  { uid: 'alt-2', code: 15, severity: 'high', quantity: 8 },
+  { uid: 'alt-3', code: 3, severity: 'medium', quantity: 15 },
+  { uid: 'alt-4', code: 7, severity: 'low', quantity: 10 },
+  { uid: 'alt-5', code: 11, severity: 'medium', quantity: 6 },
+];

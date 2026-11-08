@@ -1,19 +1,20 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type TextStyle } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View, type TextStyle } from 'react-native';
 
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette, type AdminPalette } from '@/components/admin/admin-shell';
 import { PageControls } from '@/components/workflow/pagination';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
 import { ASPHALT_CATALOG, RULES } from '@/lib/d6433-07/catalog';
-import { CDV_PREVIEW_Q, CDV_PREVIEW_ROWS } from '@/lib/d6433-07/cdv-preview';
 import { d07MeasureFor } from '@/lib/d6433-07/measure-guidance';
 import { d07GuidanceFor } from '@/lib/d6433-07/severity-guidance';
+import { newPhotoFolder, photoSlots, REFERENCE_PHOTO_BUCKET, removeReferencePhotos, slotPath, uploadReferencePhoto, type PhotoSlot, type PhotoSlotKey, type SeverityPhotos } from '@/lib/data/reference-photos';
 import { supabase } from '@/lib/data/supabase';
 import { callWorkflow, type CatalogType } from '@/lib/data/workflow-data';
 import { PCI_CONDITION_SCALE } from '@/lib/pci/pci-classification';
 import { SAMPLE_UNIT_MAX_AREA, SAMPLE_UNIT_MIN_AREA, SAMPLE_UNIT_TARGET_AREA } from '@/lib/pci/pci-service';
-import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/pci/severity-colors';
+import { roleLabels } from '@/lib/auth/access';
 import { brand, layout } from '@/lib/ui/design-system';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -21,7 +22,7 @@ type Tab = 'parameters' | 'distress' | 'dv' | 'cdv' | 'pci' | 'history';
 const tabs: { id: Tab; label: string }[] = [
   { id: 'parameters', label: 'Parameters' },
   { id: 'distress', label: 'Distress Types' },
-  { id: 'dv', label: 'Deduct Curves' },
+  { id: 'dv', label: 'Deduct Value Curves' },
   { id: 'cdv', label: 'Corrected Deduct Value' },
   { id: 'pci', label: 'PCI Computation' },
   { id: 'history', label: 'History' },
@@ -51,18 +52,36 @@ const parameters: [string, string, string][] = [
 ];
 
 
-type AuditRow = { id: string; action: string; actor_id: string | null; detail: Record<string, unknown> | null; created_at: string };
+type AuditRow = { id: string; action: string; actor_id: string | null; target_id: string | null; detail: Record<string, unknown> | null; created_at: string };
+/** Who made a change: from the admin-only account list, so the email and role are shown too. */
+type Person = { name: string; email: string | null; role: string };
+type HistoryState = { rows: AuditRow[]; people: Map<string, Person>; error: string };
 
 export default function ReferenceDataScreen() {
   const palette = useAdminPalette();
   const { colorScheme } = useAppTheme();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { data, loading, busy, error, message, refresh, run, pagination } = useWorkflow();
+  // The distress rows get exactly the room left in the window, so only the table scrolls, not the page.
+  // Measured: where the rows start, and how much of the panel sits below them (pagination, padding).
+  const tableRef = useRef<ComponentRef<typeof View>>(null);
+  const tablePanelRef = useRef<ComponentRef<typeof View>>(null);
+  const [tableFit, setTableFit] = useState({ top: 420, below: 40 });
+  const measureTable = () => {
+    tableRef.current?.measureInWindow((_x: number, top: number, _w: number, rowsHeight: number) => {
+      tablePanelRef.current?.measureInWindow((_px: number, panelTop: number, _pw: number, panelHeight: number) => {
+        const below = Math.max(0, panelTop + panelHeight - (top + rowsHeight));
+        setTableFit((current) => (Math.abs(current.top - top) < 1 && Math.abs(current.below - below) < 1 ? current : { top, below }));
+      });
+    });
+  };
+  const PAGE_BOTTOM_PADDING = 44 + 4; // AdminShell content paddingBottom, plus a little slack.
+  const tableHeight = Math.max(200, height - tableFit.top - tableFit.below - PAGE_BOTTOM_PADDING);
   const compact = width < 1100;
   const dark = colorScheme === 'dark';
   const [tab, setTab] = useState<Tab>('parameters');
-  const [editing, setEditing] = useState(false);
-  const [history, setHistory] = useState<{ rows: AuditRow[]; error: string } | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryState | null>(null);
   const [criteria, setCriteria] = useState<CatalogType | null>(null);
   const [curveCode, setCurveCode] = useState(ASPHALT_CATALOG[0].code);
 
@@ -75,13 +94,31 @@ export default function ReferenceDataScreen() {
   const [severityRequired, setSeverityRequired] = useState(true);
   const [allowedSeverities, setAllowedSeverities] = useState(['low', 'medium', 'high']);
   const [referenceActive, setReferenceActive] = useState(true);
+  /** Wording per severity level, shown in the editor; prefilled with the saved or built-in text. */
+  const [severityText, setSeverityText] = useState<Record<Level, string>>({ low: '', medium: '', high: '' });
+  /** Photo changes waiting for Save: new picks, removals and ASTM restores, per slot. */
+  const [photoEdits, setPhotoEdits] = useState<Partial<Record<PhotoSlotKey, PhotoEdit>>>({});
 
   const loadHistory = useCallback(async () => {
     const { data: rows, error: failure } = await supabase.from('lakad_audit')
-      .select('id,action,actor_id,detail,created_at')
+      .select('id,action,actor_id,target_id,detail,created_at')
       .in('action', ['settings_updated', 'distress_reference_saved'])
       .order('created_at', { ascending: false }).limit(25);
-    setHistory(failure ? { rows: [], error: 'Change history could not be loaded.' } : { rows: (rows ?? []) as AuditRow[], error: '' });
+    if (failure) { setHistory({ rows: [], people: new Map(), error: 'Change history could not be loaded.' }); return; }
+    // Names, emails and roles of the people who made the changes (admin-only list, a few pages at most).
+    const people = new Map<string, Person>();
+    let after: string | null = null;
+    for (let page = 0; page < 10; page += 1) {
+      const reply = await supabase.rpc('lakad_accounts_page', { page_after: after, page_size: 50 });
+      if (reply.error || !Array.isArray(reply.data)) break;
+      const accounts = reply.data as { id: string; full_name: string | null; email: string | null; role: string }[];
+      for (const account of accounts) {
+        people.set(account.id, { name: account.full_name || 'Unnamed user', email: account.email, role: account.role });
+      }
+      if (accounts.length < 50) break;
+      after = accounts[accounts.length - 1].id;
+    }
+    setHistory({ rows: (rows ?? []) as AuditRow[], people, error: '' });
   }, []);
 
   useEffect(() => {
@@ -100,6 +137,8 @@ export default function ReferenceDataScreen() {
     setSeverityRequired(true);
     setAllowedSeverities(['low', 'medium', 'high']);
     setReferenceActive(true);
+    setSeverityText({ low: '', medium: '', high: '' });
+    setPhotoEdits({});
   };
 
   const editReference = (id: string) => {
@@ -114,14 +153,81 @@ export default function ReferenceDataScreen() {
     setSeverityRequired(reference.severity_required);
     setAllowedSeverities(reference.allowed_severities || []);
     setReferenceActive(reference.is_active);
+    setPhotoEdits({});
+    const builtIn = d07GuidanceFor(reference.astm_edition, reference.astm_code);
+    setSeverityText({
+      low: reference.severity_descriptions?.low ?? builtIn?.low ?? '',
+      medium: reference.severity_descriptions?.medium ?? builtIn?.medium ?? '',
+      high: reference.severity_descriptions?.high ?? builtIn?.high ?? '',
+    });
+  };
+
+  /** Only wording that differs from the built-in cue is saved, so built-in text keeps following its version. */
+  const severityDescriptionsPayload = () => {
+    const reference = referenceId ? data?.types.find((item) => item.id === referenceId) : undefined;
+    const builtIn = reference ? d07GuidanceFor(reference.astm_edition, reference.astm_code) : undefined;
+    const result: Partial<Record<Level, string>> = {};
+    if (!severityRequired) return result;
+    for (const level of levels) {
+      const text = severityText[level].trim();
+      if (allowedSeverities.includes(level) && text && text !== builtIn?.[level]) result[level] = text;
+    }
+    return result;
   };
 
   const toggleSeverity = (severity: string) => {
     setAllowedSeverities((current) => current.includes(severity) ? current.filter((item) => item !== severity) : [...current, severity]);
   };
 
+  const editingType = referenceId ? data?.types.find((item) => item.id === referenceId) : undefined;
+  const editorSlots = photoSlots(
+    { astm_edition: editingType?.astm_edition, astm_code: editingType?.astm_code },
+    severityRequired ? levels.filter((level) => allowedSeverities.includes(level)) : [],
+  );
+
+  /** Uploads newly picked photos and works out the saved photo choices. Returns what to clean up afterwards. */
+  const applyPhotoEdits = async () => {
+    const saved: SeverityPhotos = editingType?.severity_photos ?? {};
+    const next: SeverityPhotos = { ...saved };
+    const uploaded: string[] = [];
+    const folder = referenceId ?? newPhotoFolder();
+    try {
+      for (const slot of editorSlots) {
+        const edit = photoEdits[slot.key];
+        if (!edit) continue;
+        if (edit.kind === 'new') {
+          const path = await uploadReferencePhoto(edit.uri, folder, slot.key);
+          uploaded.push(path);
+          next[slot.key] = path;
+        } else if (edit.kind === 'remove') next[slot.key] = null;
+        else delete next[slot.key];
+      }
+    } catch (reason) {
+      await removeReferencePhotos(uploaded);
+      throw reason;
+    }
+    const kept = new Set(Object.values(next));
+    return { next, uploaded, replaced: Object.values(saved).filter((path) => path && !kept.has(path)) };
+  };
+
   const handleSaveReference = () => {
-    void run(() => callWorkflow('lakad_save_distress_type', {
+    void run(async () => {
+      const photos = await applyPhotoEdits();
+      try {
+        await saveReference(photos.next);
+      } catch (reason) {
+        await removeReferencePhotos(photos.uploaded);
+        throw reason;
+      }
+      await removeReferencePhotos(photos.replaced);
+    }, `Distress type ${referenceId ? 'updated' : 'added'}.`).then((saved) => {
+      setHistory(null);
+      // Close only on success; a failed save keeps the dialog open with its message and the typed values.
+      if (saved) { setEditorOpen(false); resetReference(); }
+    });
+  };
+
+  const saveReference = (severityPhotos: SeverityPhotos) => callWorkflow('lakad_save_distress_type', {
       target: referenceId,
       payload: {
         code: referenceCode,
@@ -131,16 +237,15 @@ export default function ReferenceDataScreen() {
         severity_required: severityRequired,
         allowed_severities: severityRequired ? allowedSeverities : [],
         is_active: referenceActive,
+        severity_descriptions: severityDescriptionsPayload(),
+        severity_photos: severityPhotos,
       },
-    }), `Distress type ${referenceId ? 'updated' : 'added'}.`).then(() => setHistory(null));
-  };
+    });
 
-  /** Edit opens the distress type editor: the only reference data an admin can change. */
-  const toggleEditing = () => {
-    if (editing) { setEditing(false); resetReference(); return; }
-    setTab('distress');
-    setEditing(true);
-  };
+  /** Distress types are the only reference data an admin can change: Add and per-row Edit open the editor dialog. */
+  const openAdd = () => { resetReference(); setTab('distress'); setEditorOpen(true); };
+  const openEdit = (id: string) => { editReference(id); setTab('distress'); setEditorOpen(true); };
+  const closeEditor = () => { if (busy) return; setEditorOpen(false); resetReference(); };
 
   const edition = data?.settings?.active_edition ?? 'ASTM D6433-07';
   const year = /-(\d{2})$/.exec(edition)?.[1];
@@ -167,7 +272,6 @@ export default function ReferenceDataScreen() {
             <Text style={[styles.summaryValue, { color: palette.text }]}>{value}</Text>
           </View>)}
         </View>
-        <AdminButton icon={editing ? 'check' : 'edit-2'} label={editing ? 'Done' : 'Edit'} onPress={toggleEditing} palette={palette} />
       </AdminPanel>
 
       <View accessibilityRole="tablist" style={styles.tabs}>
@@ -190,41 +294,23 @@ export default function ReferenceDataScreen() {
           ) : null}
 
           {tab === 'distress' ? <>
-            {editing ? (
-              <AdminPanel palette={palette} subtitle={referenceId ? 'Change the selected distress type, then save.' : 'Pick a distress type below to change it, or add a new one.'} title={referenceId ? `Edit ${referenceName || 'distress type'}` : 'Add Distress Type'}>
-                <View style={styles.form}>
-                  <View style={[styles.formRow, compact && styles.stack]}>
-                    <View style={styles.formCell}><AdminField editable={!canonical} label="Code" onChangeText={setReferenceCode} palette={palette} placeholder="e.g. AC-01" value={referenceCode} /></View>
-                    <View style={styles.formCell}><AdminField label="Distress name" onChangeText={setReferenceName} palette={palette} placeholder="Validated asphalt distress name" value={referenceName} /></View>
-                  </View>
-                  <AdminField label="Description" multiline onChangeText={setReferenceDescription} palette={palette} placeholder="How inspectors identify it in the field" value={referenceDescription} />
-                  {canonical ? <Notice>ASTM D6433-07 fixes the unit and severities for this type: {referenceUnit} · {allowedSeverities.join(', ') || 'no severity'}. You can change its name, description and status.</Notice> : <>
-                    <Choices label="Measurement unit" onChange={setReferenceUnit} options={[{ label: 'Area (m²)', value: 'm²' }, { label: 'Length (m)', value: 'm' }, { label: 'Count (No.)', value: 'No.' }]} value={referenceUnit} />
-                    <SwitchRow palette={palette} title="Severity is required" text="Inspectors must pick one of the allowed severity levels." value={severityRequired} onChange={setSeverityRequired} disabled={busy} />
-                    {severityRequired ? <View style={styles.severityRow}>{['low', 'medium', 'high'].map((severity) => {
-                      const label = normalizeDistressSeverity(severity)!;
-                      const colors = getDistressSeverityColors(label);
-                      const selected = allowedSeverities.includes(severity);
-                      return <Pressable accessibilityLabel={`${label} severity`} accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={severity} onPress={() => toggleSeverity(severity)}
-                        style={[styles.severityChoice, { backgroundColor: selected ? colors.backgroundColor : palette.panel, borderColor: selected ? colors.borderColor : palette.border }]}>
-                        <Text style={{ color: selected ? colors.textColor : palette.text }}>{selected ? '✓ ' : ''}{label}</Text>
-                      </Pressable>;
-                    })}</View> : null}
-                  </>}
-                  <SwitchRow palette={palette} title="Active for field entry" text="Inactive types stay on past records but cannot be picked for new ones." value={referenceActive} onChange={setReferenceActive} disabled={busy} />
-                  <View style={styles.actions}>
-                    <AdminButton disabled={busy} label="Clear" onPress={resetReference} palette={palette} tone="secondary" />
-                    <AdminButton disabled={busy} icon="check" label={referenceId ? 'Save Changes' : 'Add Distress Type'} onPress={handleSaveReference} palette={palette} />
-                  </View>
+            <View collapsable={false} onLayout={measureTable} ref={tablePanelRef}>
+            <AdminPanel palette={palette}>
+              {/* Distress types are the only reference data stored in the database, so Add and Edit live here only. */}
+              <View style={styles.panelHead}>
+                <View style={styles.panelHeadText}>
+                  <Text accessibilityRole="header" style={[styles.panelHeadTitle, { color: palette.text }]}>Distress Types for Asphalt</Text>
                 </View>
-              </AdminPanel>
-            ) : null}
-            <AdminPanel palette={palette} subtitle={editing ? 'Press Edit on a row to change it.' : undefined} title="Distress Types for Asphalt">
+                <AdminButton label="Add Distress" onPress={openAdd} palette={palette} />
+              </View>
               {types.length ? <View>
                 <View style={[styles.distressRow, { borderBottomColor: palette.border }]}>
                   {['#', 'Distress type', 'Measured in', 'Severity levels', 'Criteria'].map((label, index) => <Text key={label} style={[styles.distressHead, distressColumns[index], { color: palette.muted }]}>{label}</Text>)}
                 </View>
-                {types.map((type, index) => <View key={type.id} style={[styles.distressRow, { borderBottomColor: palette.border }, type.id === referenceId && { backgroundColor: palette.blueSoft }]}>
+                {/* Header stays put; only the rows scroll, so the page itself does not grow with the list. */}
+                <View collapsable={false} onLayout={measureTable} ref={tableRef}>
+                <ScrollView nestedScrollEnabled showsVerticalScrollIndicator style={{ maxHeight: tableHeight }}>
+                {types.map((type, index) => <View key={type.id} style={[styles.distressRow, { borderBottomColor: palette.border }]}>
                   <Text style={[styles.distressCell, distressColumns[0], { color: palette.text }]}>{type.astm_code ?? index + 1}</Text>
                   <Text style={[styles.distressCell, distressColumns[1], styles.distressName, { color: type.is_active ? palette.text : palette.muted }]}>{type.name}{type.is_active ? '' : ' (inactive)'}</Text>
                   <Text style={[styles.distressCell, distressColumns[2], { color: palette.text }]}>{unitLabel(type.default_unit_of_measure)}</Text>
@@ -235,15 +321,18 @@ export default function ReferenceDataScreen() {
                   </View>
                   <View style={[distressColumns[4], styles.links]}>
                     <TextLink label="View" a11y={`View criteria for ${type.name}`} onPress={() => setCriteria(type)} color={palette.blue} />
-                    {editing ? <TextLink label="Edit" a11y={`Edit ${type.name}`} onPress={() => editReference(type.id)} color={palette.blue} /> : null}
+                    <TextLink label="Edit" a11y={`Edit ${type.name}`} onPress={() => openEdit(type.id)} color={palette.blue} />
                   </View>
                 </View>)}
-              </View> : <Text style={[styles.note, { color: palette.muted }]}>No distress types yet. Press Edit to add one.</Text>}
+                </ScrollView>
+                </View>
+              </View> : <Text style={[styles.note, { color: palette.muted }]}>No distress types yet. Press Add Distress to add one.</Text>}
               <PageControls {...pagination} />
             </AdminPanel>
+            </View>
           </> : null}
 
-          {tab === 'dv' ? <DeductCurves code={curveCode} onChange={setCurveCode} palette={palette} stacked={compact} /> : null}
+          {tab === 'dv' ? <DeductCurves code={curveCode} onChange={setCurveCode} palette={palette} /> : null}
 
           {tab === 'cdv' ? <CorrectedCurves palette={palette} stacked={compact} /> : null}
 
@@ -254,19 +343,95 @@ export default function ReferenceDataScreen() {
               {!history ? <Text style={[styles.note, { color: palette.muted }]}>Loading changes…</Text>
                 : history.error ? <Notice error>{history.error}</Notice>
                 : history.rows.length ? <View>
-                  <Row palette={palette} cells={['Date', 'Changed by', 'Change']} head />
-                  {history.rows.map((row) => <Row key={row.id} palette={palette} cells={[
-                    new Date(row.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
-                    (row.actor_id && names.get(row.actor_id)) || 'Administrator',
-                    describeChange(row),
-                  ]} />)}
+                  {!compact ? <View accessibilityRole="header" style={[styles.row, { borderBottomColor: palette.border }]}>
+                    {['Date', 'Changed by', 'Change'].map((label, index) => <Text key={label} style={[styles.cell, historyColumns[index], { color: palette.muted }]}>{label}</Text>)}
+                  </View> : null}
+                  {history.rows.map((row) => <HistoryRow key={row.id} compact={compact} palette={palette} row={row}
+                    person={(row.actor_id && history.people.get(row.actor_id)) || null}
+                    fallbackName={(row.actor_id && names.get(row.actor_id)) || 'Unknown user'}
+                    types={types} />)}
                 </View>
                 : <Text style={[styles.note, { color: palette.muted }]}>No reference data changes yet.</Text>}
             </AdminPanel>
           ) : null}
       </View>
 
-      <CriteriaDialog type={criteria} palette={palette} onClose={() => setCriteria(null)} onEdit={(id) => { setCriteria(null); setTab('distress'); setEditing(true); editReference(id); }} />
+      <CriteriaDialog type={criteria} palette={palette} onClose={() => setCriteria(null)} onEdit={(id) => { setCriteria(null); openEdit(id); }} />
+      {/* Add / edit distress type: same dialog shell as the criteria view, with editable content. */}
+      <Modal animationType="fade" onRequestClose={closeEditor} transparent visible={editorOpen}>
+        <View style={styles.backdrop}>
+          <Pressable accessibilityLabel="Close distress type editor" accessibilityRole="button" onPress={closeEditor} style={StyleSheet.absoluteFill} />
+          <View accessibilityViewIsModal style={[styles.dialog, styles.editorDialog, { backgroundColor: palette.panel, borderColor: palette.border }]}>
+            <ScrollView contentContainerStyle={styles.dialogBody} keyboardShouldPersistTaps="handled">
+              <View>
+                <Text accessibilityRole="header" style={[styles.dialogTitle, { color: palette.text }]}>{referenceId ? `Edit ${referenceName || 'distress type'}` : 'Add Distress Type'}</Text>
+                <Text style={[styles.dialogMeta, { color: palette.muted }]}>{referenceId ? 'Change the details below, then update.' : 'Fill in the details of the new asphalt distress type.'}</Text>
+              </View>
+              {error ? <Notice error>{error}</Notice> : null}
+
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: palette.text }]}>Details</Text>
+                <View style={[styles.formRow, compact && styles.stack]}>
+                  <View style={styles.formCell}><AdminField editable={!canonical} label="Code" onChangeText={setReferenceCode} palette={palette} placeholder="e.g. AC-01" value={referenceCode} /></View>
+                  <View style={styles.formCell}><AdminField label="Distress name" onChangeText={setReferenceName} palette={palette} placeholder="Validated asphalt distress name" value={referenceName} /></View>
+                </View>
+                <AdminField label="How to measure / description" multiline onChangeText={setReferenceDescription} palette={palette} placeholder="How inspectors identify and measure it in the field" value={referenceDescription} />
+              </View>
+
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: palette.text }]}>Measurement and severity</Text>
+                {canonical ? <Notice>ASTM D6433-07 fixes the unit and severities for this type: {referenceUnit} · {allowedSeverities.join(', ') || 'no severity'}. You can change its name, description and status.</Notice> : <>
+                  <Choices label="Measurement unit" onChange={setReferenceUnit} options={[{ label: 'Area (m²)', value: 'm²' }, { label: 'Length (m)', value: 'm' }, { label: 'Count (No.)', value: 'No.' }]} value={referenceUnit} />
+                  <SwitchRow palette={palette} title="Severity is required" text="Inspectors must pick one of the allowed severity levels." value={severityRequired} onChange={setSeverityRequired} disabled={busy} />
+                  {severityRequired ? <View style={styles.severityRow}>{['low', 'medium', 'high'].map((severity) => {
+                    // Same light-to-dark brand blues as the L, M and H badges in the table.
+                    const level = severity as Level;
+                    const label = levelNames[level];
+                    const selected = allowedSeverities.includes(severity);
+                    return <Pressable accessibilityLabel={`${label} severity`} accessibilityRole="checkbox" aria-checked={selected} key={severity} onPress={() => toggleSeverity(severity)}
+                      style={[styles.severityChoice, { backgroundColor: selected ? levelColors[level].bg : palette.panel, borderColor: selected ? levelColors[level].bg : palette.border }]}>
+                      <Text style={[styles.severityChoiceText, { color: selected ? levelColors[level].fg : palette.text }]}>{label}</Text>
+                    </Pressable>;
+                  })}</View> : null}
+                </>}
+              </View>
+
+              {severityRequired && allowedSeverities.length ? <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: palette.text }]}>Severity levels</Text>
+                <Text style={[styles.dialogMeta, { color: palette.muted }]}>What inspectors see when they choose a level. Leave the built-in wording, or write your own (up to 600 characters).</Text>
+                {levels.filter((level) => allowedSeverities.includes(level)).map((level) => <View key={level} style={[styles.criterion, styles.criterionEdit, { borderColor: palette.border }]}>
+                  <View style={[styles.levelPill, { backgroundColor: levelColors[level].bg }]}><Text style={[styles.levelPillText, { color: levelColors[level].fg }]}>{levelNames[level]}</Text></View>
+                  <TextInput
+                    accessibilityLabel={`${levelNames[level]} severity description`}
+                    maxLength={600}
+                    multiline
+                    onChangeText={(value) => setSeverityText((current) => ({ ...current, [level]: value }))}
+                    placeholder={`How ${levelNames[level].toLowerCase()} severity looks in the field`}
+                    placeholderTextColor={palette.muted}
+                    style={[styles.severityInput, { backgroundColor: palette.input, borderColor: palette.border, color: palette.text }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
+                    value={severityText[level]}
+                  />
+                </View>)}
+              </View> : null}
+
+              <PhotoEditor busy={busy} edits={photoEdits} palette={palette} saved={editingType?.severity_photos} slots={editorSlots} typeName={referenceName}
+                onChange={(key, edit) => setPhotoEdits((current) => { const next = { ...current }; if (edit) next[key] = edit; else delete next[key]; return next; })} />
+
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: palette.text }]}>Status</Text>
+                <SwitchRow palette={palette} title="Active for field entry" text="Inactive types stay on past records but cannot be picked for new ones." value={referenceActive} onChange={setReferenceActive} disabled={busy} />
+              </View>
+            </ScrollView>
+            <View style={[styles.dialogFooter, { borderTopColor: palette.border }]}>
+              <Text style={[styles.dialogMeta, styles.footerMeta, { color: palette.muted }]}>{canonical ? 'ASTM D6433-07 type' : referenceId ? 'Custom type' : 'New type'}</Text>
+              <View style={styles.footerActions}>
+                <AdminButton disabled={busy} label="Cancel" onPress={closeEditor} palette={palette} tone="secondary" />
+                <AdminButton disabled={busy} label={busy ? 'Saving…' : referenceId ? 'Update Distress' : 'Add Distress Type'} onPress={handleSaveReference} palette={palette} />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AdminShell>
   );
 }
@@ -371,22 +536,8 @@ function CorrectedCurves({ palette, stacked }: { palette: AdminPalette; stacked:
     <View style={[styles.curveCell, styles.stepColumn]}>
       <AdminPanel palette={palette} title="CDV curves">
         <Text style={[styles.dialogMeta, { color: palette.muted }]}>Corrected deduct value (CDV)</Text>
-        <View accessibilityLabel="CDV curve image not loaded yet" style={[styles.figure, { borderColor: palette.border, backgroundColor: palette.panelAlt }]}>
-          <Text style={[styles.figureText, { color: palette.muted }]}>Curve image not loaded yet</Text>
-          <Text style={[styles.figureText, { color: palette.muted }]}>ASTM D6433-07 Fig. X3.26</Text>
-        </View>
+        <CurveFigure figure="X3.26" name="CDV" palette={palette} />
         <Text style={[styles.dialogMeta, styles.axisLabel, { color: palette.muted }]}>Total deduct value (TDV)</Text>
-      </AdminPanel>
-      <AdminPanel palette={palette} title="Curve points">
-        <View style={[styles.distressRow, { borderBottomColor: palette.border }]}>
-          <Text style={[styles.distressHead, styles.densityCell, { color: palette.muted }]}>TDV</Text>
-          {CDV_PREVIEW_Q.map(q => <Text key={q} style={[styles.distressHead, styles.pointCell, { color: palette.muted }]}>q={q}</Text>)}
-        </View>
-        {CDV_PREVIEW_ROWS.map(row => <View key={row.tdv} style={[styles.distressRow, { borderBottomColor: palette.border }]}>
-          <Text style={[styles.distressCell, styles.densityCell, styles.distressName, { color: palette.text }]}>{row.tdv}</Text>
-          {row.cdv.map((value, index) => <Text key={CDV_PREVIEW_Q[index]} style={[styles.distressCell, styles.pointCell, { color: value === null ? palette.muted : palette.text }]}>{value ?? '—'}</Text>)}
-        </View>)}
-        <Text style={[styles.note, { color: palette.muted }]}>Provisional values read from a scan of Fig. X3.26 and rounded. Not approved by the civil engineer and never used in a calculation. A dash means the value is outside the traced range or not reliable. When q is 1, CDV equals TDV (up to 100).</Text>
       </AdminPanel>
       <Step n={5} palette={palette} title="Take the highest CDV">
         <Text style={text}>The <Text style={strong}>Max CDV</Text> is the highest CDV from all the repeats. It is used to get the PCI: PCI = 100 − Max CDV.</Text>
@@ -395,13 +546,9 @@ function CorrectedCurves({ palette, stacked }: { palette: AdminPalette; stacked:
   </View>;
 }
 
-/** Deduct value curves per distress. Values and the figure image stay empty until the licensed curves are approved and loaded. */
-const curveDensities = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
-function DeductCurves({ code, onChange, palette, stacked }: { code: number; onChange: (code: number) => void; palette: AdminPalette; stacked: boolean }) {
+/** Deduct value curves per distress. The figure image comes from the private 'astm-figures' bucket. */
+function DeductCurves({ code, onChange, palette }: { code: number; onChange: (code: number) => void; palette: AdminPalette }) {
   const item = ASPHALT_CATALOG.find(entry => entry.code === code) ?? ASPHALT_CATALOG[0];
-  const columns: { key: string; label: string }[] = item.severities.length
-    ? item.severities.map(level => ({ key: level, label: levelNames[level as Level] }))
-    : [{ key: 'none', label: 'Value' }];
   return <>
     <AdminPanel palette={palette} title="How density is computed">
       <View style={[styles.formula, { backgroundColor: palette.blueSoft }]}>
@@ -409,31 +556,39 @@ function DeductCurves({ code, onChange, palette, stacked }: { code: number; onCh
       </View>
       <Text style={[styles.note, { color: palette.muted }]}>Q is the distress quantity and A is the sample unit area. The deduct value is read from the curve for the distress and its severity.</Text>
     </AdminPanel>
-    <View style={[styles.curveRow, stacked && styles.stack]}>
-      <View style={styles.curveCell}>
-        <AdminPanel palette={palette} title="Curve points">
-          <View style={[styles.distressRow, { borderBottomColor: palette.border }]}>
-            <Text style={[styles.distressHead, styles.densityCell, { color: palette.muted }]}>Density</Text>
-            {columns.map(column => <Text key={column.key} style={[styles.distressHead, styles.pointCell, { color: palette.muted }]}>{column.label}</Text>)}
-          </View>
-          {curveDensities.map(density => <View key={density} style={[styles.distressRow, { borderBottomColor: palette.border }]}>
-            <Text style={[styles.distressCell, styles.densityCell, styles.distressName, { color: palette.text }]}>{density}</Text>
-            {columns.map(column => <Text key={column.key} style={[styles.distressCell, styles.pointCell, { color: palette.muted }]}>—</Text>)}
-          </View>)}
-          <Text style={[styles.note, { color: palette.muted }]}>Points appear here once the licensed D6433-07 curves are reviewed and approved. LAKAD does not publish them in the app.</Text>
-        </AdminPanel>
-      </View>
-      <View style={styles.curveCell}>
-        <AdminPanel palette={palette}>
-          <DistressPicker code={code} onChange={onChange} palette={palette} />
-          <View accessibilityLabel={`${item.name} curve image not loaded yet`} style={[styles.figure, { borderColor: palette.border, backgroundColor: palette.panelAlt }]}>
-            <Text style={[styles.figureText, { color: palette.muted }]}>Curve image not loaded yet</Text>
-            <Text style={[styles.figureText, { color: palette.muted }]}>ASTM D6433-07 Fig. {item.figure}</Text>
-          </View>
-        </AdminPanel>
-      </View>
-    </View>
+    <AdminPanel palette={palette}>
+      <DistressPicker code={code} onChange={onChange} palette={palette} />
+      <CurveFigure key={item.figure} figure={item.figure} name={item.name} palette={palette} />
+    </AdminPanel>
   </>;
+}
+
+/**
+ * ASTM D6433-07 figure from the private 'astm-figures' bucket (admin only, see
+ * supabase/migrations/20261108170000_astm_figures.sql). Fig. X3.1 is stored as d6433-07/X3_01.png.
+ */
+function CurveFigure({ figure, name, palette }: { figure: string; name: string; palette: AdminPalette }) {
+  const path = `d6433-07/X3_${figure.replace('X3.', '').padStart(2, '0')}.png`;
+  const [state, setState] = useState<{ path: string; url: string | null; failed: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    supabase.storage.from('astm-figures').createSignedUrl(path, 3600).then(
+      ({ data, error }) => { if (live) setState({ path, url: data?.signedUrl ?? null, failed: !!error || !data?.signedUrl }); },
+      () => { if (live) setState({ path, url: null, failed: true }); },
+    );
+    return () => { live = false; };
+  }, [path]);
+  const current = state?.path === path ? state : null;
+  if (current?.url) {
+    return <View style={[styles.figure, styles.figureLoaded, { borderColor: palette.border }]}>
+      <Image accessibilityLabel={`${name} curve, ASTM D6433-07 Fig. ${figure}`} onError={() => setState({ path, url: null, failed: true })}
+        resizeMode="contain" source={{ uri: current.url }} style={styles.figureImage} />
+    </View>;
+  }
+  return <View accessibilityLabel={`${name} curve image ${current?.failed ? 'not available' : 'loading'}`} style={[styles.figure, { borderColor: palette.border, backgroundColor: palette.panelAlt }]}>
+    <Text style={[styles.figureText, { color: palette.muted }]}>{current?.failed ? 'Curve image not available' : 'Loading curve image…'}</Text>
+    <Text style={[styles.figureText, { color: palette.muted }]}>ASTM D6433-07 Fig. {figure}</Text>
+  </View>;
 }
 
 function DistressPicker({ code, onChange, palette }: { code: number; onChange: (code: number) => void; palette: AdminPalette }) {
@@ -473,13 +628,169 @@ function TextLink({ label, a11y, onPress, color }: { label: string; a11y: string
   </Pressable>;
 }
 
+/** Signed links (1 hour) for private 'astm-figures' files; null while loading, a missing file maps to null. */
+function useSignedUrls(paths: string[]) {
+  const key = paths.join('|');
+  const [state, setState] = useState<{ key: string; byPath: Record<string, string | null> } | null>(null);
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    const list = key.split('|');
+    supabase.storage.from(REFERENCE_PHOTO_BUCKET).createSignedUrls(list, 3600).then(
+      ({ data }) => {
+        if (!live) return;
+        const byPath: Record<string, string | null> = Object.fromEntries(list.map((path) => [path, null]));
+        for (const item of data ?? []) if (item.path && item.signedUrl && !item.error) byPath[item.path] = item.signedUrl;
+        setState({ key, byPath });
+      },
+      () => { if (live) setState({ key, byPath: {} }); },
+    );
+    return () => { live = false; };
+  }, [key]);
+  if (!key) return {};
+  return state?.key === key ? state.byPath : null;
+}
+
+function slotCaption(slot: PhotoSlot, typeName: string) {
+  return slot.level ? `${slot.label} severity` : `${typeName}: ${slot.label.toLowerCase()}`;
+}
+
+function SlotLabel({ slot, palette }: { slot: PhotoSlot; palette: AdminPalette }) {
+  return slot.level
+    ? <View style={[styles.levelPill, styles.photoPill, { backgroundColor: levelColors[slot.level].bg }]}><Text style={[styles.levelPillText, { color: levelColors[slot.level].fg }]}>{slot.label}</Text></View>
+    : <Text style={[styles.dialogMeta, styles.photoCaption, { color: palette.muted }]}>{slot.label}</Text>;
+}
+
+/** A photo tile: the image (tap to enlarge), or an empty box saying why there is none. */
+function PhotoTile({ url, state, label, palette, onOpen }: { url: string | null; state: 'loading' | 'none' | 'missing'; label: string; palette: AdminPalette; onOpen: (url: string) => void }) {
+  if (url) {
+    return <Pressable accessibilityHint="Opens a larger view" accessibilityLabel={`${label} reference photo`} accessibilityRole="imagebutton" onPress={() => onOpen(url)}
+      style={({ hovered }: { hovered?: boolean }) => [styles.photoTile, { borderColor: hovered ? palette.blue : palette.border }]}>
+      <Image resizeMode="cover" source={{ uri: url }} style={styles.photoImage} />
+    </Pressable>;
+  }
+  const text = state === 'loading' ? 'Loading…' : state === 'none' ? 'No photo' : 'Not available';
+  return <View accessibilityLabel={`${label} reference photo: ${text}`} style={[styles.photoTile, styles.photoEmpty, { borderColor: palette.border, backgroundColor: palette.panelAlt }]}>
+    <Feather color={palette.muted} name="image" size={20} />
+    <Text style={[styles.photoEmptyText, { color: palette.muted }]}>{text}</Text>
+  </View>;
+}
+
+function PhotoViewer({ photo, palette, onClose }: { photo: { url: string; label: string } | null; palette: AdminPalette; onClose: () => void }) {
+  return <Modal animationType="fade" onRequestClose={onClose} transparent visible={!!photo}>
+    <View style={styles.photoBackdrop}>
+      <Pressable accessibilityLabel="Close photo" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
+      {photo ? <View style={[styles.photoViewer, { backgroundColor: palette.panel, borderColor: palette.border }]}>
+        <Image accessibilityLabel={`${photo.label} reference photo`} resizeMode="contain" source={{ uri: photo.url }} style={styles.photoViewerImage} />
+        <View style={styles.photoViewerFoot}>
+          <Text style={[styles.dialogMeta, styles.footerMeta, { color: palette.text }]}>{photo.label}</Text>
+          <AdminButton label="Close" onPress={onClose} palette={palette} tone="secondary" />
+        </View>
+      </View> : null}
+    </View>
+  </Modal>;
+}
+
+/**
+ * View criteria: the reference photo of each severity level (src/lib/data/reference-photos.ts). ASTM D6433-07
+ * Appendix X1 photos unless an administrator replaced or removed one.
+ */
+function ReferencePhotos({ type, allowed, palette }: { type: CatalogType; allowed: Level[]; palette: AdminPalette }) {
+  const slots = photoSlots(type, allowed);
+  const paths = slots.map((slot) => slotPath(slot, type.severity_photos));
+  const urls = useSignedUrls(paths.filter((path): path is string => !!path));
+  const [enlarged, setEnlarged] = useState<{ url: string; label: string } | null>(null);
+  const anyAstm = slots.some((slot, index) => paths[index] && paths[index] === slot.astmPath);
+  const anyCustom = paths.some((path) => path?.startsWith('custom/'));
+  return <View style={styles.section}>
+    <Text style={[styles.sectionTitle, { color: palette.text }]}>Reference photos</Text>
+    <View style={styles.photoRow}>
+      {slots.map((slot, index) => {
+        const path = paths[index];
+        const caption = slotCaption(slot, type.name);
+        return <View key={slot.key} style={[styles.photoCell, slots.length === 1 && styles.photoCellSingle]}>
+          <PhotoTile label={`${type.name}, ${caption}`} onOpen={(url) => setEnlarged({ url, label: `${type.name} — ${caption}` })} palette={palette}
+            state={!path ? 'none' : urls ? 'missing' : 'loading'} url={path && urls ? urls[path] ?? null : null} />
+          <SlotLabel palette={palette} slot={slot} />
+        </View>;
+      })}
+    </View>
+    <Text style={[styles.dialogMeta, { color: palette.muted }]}>
+      {[anyAstm ? 'Example photos from ASTM D6433-07 Appendix X1.' : null, anyCustom ? 'Some photos were replaced by an administrator.' : null, paths.some(Boolean) ? 'Tap a photo to enlarge it.' : 'Add photos with Edit.'].filter(Boolean).join(' ')}
+    </Text>
+    <PhotoViewer onClose={() => setEnlarged(null)} palette={palette} photo={enlarged} />
+  </View>;
+}
+
+/** A pending change to one photo slot in the editor; applied when the distress type is saved. */
+type PhotoEdit = { kind: 'new'; uri: string } | { kind: 'remove' } | { kind: 'restore' };
+
+/** Editor: change, remove or restore the reference photo of each slot. Nothing is uploaded until Save. */
+function PhotoEditor({ slots, saved, edits, onChange, busy, palette, typeName }: {
+  slots: PhotoSlot[]; saved: SeverityPhotos | null | undefined; edits: Partial<Record<PhotoSlotKey, PhotoEdit>>;
+  onChange: (key: PhotoSlotKey, edit: PhotoEdit | null) => void; busy: boolean; palette: AdminPalette; typeName: string;
+}) {
+  const [enlarged, setEnlarged] = useState<{ url: string; label: string } | null>(null);
+  const [error, setError] = useState('');
+  const storedPaths = slots.map((slot) => {
+    const edit = edits[slot.key];
+    if (edit?.kind === 'restore') return slot.astmPath;
+    if (edit) return null;
+    return slotPath(slot, saved);
+  });
+  const urls = useSignedUrls(storedPaths.filter((path): path is string => !!path));
+
+  async function pick(key: PhotoSlotKey) {
+    setError('');
+    try {
+      // Imported up front: an on-demand import() of the picker failed in the web build.
+      const picked = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [4, 3], mediaTypes: ['images'], quality: 0.9 });
+      if (picked.canceled) return;
+      // Compressed when the distress type is saved, like profile and inspection photos.
+      onChange(key, { kind: 'new', uri: picked.assets[0].uri });
+    } catch (reason) {
+      setError(reason instanceof Error && reason.message ? `The photo could not be opened: ${reason.message}` : 'The photo picker is unavailable on this device.');
+    }
+  }
+
+  return <View style={styles.section}>
+    <Text style={[styles.sectionTitle, { color: palette.text }]}>Reference photos</Text>
+    <Text style={[styles.dialogMeta, { color: palette.muted }]}>Photos are compressed before upload and saved when you update. The original ASTM photos are kept, so you can restore them at any time.</Text>
+    {error ? <Notice error>{error}</Notice> : null}
+    <View style={styles.photoRow}>
+      {slots.map((slot, index) => {
+        const edit = edits[slot.key];
+        const stored = storedPaths[index];
+        const current = edit?.kind === 'new' ? 'new' : stored ? (stored === slot.astmPath ? 'astm' : 'custom') : 'none';
+        const url = edit?.kind === 'new' ? edit.uri : stored && urls ? urls[stored] ?? null : null;
+        const caption = slotCaption(slot, typeName || 'New distress type');
+        const restorable = !!slot.astmPath && current !== 'astm';
+        return <View key={slot.key} style={[styles.photoCell, slots.length === 1 && styles.photoCellSingle]}>
+          <PhotoTile label={caption} onOpen={(open) => setEnlarged({ url: open, label: caption })} palette={palette}
+            state={!stored && current !== 'new' ? 'none' : urls ? 'missing' : 'loading'} url={url} />
+          <SlotLabel palette={palette} slot={slot} />
+          <Text style={[styles.photoStatus, { color: current === 'new' ? palette.blue : palette.muted }]}>
+            {current === 'new' ? 'New photo, saved on update' : current === 'astm' ? 'ASTM photo' : current === 'custom' ? 'Uploaded photo' : 'No photo'}
+          </Text>
+          <View style={styles.photoActions}>
+            <TextLink a11y={`${current === 'none' ? 'Add' : 'Change'} ${caption} photo`} color={palette.blue} label={current === 'none' ? 'Add' : 'Change'} onPress={() => { if (!busy) void pick(slot.key); }} />
+            {current !== 'none' ? <TextLink a11y={`Remove ${caption} photo`} color={palette.red} label="Remove" onPress={() => { if (!busy) onChange(slot.key, slotPath(slot, saved) ? { kind: 'remove' } : null); }} /> : null}
+            {restorable ? <TextLink a11y={`Restore the ASTM ${caption} photo`} color={palette.blue} label="Restore ASTM" onPress={() => { if (!busy) onChange(slot.key, slotPath(slot, saved) === slot.astmPath ? null : { kind: 'restore' }); }} /> : null}
+          </View>
+        </View>;
+      })}
+    </View>
+    <PhotoViewer onClose={() => setEnlarged(null)} palette={palette} photo={enlarged} />
+  </View>;
+}
+
 /** Criteria for one distress type: how to measure it, each severity level, and what it is not. */
 function CriteriaDialog({ type, palette, onClose, onEdit }: { type: CatalogType | null; palette: AdminPalette; onClose: () => void; onEdit: (id: string) => void }) {
   if (!type) return null;
   const guidance = d07GuidanceFor(type.astm_edition, type.astm_code);
   const measure = d07MeasureFor(type.astm_edition, type.astm_code);
   const allowed = levels.filter(level => type.severity_required && type.allowed_severities.includes(level));
-  const textFor = (level: Level) => guidance?.[level] ?? type.severity_descriptions?.[level];
+  const textFor = (level: Level) => type.severity_descriptions?.[level]?.trim() || guidance?.[level];
   const howTo = measure?.measure ?? type.description;
   const year = /-(\d{2})$/.exec(type.astm_edition ?? '')?.[1];
   const changed = type.updated_at ? new Date(type.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
@@ -502,6 +813,7 @@ Measured in ${unitLabel(type.default_unit_of_measure)}.`}</Text>
               <Text style={[styles.dialogText, styles.criterionCopy, { color: palette.text }]}>{textFor(level) ?? 'Not written yet.'}</Text>
             </View>) : <Text style={[styles.dialogText, { color: palette.text }]}>{guidance?.none ?? 'This distress has no severity levels.'}</Text>}
           </View>
+          <ReferencePhotos allowed={allowed} palette={palette} type={type} />
           {measure?.confuse.length ? <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: palette.text }]}>Do not confuse with</Text>
             {measure.confuse.map(item => <Text key={item.name} style={[styles.dialogText, { color: palette.text }]}><Text style={styles.confuseName}>{item.name}: </Text>{item.difference}</Text>)}
@@ -520,12 +832,103 @@ Measured in ${unitLabel(type.default_unit_of_measure)}.`}</Text>
   </Modal>;
 }
 
-function describeChange(row: AuditRow) {
+const historyColumns = [{ flex: 1 }, { flex: 1.3 }, { flex: 2.6 }];
+const SEVERITY_ORDER = ['low', 'medium', 'high'];
+/** Fields of a distress type snapshot, in the order the History tab lists them. */
+const DISTRESS_FIELDS: { key: string; label: string; show: (value: unknown) => string }[] = [
+  { key: 'code', label: 'Code', show: (value) => String(value ?? '—') },
+  { key: 'name', label: 'Name', show: (value) => String(value ?? '—') },
+  { key: 'description', label: 'Description', show: (value) => (typeof value === 'string' && value ? (value.length > 90 ? `“${value.slice(0, 90)}…”` : `“${value}”`) : 'none') },
+  { key: 'default_unit_of_measure', label: 'Measured in', show: (value) => String(value ?? '—') },
+  { key: 'severity_required', label: 'Severity required', show: (value) => (value ? 'Yes' : 'No') },
+  { key: 'allowed_severities', label: 'Severity levels', show: (value) => {
+    const levels = Array.isArray(value) ? [...value].map(String).sort((a, b) => SEVERITY_ORDER.indexOf(a) - SEVERITY_ORDER.indexOf(b)) : [];
+    return levels.length ? levels.map((level) => level.charAt(0).toUpperCase() + level.slice(1)).join(', ') : 'None';
+  } },
+  { key: 'is_active', label: 'Status', show: (value) => (value === false ? 'Inactive' : 'Active') },
+  ...(['low', 'medium', 'high'] as const).map((level) => ({
+    key: `severity_descriptions.${level}`,
+    label: `${level.charAt(0).toUpperCase() + level.slice(1)} description`,
+    show: (value: unknown) => (typeof value === 'string' && value ? (value.length > 90 ? `“${value.slice(0, 90)}…”` : `“${value}”`) : 'built-in wording'),
+  })),
+];
+const PHOTO_FIELDS = (['low', 'medium', 'high', 'single'] as const).map((slot) => ({
+  key: `severity_photos.${slot}`,
+  label: slot === 'single' ? 'Reference photo' : `${slot.charAt(0).toUpperCase() + slot.slice(1)} photo`,
+}));
+/** "uploaded photo", "no photo" or "ASTM photo" for one saved photo choice. */
+const photoState = (snapshot: Snapshot, key: string) => {
+  const photos = fieldValue(snapshot, 'severity_photos');
+  const slot = key.split('.')[1];
+  if (!photos || typeof photos !== 'object' || !Object.prototype.hasOwnProperty.call(photos, slot)) return { raw: undefined as unknown, text: 'ASTM photo' };
+  const raw = (photos as Snapshot)[slot];
+  return { raw, text: typeof raw === 'string' ? 'uploaded photo' : 'no photo' };
+};
+/** Photo lines for History: added, removed, restored or replaced per slot. */
+function photoChanges(before: Snapshot | null, after: Snapshot) {
+  return PHOTO_FIELDS.flatMap((field) => {
+    const from = before ? photoState(before, field.key) : { raw: undefined, text: 'ASTM photo' };
+    const to = photoState(after, field.key);
+    if (JSON.stringify(from.raw) === JSON.stringify(to.raw)) return [];
+    if (from.text === to.text) return [`${field.label}: replaced`];
+    return [`${field.label}: ${from.text} → ${to.text}`];
+  });
+}
+/** Reads "a.b" keys from a saved snapshot. */
+const fieldValue = (snapshot: Snapshot, key: string) => key.split('.').reduce<unknown>((value, part) => (value && typeof value === 'object' ? (value as Snapshot)[part] : undefined), snapshot);
+
+type Snapshot = Record<string, unknown>;
+const asSnapshot = (value: unknown) => (value && typeof value === 'object' && !Array.isArray(value) ? value as Snapshot : null);
+
+/** A title and one line per changed value. Older saves only recorded the code, so they say so. */
+function describeChange(row: AuditRow, types: CatalogType[]): { title: string; lines: string[] } {
+  const detail = row.detail ?? {};
   if (row.action === 'distress_reference_saved') {
-    const code = typeof row.detail?.code === 'string' ? row.detail.code : 'a distress type';
-    return `Saved distress type ${code}${row.detail?.active === false ? ' (inactive)' : ''}`;
+    const code = typeof detail.code === 'string' ? detail.code : null;
+    const name = (typeof detail.name === 'string' && detail.name) || types.find((type) => type.id === row.target_id)?.name || null;
+    const label = name && code ? `${name} (${code})` : name ?? code ?? 'a distress type';
+    const before = asSnapshot(detail.before);
+    const after = asSnapshot(detail.after);
+    if (detail.created === true && after) {
+      return { title: `Added distress type ${label}`, lines: [...DISTRESS_FIELDS.filter((field) => field.key !== 'name' && field.key !== 'code' && !(field.key.startsWith('severity_descriptions.') && !fieldValue(after, field.key))).map((field) => `${field.label}: ${field.show(fieldValue(after, field.key))}`), ...photoChanges(null, after).filter((line) => !line.includes('→ ASTM photo'))] };
+    }
+    if (before && after) {
+      const lines = DISTRESS_FIELDS
+        .filter((field) => field.show(fieldValue(before, field.key)) !== field.show(fieldValue(after, field.key)))
+        .map((field) => `${field.label}: ${field.show(fieldValue(before, field.key))} → ${field.show(fieldValue(after, field.key))}`)
+        .concat(photoChanges(before, after));
+      return { title: `Updated distress type ${label}`, lines: lines.length ? lines : ['Saved with no changes.'] };
+    }
+    return {
+      title: `Saved distress type ${label}`,
+      lines: [`${detail.active === false ? 'Status: Inactive. ' : ''}Field-by-field details were not recorded for this older change.`],
+    };
   }
-  return 'Updated reference settings';
+  const entries = Object.entries(detail).filter(([, value]) => value !== null && typeof value !== 'object');
+  return { title: 'Updated reference settings', lines: entries.map(([key, value]) => `${key.replace(/_/g, ' ')}: ${String(value)}`) };
+}
+
+function HistoryRow({ row, person, fallbackName, types, palette, compact }: {
+  row: AuditRow; person: Person | null; fallbackName: string; types: CatalogType[]; palette: AdminPalette; compact: boolean;
+}) {
+  const when = new Date(row.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const change = describeChange(row, types);
+  const who = person?.name ?? fallbackName;
+  const roleLabel = person ? (roleLabels as Record<string, string>)[person.role] ?? person.role : null;
+  return <View accessibilityLabel={`${when}, ${who}: ${change.title}. ${change.lines.join('. ')}`} style={[styles.row, compact && styles.historyRowStack, { borderBottomColor: palette.border }]}>
+    <Text style={[styles.cell, historyColumns[0], compact && styles.historyCellStack, { color: palette.muted }]}>{when}</Text>
+    <View style={[historyColumns[1], compact && styles.historyCellStack]}>
+      <Text style={[styles.cell, styles.historyStrong, { color: palette.text }]}>{who}</Text>
+      {person?.email || roleLabel ? <Text style={[styles.historyMeta, { color: palette.muted }]}>{[person?.email, roleLabel].filter(Boolean).join(' · ')}</Text> : null}
+    </View>
+    <View style={[historyColumns[2], compact && styles.historyCellStack]}>
+      <Text style={[styles.cell, styles.historyStrong, { color: palette.text }]}>{change.title}</Text>
+      {change.lines.map((line) => <View key={line} style={styles.historyLine}>
+        <Text style={[styles.historyMeta, { color: palette.muted }]}>•</Text>
+        <Text style={[styles.historyMeta, styles.historyLineText, { color: palette.text }]}>{line}</Text>
+      </View>)}
+    </View>
+  </View>;
 }
 
 function Table({ palette, head, rows, strongFirst = false }: { palette: AdminPalette; head: string[]; rows: string[][]; strongFirst?: boolean }) {
@@ -554,11 +957,16 @@ function SwitchRow({ palette, title, text, value, onChange, disabled }: { palett
       <Text style={[styles.switchTitle, { color: palette.text }]}>{title}</Text>
       <Text style={[styles.switchText, { color: palette.muted }]}>{text}</Text>
     </View>
-    <Switch disabled={disabled} onValueChange={onChange} value={value} trackColor={{ false: palette.border, true: palette.blue }} />
+    {/* Brand royal track with a white thumb; activeThumbColor is the web prop (the default there is teal). */}
+    <Switch disabled={disabled} onValueChange={onChange} value={value} thumbColor="#FFFFFF" trackColor={{ false: palette.border, true: palette.action }} {...({ activeThumbColor: '#FFFFFF' } as object)} />
   </View>;
 }
 
 const styles = StyleSheet.create({
+  panelHead: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', marginBottom: 15 },
+  panelHeadText: { flexShrink: 1, minWidth: 200 },
+  panelHeadTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  panelHeadSubtitle: { fontSize: 12, lineHeight: 18, marginTop: 3 },
   summary: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between' },
   summaryItems: { flex: 1, flexDirection: 'row', gap: 40, minWidth: 260 },
   wrap: { flexWrap: 'wrap', rowGap: 14 },
@@ -572,6 +980,12 @@ const styles = StyleSheet.create({
   stack: { alignItems: 'stretch', flexDirection: 'column' },
   main: { flex: 1, gap: 16, minWidth: 0 },
   row: { borderBottomWidth: 1, flexDirection: 'row', gap: 16, paddingVertical: 12 },
+  historyRowStack: { flexDirection: 'column', gap: 6 },
+  historyCellStack: { flex: 0 },
+  historyStrong: { flex: 0, fontWeight: '700' },
+  historyMeta: { fontSize: 13, lineHeight: 19 },
+  historyLine: { flexDirection: 'row', gap: 6, marginTop: 2 },
+  historyLineText: { flex: 1 },
   cell: { flex: 1, fontSize: 15, lineHeight: 21, minWidth: 0 },
   firstCell: { flex: 1.2 },
   note: { fontSize: 14, lineHeight: 21, marginBottom: 8 },
@@ -589,6 +1003,7 @@ const styles = StyleSheet.create({
   link: { fontSize: 15 },
   backdrop: { alignItems: 'center', backgroundColor: layout.scrim, flex: 1, justifyContent: 'center', padding: 20 },
   dialog: { borderRadius: 16, borderWidth: 1, maxHeight: '85%', maxWidth: 560, width: '100%' },
+  editorDialog: { maxHeight: '92%', maxWidth: 640 },
   dialogBody: { gap: 20, padding: 24 },
   dialogTitle: { fontSize: 20, fontWeight: '800' },
   dialogMeta: { fontSize: 13, lineHeight: 19 },
@@ -613,6 +1028,9 @@ const styles = StyleSheet.create({
   pointCell: { flex: 1 },
   figure: { alignItems: 'center', aspectRatio: 1.5, borderRadius: 10, borderStyle: 'dashed', borderWidth: 1, gap: 4, justifyContent: 'center', marginTop: 12 },
   figureText: { fontSize: 14 },
+  // Figures are black on white scans, so they sit on white in both themes.
+  figureLoaded: { backgroundColor: '#FFFFFF', borderStyle: 'solid', overflow: 'hidden', padding: 8 },
+  figureImage: { height: '100%', width: '100%' },
   pickerButton: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 42, paddingHorizontal: 12 },
   pickerText: { fontSize: 15 },
   pickerOption: { borderBottomWidth: 1, paddingHorizontal: 20, paddingVertical: 14 },
@@ -622,6 +1040,21 @@ const styles = StyleSheet.create({
   criterionCopy: { flex: 1 },
   levelPill: { alignItems: 'center', borderRadius: 999, minWidth: 80, paddingHorizontal: 14, paddingVertical: 5 },
   levelPillText: { fontSize: 13, fontWeight: '700' },
+  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoCell: { alignItems: 'center', flexBasis: 140, flexGrow: 1, gap: 8, maxWidth: 200 },
+  photoCellSingle: { maxWidth: 320 },
+  photoTile: { aspectRatio: 4 / 3, borderRadius: 12, borderWidth: 1, overflow: 'hidden', width: '100%' },
+  photoImage: { height: '100%', width: '100%' },
+  photoEmpty: { alignItems: 'center', borderStyle: 'dashed', gap: 6, justifyContent: 'center' },
+  photoEmptyText: { fontSize: 12 },
+  photoPill: { minWidth: 90 },
+  photoCaption: { textAlign: 'center' },
+  photoStatus: { fontSize: 12, textAlign: 'center' },
+  photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
+  photoBackdrop: { alignItems: 'center', backgroundColor: 'rgba(6, 15, 46, 0.78)', flex: 1, justifyContent: 'center', padding: 20 },
+  photoViewer: { borderRadius: 16, borderWidth: 1, gap: 12, maxWidth: 820, overflow: 'hidden', padding: 14, width: '100%' },
+  photoViewerImage: { aspectRatio: 4 / 3, borderRadius: 10, maxHeight: 620, width: '100%' },
+  photoViewerFoot: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   confuseName: { fontWeight: '700' },
   dialogFooter: { alignItems: 'center', borderTopWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 14 },
   footerMeta: { flexShrink: 1 },
@@ -630,7 +1063,10 @@ const styles = StyleSheet.create({
   formRow: { flexDirection: 'row', gap: 14 },
   formCell: { flex: 1 },
   severityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  severityChoice: { borderRadius: 8, borderWidth: 1, minHeight: 42, minWidth: 88, paddingHorizontal: 14, paddingVertical: 11 },
+  severityChoice: { alignItems: 'center', borderRadius: 8, borderWidth: 1, justifyContent: 'center', minHeight: 42, minWidth: 88, paddingHorizontal: 14, paddingVertical: 11 },
+  severityChoiceText: { fontWeight: '700', textAlign: 'center' },
+  criterionEdit: { alignItems: 'flex-start' },
+  severityInput: { borderRadius: 9, borderWidth: 1, flex: 1, fontSize: 14.5, lineHeight: 21, minHeight: 64, minWidth: 0, paddingHorizontal: 12, paddingVertical: 9, textAlignVertical: 'top' },
   switchRow: { alignItems: 'center', borderBottomWidth: 1, flexDirection: 'row', gap: 12, paddingVertical: 12 },
   switchCopy: { flex: 1 },
   switchTitle: { fontSize: 14.5, fontWeight: '700' },

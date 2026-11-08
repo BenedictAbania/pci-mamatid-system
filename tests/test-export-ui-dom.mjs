@@ -35,7 +35,7 @@ async function test(id, scenario, task) {
   catch (e) { results.push({ id, scenario, status: 'FAIL', actual: e.message }); }
   finally { await React.act(async () => root.unmount()); host.remove(); }
 }
-const fieldDeps = { 'react-native': native, '@expo/vector-icons': {}, 'expo-image': {}, 'expo-router': {}, '@/lib/data/supabase': {}, '@/providers/AuthProvider': {}, '@/providers/ThemeProvider': {}, '@/lib/auth/access': {}, '@/lib/ui/design-system': load('src/lib/ui/design-system.ts'), '@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display': load('src/lib/auth/account-display.ts') };
+const fieldDeps = {'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' },  'react-native': native, '@expo/vector-icons': {}, 'expo-image': {}, 'expo-router': {}, '@/lib/data/supabase': {}, '@/providers/AuthProvider': {}, '@/providers/ThemeProvider': {}, '@/lib/auth/access': {}, '@/lib/ui/design-system': load('src/lib/ui/design-system.ts'), '@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display': load('src/lib/auth/account-display.ts') };
 await test('D04', 'Real RN Web DOM: select by label, Tab/Shift-Tab, typing and duplicate labels', async (host, root) => {
   const { AdminField } = load('src/components/admin/admin-shell.tsx', fieldDeps);
   const labels = ['Measured sample area (m², 135–315)', 'Inspection date (YYYY-MM-DD)', 'Sample orientation / sketch description (§8.2)', 'General inspection notes'];
@@ -73,7 +73,7 @@ await test('D03', 'Actual React effects: initial failure, refresh failure, retry
     './shared': { Notice: ({ children, error }) => e('div', { role: error ? 'alert' : undefined }, children) }, './task-tabs': load('src/components/workflow/task-tabs.tsx', {'react-native': native, '@/components/admin/admin-shell': { useAdminPalette: () => ({}) }}), './pagination': { PageControls: () => null },
     '@/lib/data/approved-data': { REPORT_PAGE_SIZE: 50, loadApprovedPage: () => response('page'), loadApprovedSummary: () => response('summary'), loadSectionReportPage: () => response('sections') },
     '@/lib/data/approved-results': load('src/lib/data/approved-results.ts'), '@/lib/utils/admin-utils': { formatDate: v => String(v), downloadCsv() {} },
-    '@/providers/AuthProvider': { useAuth: () => ({ role: 'viewer' }) }, '@/components/workflow/photo-card': {},
+    '@/providers/AuthProvider': { useAuth: () => ({ role: 'viewer' }) }, '@/components/workflow/photo-card': {}, '@/components/workflow/distress-photos': { PhotoGroups: () => null, photoGroups: () => [], distressLabel: name => name },
     'expo-router': { useRouter: () => ({ push() {} }) }, '@/lib/ui/demo-preview': { DEMO_PREVIEW_ENABLED: false },
   };
   const { ApprovedReports } = load('src/components/workflow/approved-reports.tsx', deps);

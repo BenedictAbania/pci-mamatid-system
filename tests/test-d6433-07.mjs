@@ -41,6 +41,25 @@ fails(() => reader.corrected(80, 8), /No supplied/);
 close(reader.deduct(19, 'medium', 10), 35);
 fails(() => reader.deduct(19, 'medium', 0.01), /outside/);
 
+// Provisional reader: unreviewed packages run with recorded hold/scale/q policies.
+const unsigned = { ...pack, permission_record: '', reviewed_by: '', interpolation_review: '' };
+fails(() => curves.privateCurveReader(unsigned, 'b'.repeat(64)), /provenance/);
+const provisional = curves.provisionalCurveReader(unsigned, 'b'.repeat(64));
+close(provisional.deduct(19, 'medium', 10), 35);
+eq(provisional.notes.length, 0);
+close(provisional.deduct(19, 'medium', 0.01), 1);
+close(provisional.deduct(19, 'medium', 150), 60);
+eq(provisional.notes.length, 2);
+close(provisional.corrected(80, 8), provisional.corrected(80, 7));
+eq(provisional.notes.some(text => /q = 8 has no curve/.test(text)), true);
+const late = curves.provisionalCurveReader({ ...unsigned, cdv: { ...unsigned.cdv, 6: { figure: 'X3.26', x_scale: 'linear', points: [[40, 20], [200, 90]] } } }, 'b'.repeat(64));
+close(late.corrected(20, 6), 10);
+close(late.corrected(250, 6), 90);
+fails(() => curves.provisionalCurveReader({ ...unsigned, usage: 'public' }, 'b'.repeat(64)), /private/);
+const flagged = sample.calculateSample(input([obs(19, 'medium', 0.01)]), curves.provisionalCurveReader(unsigned, 'b'.repeat(64)));
+eq(flagged.provisional_notes.length, 1);
+eq(sample.calculateSample(input([obs(1, 'low', 4)]), reader).provisional_notes, []);
+
 const mixed = sample.calculateSample(input([obs(1, 'low', 4), obs(1, 'medium', 6)]), reader);
 eq(mixed.groups.length, 2); // D07 §9.1: distinct severity groups, no D24 §9.6.2 alternatives.
 eq(mixed.observed_groups.map(row => row.quantity), [4, 6]);

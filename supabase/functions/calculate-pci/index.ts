@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.4';
 import { handler } from './handler.ts';
-import { privateCurveReader, ReferenceUnavailable } from '../_shared/d6433-07/curves.ts';
+import { privateCurveReader, provisionalCurveReader, ReferenceUnavailable } from '../_shared/d6433-07/curves.ts';
 const url=Deno.env.get('SUPABASE_URL')!;
 const anon=Deno.env.get('SUPABASE_ANON_KEY')!;
 const service=createClient(url,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false}});
@@ -12,7 +12,7 @@ Deno.serve(handler({
   },
   async context(token,target,kind) {
     const scoped=createClient(url,anon,{global:{headers:{Authorization:'Bearer '+token}},auth:{persistSession:false}});
-    const {data,error}=await scoped.rpc('lakad_calculation_context',{target,kind});
+    const {data,error}=kind==='preview' ? await scoped.rpc('lakad_preview_context',{target}) : await scoped.rpc('lakad_calculation_context',{target,kind});
     if(error)throw new Error(error.message);return data;
   },
   async reference() {
@@ -25,7 +25,9 @@ Deno.serve(handler({
     const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
     // Bind content to an administrator-approved hash, not a self-reported JSON claim.
     if(digest!==Deno.env.get('D6433_07_REFERENCE_SHA256'))throw new ReferenceUnavailable('Reference package content hash is not approved');
-    return privateCurveReader(JSON.parse(new TextDecoder().decode(bytes)),digest);
+    const pack=JSON.parse(new TextDecoder().decode(bytes));
+    // A package without engineering sign-off runs under recorded provisional policies.
+    return pack.reviewed_by?.trim() ? privateCurveReader(pack,digest) : provisionalCurveReader(pack,digest);
   },
   async save(actor,context,output) {
     const {error}=await service.rpc('lakad_record_provisional_calculation',{actor,context,output});

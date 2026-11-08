@@ -10,9 +10,9 @@ import {
     AdminShell,
     useAdminPalette,
 } from '@/components/admin/admin-shell';
-import { SectionPlan, type AdditionalUnitPayload, type ConfirmPlanPayload } from '@/components/road-network/section-plan';
+import { SectionPlan, type AdditionalUnitPayload, type ConfirmPlanPayload, type StartRoundPayload } from '@/components/road-network/section-plan';
 import { Notice, useWorkflow } from '@/components/workflow/shared';
-import { callWorkflow } from '@/lib/data/workflow-data';
+import { callWorkflow, loadSurveyRounds, publishSectionResult, type SurveyRounds } from '@/lib/data/workflow-data';
 import { layout } from '@/lib/ui/design-system';
 import {
     BranchFormValues,
@@ -72,6 +72,8 @@ export default function RoadNetworkScreen() {
   const [modal, setModal] = useState<'branch' | 'section' | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [rounds, setRounds] = useState<SurveyRounds | null>(null);
+  const [roundsError, setRoundsError] = useState('');
   const isPhone = width < 700;
   const canEdit = role === 'reviewer';
 
@@ -87,9 +89,26 @@ export default function RoadNetworkScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void reloadCounts();
   }, [reloadCounts]);
+  const roundsAllowed = role === 'reviewer' || role === 'admin';
+  const reloadRounds = useCallback(async () => {
+    if (!selectedSectionId || !roundsAllowed) return;
+    try {
+      setRounds(await loadSurveyRounds(selectedSectionId));
+      setRoundsError('');
+    } catch (reason) {
+      setRounds(null);
+      setRoundsError(reason instanceof Error ? reason.message : 'Survey rounds could not be loaded.');
+    }
+  }, [roundsAllowed, selectedSectionId]);
+  useEffect(() => {
+    // Load the selected section's survey rounds.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRounds(null);
+    void reloadRounds();
+  }, [reloadRounds]);
   const refreshAll = useCallback(async () => {
-    await Promise.all([refresh(), reloadCounts()]);
-  }, [refresh, reloadCounts]);
+    await Promise.all([refresh(), reloadCounts(), reloadRounds()]);
+  }, [refresh, reloadCounts, reloadRounds]);
 
   const branches = data?.branches ?? [];
   const sections = data?.sections ?? [];
@@ -99,8 +118,11 @@ export default function RoadNetworkScreen() {
   const sectionCount = (count: number) => `${count} Section${count === 1 ? '' : 's'}`;
   const selectedSection = selectedSectionId ? sections.find((section) => section.id === selectedSectionId) : undefined;
   const sectionSamples = selectedSection ? (data?.samples ?? []).filter((sample) => sample.section_id === selectedSection.id) : [];
+  const currentRound = rounds?.current_round ?? 1;
+  // Assignment works on the current survey round; earlier rounds are history.
+  const roundSamples = sectionSamples.filter((sample) => (sample.survey_round ?? 1) === currentRound);
   const encoders = (data?.profiles ?? []).filter((profile) => profile.role === 'encoder' && profile.is_active !== false);
-  const currentEncoderId = sectionSamples.find((sample) => sample.assigned_to)?.assigned_to ?? '';
+  const currentEncoderId = roundSamples.find((sample) => sample.assigned_to)?.assigned_to ?? '';
 
   /** Runs one plan action; failures stay on screen and the page reloads only on success. */
   async function runPlanAction(action: () => Promise<void>, success: string) {
@@ -124,13 +146,21 @@ export default function RoadNetworkScreen() {
     () => callWorkflow('lakad_confirm_sampling_plan', { target: selectedSection!.id, payload }),
     'Sampling plan confirmed. Assign an encoder to start the inspection.',
   );
+  const publishSection = () => runPlanAction(
+    () => publishSectionResult(selectedSection!.id),
+    'Section PCI computed and published. Viewers can now see it in Sections Summaries.',
+  );
+  const startRound = (payload: StartRoundPayload) => runPlanAction(
+    () => callWorkflow('lakad_start_survey_round', { target: selectedSection!.id, payload }),
+    `Round ${currentRound + 1} planned. Assign an encoder to start the inspection.`,
+  );
   const addAdditional = (payload: AdditionalUnitPayload) => runPlanAction(
     () => callWorkflow('lakad_add_additional_sample_unit', { target: selectedSection!.id, payload }),
-    `U${payload.unit} marked as an additional sample unit.`,
+    `SU${payload.unit} marked as an additional sample unit.`,
   );
 
   // Only planned units can change hands; started units stay with their encoder.
-  const assignableUnits = sectionSamples.filter((sample) => sample.workflow_state === 'planned').sort((a, b) => a.unit_number - b.unit_number);
+  const assignableUnits = roundSamples.filter((sample) => sample.workflow_state === 'planned').sort((a, b) => a.unit_number - b.unit_number);
   const encoderName = (id: string | null) => encoders.find((encoder) => encoder.id === id)?.full_name || null;
 
   function openAssign() {
@@ -154,7 +184,7 @@ export default function RoadNetworkScreen() {
     const units = assignMode === 'choose' ? assignUnits : null;
     if (await runPlanAction(
       () => callWorkflow('lakad_assign_section_encoder', { target: selectedSection.id, payload: units ? { inspector: assignee, units } : { inspector: assignee } }),
-      units ? `${name} is assigned to ${units.map((unit) => `U${unit}`).join(', ')} in ${selectedSection.name}.` : `${name} is assigned to every planned unit in ${selectedSection.name}.`,
+      units ? `${name} is assigned to ${units.map((unit) => `SU${unit}`).join(', ')} in ${selectedSection.name}.` : `${name} is assigned to every planned unit in ${selectedSection.name}.`,
     )) setAssignOpen(false);
   }
 
@@ -289,7 +319,7 @@ export default function RoadNetworkScreen() {
     <AdminShell
       action={canEdit ? (
         <View style={styles.headerActions}>
-          {selectedSection ? <AdminButton disabled={!sectionSamples.length} label="Assign Encoder" onPress={openAssign} palette={palette} /> : null}
+          {selectedSection ? <AdminButton disabled={!roundSamples.length} label="Assign Encoder" onPress={openAssign} palette={palette} /> : null}
           <AdminButton icon="plus" label="Add branch" onPress={() => openBranch()} palette={palette} />
         </View>
       ) : undefined}
@@ -312,7 +342,11 @@ export default function RoadNetworkScreen() {
           onBack={() => { setSelectedSectionId(null); setMessage(''); setError(''); }}
           onConfirm={confirmPlan}
           onEditDetails={() => openSection(selectedSection.branch_id, selectedSection)}
+          onPublishSection={publishSection}
+          onStartRound={startRound}
           palette={palette}
+          rounds={rounds}
+          roundsError={roundsError}
           samples={sectionSamples}
           section={selectedSection}
         />
@@ -436,14 +470,14 @@ export default function RoadNetworkScreen() {
                       return (
                         <Pressable
                           key={sample.id}
-                          accessibilityLabel={`U${sample.unit_number}${owner ? `, assigned to ${owner}` : ''}`}
+                          accessibilityLabel={`SU${sample.unit_number}${owner ? `, assigned to ${owner}` : ''}`}
                           accessibilityRole="checkbox"
                           accessibilityState={{ checked }}
                           onPress={() => toggleAssignUnit(sample.unit_number)}
                           style={[styles.unitCell, { borderColor: palette.text }]}>
                           <View style={[styles.checkbox, { borderColor: palette.text, backgroundColor: checked ? palette.blue : palette.panel }]}>{checked ? <Feather color="#FFFFFF" name="check" size={14} /> : null}</View>
                           <View style={styles.itemCopy}>
-                            <Text style={[styles.unitText, { color: palette.text }]}>U{sample.unit_number}</Text>
+                            <Text style={[styles.unitText, { color: palette.text }]}>SU{sample.unit_number}</Text>
                             {owner || sample.sample_type === 'additional' ? <Text numberOfLines={1} style={[styles.unitMeta, { color: palette.muted }]}>{[sample.sample_type === 'additional' ? 'Additional' : null, owner].filter(Boolean).join(' · ')}</Text> : null}
                           </View>
                         </Pressable>
@@ -455,7 +489,7 @@ export default function RoadNetworkScreen() {
                   </Text>
                 </>
               )}
-              {sectionSamples.length > assignableUnits.length ? <Text style={[styles.unitMeta, { color: palette.muted }]}>{sectionSamples.length - assignableUnits.length} unit{sectionSamples.length - assignableUnits.length === 1 ? ' has' : 's have'} already started and keep their encoder.</Text> : null}
+              {roundSamples.length > assignableUnits.length ? <Text style={[styles.unitMeta, { color: palette.muted }]}>{roundSamples.length - assignableUnits.length} unit{roundSamples.length - assignableUnits.length === 1 ? ' has' : 's have'} already started and keep their encoder.</Text> : null}
 
               <Text style={[styles.assignHeading, { color: palette.text }]}>Encoder</Text>
               {encoders.length ? encoders.map((encoder) => {

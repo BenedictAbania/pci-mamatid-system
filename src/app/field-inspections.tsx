@@ -1,21 +1,23 @@
+import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { PhotoCard } from '@/components/workflow/photo-card';
+import { distressLabel, photoGroups, PhotoGroups } from '@/components/workflow/distress-photos';
 import { PageControls } from '@/components/workflow/pagination';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { TaskTabs } from '@/components/workflow/task-tabs';
+import { DistressEntry } from '@/components/workflow/distress-entry';
+import { ReviewWorkspace } from '@/components/workflow/review-workspace';
 import { inspectionSteps, severityChoices, statusGuidance, type InspectionStep } from '@/lib/ui/inspection-presentation';
 import { StatusBadge } from '@/components/dashboard/dashboard-parts';
 import { Pressable, Text, View } from 'react-native';
-import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
+import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette } from '@/components/admin/admin-shell';
 import { CatalogDropdown, Choices, Notice, useWorkflow } from '@/components/workflow/shared';
 import { validateMeasurement, type CalculationOutput } from '@/lib/pci/pci-service';
 import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/pci/severity-colors';
-import { supabase } from '@/lib/data/supabase';
 import { Photo, Sample, WorkflowData, workflowAction, calculateProvisional } from '@/lib/data/workflow-data';
 import { useAuth } from '@/providers/AuthProvider';
-import { PHOTO_SIZE_MESSAGE, validatePhotoSize } from '@/lib/utils/inspection-photo';
+import { removeInspectionPhoto, uploadInspectionPhoto } from '@/lib/data/inspection-photos';
 import { DEMO_PREVIEW_ENABLED } from '@/lib/ui/demo-preview';
 
 import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL, type Unit } from '@/lib/d6433-07/catalog';
@@ -34,40 +36,57 @@ function InspectionWorkspace({ status, initialSample }: { status: string; initia
   const router = useRouter();
   const [selected, setSelected] = useState(initialSample);
   const [step, setStep] = useState<InspectionStep>('details');
+  // Encoders start on distress entry; the full form keeps details, photos and submission.
+  const [fullForm, setFullForm] = useState(false);
   useEffect(() => {
     // Sync direct task links and browser history without remounting the shell.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelected(initialSample);
     setStep('details');
+    setFullForm(false);
   }, [initialSample]);
   const state = useWorkflow(selected, undefined, status === 'all' ? undefined : status);
   const p = useAdminPalette();
   const { role, user } = useAuth();
-  const [query, setQuery] = useState('');
   const visibleSamples = state.scopeChanging ? [] : state.data?.samples.filter(item => role === 'reviewer' ? item.reviewer_id === user?.id && item.assigned_to !== user?.id : role === 'encoder' ? item.assigned_to === user?.id : false) ?? [];
-  const filteredSamples = visibleSamples.filter(s => (status === 'all' || s.workflow_state === status)).filter(s => `${state.data?.sections.find(x => x.id === s.section_id)?.name} ${s.unit_number} ${s.workflow_state}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredSamples = visibleSamples.filter(s => status === 'all' || s.workflow_state === status);
   const sample = visibleSamples.find(item => item.id === selected);
+  const sampleSection = sample ? state.data?.sections.find(s => s.id === sample.section_id) : undefined;
+  const sampleBranch = sampleSection ? state.data?.branches?.find(b => b.id === sampleSection.branch_id) : undefined;
   const title = role === 'reviewer' ? 'Inspections to Review' : 'My Inspections';
-  const subtitle = role === 'reviewer' ? 'Review submitted inspections assigned to you and record an independent decision.' : 'Start, save, correct, and submit your assigned sample-unit inspections.';
-  return <AdminShell title={title} subtitle={subtitle} loading={state.loading} onRefresh={() => void state.refresh()} onSearchChange={setQuery} searchValue={query} searchLabel="Search inspections on this page">
-    {!!state.error && <Notice error>{state.error}</Notice>}{!!state.message && <Notice>{state.message}</Notice>}
-    <Notice>{PROVISIONAL_LABEL}. Inspections can be saved and reviewed; approval requires a verified reference calculation.</Notice>
+  const emptyMessage = role === 'reviewer' ? 'No sample units are assigned to you for independent review.' : status === 'all' ? 'No sample units are assigned to you. A civil engineer must confirm a plan first.' : `No ${status} inspections are assigned to you.`;
+  return <AdminShell title={title} subtitle="" loading={state.loading} onRefresh={() => void state.refresh()}>
+    {!!state.error && <Notice error>{state.error}</Notice>}
     {state.data && <>
-      {!selected && <AdminPanel title="Inspection register" palette={p}>
-        <TaskTabs label="Filter inspections by status" value={status} items={['all', 'planned', 'draft', 'returned', 'submitted', 'approved', 'published'].map(value => ({ value, label: value === 'all' ? 'All inspections' : value[0].toUpperCase() + value.slice(1) }))} onChange={value => router.setParams({ status: value })} />
-        <Text style={{ color: p.muted, marginVertical: 12 }}>Status filters cover all your assignments. Text search covers this page only. Select a sample to see the next task.</Text>
-        <View style={{ gap: 10 }}>{filteredSamples.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityLabel={`Open sample ${s.unit_number}`} onPress={() => { setSelected(s.id); setStep('details'); }} style={{ borderWidth: 1, borderColor: s.id === selected ? p.blue : p.border, backgroundColor: s.id === selected ? p.blueSoft : p.panel, borderRadius: 9, padding: 14, gap: 6 }}>
+      {!selected && <AdminPanel title="Assignment Tab" palette={p}>
+        <TaskTabs variant="pill" label="Filter inspections by status" value={status} items={['all', 'planned', 'draft', 'submitted', 'returned', 'approved', 'published'].map(value => ({ value, label: value === 'all' ? 'All Inspection' : value[0].toUpperCase() + value.slice(1) }))} onChange={value => router.setParams({ status: value })} />
+        <View style={{ gap: 10, marginTop: 16 }}>{filteredSamples.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityLabel={`Open sample ${s.unit_number}`} onPress={() => { setSelected(s.id); setStep('details'); setFullForm(false); }} style={{ borderWidth: 1, borderColor: s.id === selected ? p.blue : p.border, backgroundColor: s.id === selected ? p.blueSoft : p.panel, borderRadius: 9, padding: 14, gap: 6 }}>
           <Text style={{ color: p.text, fontWeight: '700' }}>{state.data?.sections.find(x => x.id === s.section_id)?.name} · SU-{String(s.unit_number).padStart(3, '0')}</Text>
           <Text style={{ color: p.muted }}>{s.workflow_state.toUpperCase()} · {s.sample_type ?? 'Unplanned'} · {s.area_sqm ?? '—'} m² · Revision {s.input_revision}</Text>
         </Pressable>)}</View>
-        {!state.loading && !visibleSamples.length && <AdminEmpty palette={p} icon="clipboard" message={role === 'reviewer' ? 'No sample units are assigned to you for independent review.' : 'No sample units are assigned to you. A civil engineer must confirm a plan first.'} />}
-        {!state.loading && !!visibleSamples.length && !filteredSamples.length && <AdminEmpty palette={p} icon="search" message="No matching inspections on this page. Change the status filter, clear search, or move to the next page." />}
+        {!state.loading && !filteredSamples.length && <Text style={{ color: p.text, fontSize: 16, textAlign: 'center', paddingVertical: 32 }}>{emptyMessage}</Text>}
         <PageControls {...state.pagination} />
       </AdminPanel>}
-      {!!selected && <AdminButton palette={p} tone="secondary" label="Back to inspection list" onPress={() => { setSelected(''); router.setParams({ status, sample: undefined }); }} />}
+      {/* Same back arrow and title as the reviewer's section page. */}
+      {!!selected && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Pressable accessibilityLabel="Back to inspection list" accessibilityRole="button" onPress={() => { setSelected(''); router.setParams({ status, sample: undefined }); }} style={{ alignItems: 'center', justifyContent: 'center', minHeight: 40, minWidth: 40 }}>
+          <Feather color={p.text} name="arrow-left" size={24} />
+        </Pressable>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text accessibilityRole="header" numberOfLines={1} style={{ color: p.text, fontSize: 19, fontWeight: '800' }}>{sample ? `Sample Unit ${sample.unit_number}` : 'Inspection'}</Text>
+          {!!sampleSection && <Text numberOfLines={1} style={{ color: p.text, fontSize: 13 }}>{[sampleSection.name, sampleBranch?.name].filter(Boolean).join(' · ')}</Text>}
+        </View>
+      </View>}
       {!!selected && state.loadedSampleId !== selected && <Notice>Loading inspection details…</Notice>}
       {!!selected && state.loadedSampleId === selected && !sample && !state.loading && <Notice error>This sample is unavailable in your authorized assignments. Return to the list or refresh.</Notice>}
-      {sample && state.loadedSampleId === selected && <InspectionEditor step={step} setStep={setStep} error={state.error} key={`${sample.id}-${sample.input_revision}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} />}
+      {sample && state.loadedSampleId === selected && (role === 'reviewer'
+        ? <ReviewWorkspace key={`${sample.id}-${sample.input_revision}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} error={state.error} />
+        : role === 'encoder' && !fullForm
+        ? <DistressEntry key={sample.id} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} error={state.error} onRefresh={state.refresh} />
+        : <>
+          {role === 'encoder' && <AdminButton palette={p} tone="secondary" label="Back to distress entry" onPress={() => setFullForm(false)} />}
+          <InspectionEditor step={step} setStep={setStep} error={state.error} key={`${sample.id}-${sample.input_revision}-${sample.workflow_state}`} sample={sample} data={state.data} busy={state.busy || state.loading} run={state.run} />
+        </>)}
     </>}
   </AdminShell>;
 }
@@ -111,7 +130,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
   const dirty = measuredArea !== String(sample.area_sqm ?? '') || orientation !== (sample.orientation_note ?? '') || fieldConfirmed !== (sample.field_rules_confirmed ?? false) || notes !== (sample.inspection_notes ?? '') || date !== (sample.surveyed_at?.slice(0, 10) ?? todayLocal()) || latitude !== (sample.latitude?.toString() ?? '') || longitude !== (sample.longitude?.toString() ?? '') || noDistress !== sample.no_distress_confirmed;
   async function addDistress() {
     if (!type) throw new Error('Select an active distress type. An administrator must configure the catalog if it is empty.');
-    const guidance = type.astm_edition === EDITION ? d07GuidanceSnapshot(type.astm_code ?? -1, (severity || null) as SeverityCode | null) : null;
+    const guidance = type.astm_edition === EDITION ? d07GuidanceSnapshot(type.astm_code ?? -1, (severity || null) as SeverityCode | null, severity ? type.severity_descriptions?.[severity as SeverityCode] : null) : null;
     if (type.astm_edition === EDITION && !guidance) throw new Error('Draft severity guidance is unavailable for this distress. Ask the Civil Engineer before saving.');
     const measured = measureParts(parts, type.default_unit_of_measure as Unit, (severity || null) as 'low' | 'medium' | 'high' | null);
     const evidence = severityEvidence(type.astm_code ?? -1, severityMeasure);
@@ -139,18 +158,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
     if (!selectedPhoto) throw new Error('Choose a photograph before uploading.');
     setPhotoUploading(true);
     try {
-      if (selectedPhoto.fileSize) validatePhotoSize(selectedPhoto.fileSize);
-      const response = await fetch(selectedPhoto.uri);
-      const bytes = await response.arrayBuffer();
-      const head = new Uint8Array(bytes);
-      const detected = head[0] === 255 && head[1] === 216 && head[2] === 255 ? 'image/jpeg' : head[0] === 137 && head[1] === 80 && head[2] === 78 && head[3] === 71 ? 'image/png' : String.fromCharCode(...head.slice(0, 4)) === 'RIFF' && String.fromCharCode(...head.slice(8, 12)) === 'WEBP' ? 'image/webp' : null;
-      if (!detected) throw new Error(PHOTO_SIZE_MESSAGE);
-      validatePhotoSize(bytes.byteLength);
-      const path = `${sample.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${detected.split('/')[1]}`;
-      const { error } = await supabase.storage.from('sample-unit-photos').upload(path, bytes, { contentType: detected, upsert: false });
-      if (error) throw new Error(`Photograph upload failed: ${error.message}`);
-      try { await workflowAction(sample, 'photo', { path, caption }); }
-      catch (reason) { await supabase.storage.from('sample-unit-photos').remove([path]); throw reason; }
+      await uploadInspectionPhoto(sample, selectedPhoto.uri, { caption });
       setSelectedPhoto(null);
       setCaption('');
     } finally {
@@ -158,9 +166,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
     }
   }
   async function removePhoto(photo: Photo) {
-    await workflowAction(sample, 'remove_photo', { id: photo.id });
-    const { error } = await supabase.storage.from('sample-unit-photos').remove([photo.photo_path]);
-    if (error) throw new Error(`The photograph record was removed, but file cleanup failed: ${error.message}. Refresh to continue.`);
+    await removeInspectionPhoto(sample, photo);
   }
   const pendingEvidence = !!typeId || !!selectedPhoto;
   const submitIssues = [
@@ -251,8 +257,9 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
       <AdminButton palette={p} disabled={busy || dirty || !!typeId} label="Continue to photos" onPress={() => setStep('photos')} />
     </AdminPanel>}
     {!confirmation && step === 'photos' && <AdminPanel palette={p} title="Photos" subtitle="Private evidence; JPEG, PNG or WebP, maximum 5 MB per photograph.">
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>{photos.map(photo => <PhotoCard busy={busy} canRemove={editable} key={photo.id} onRemove={() => setConfirmation(`photo:${photo.id}`)} photo={photo} />)}</View>
-      {!photos.length && <Text style={{ color: p.muted }}>No photographs uploaded.</Text>}
+      <PhotoGroups palette={p} busy={busy} empty="No photographs uploaded."
+        groups={photoGroups(distresses.map(d => ({ id: d.id, label: distressLabel(data.types.find(t => t.id === d.distress_type_id)?.name ?? 'Saved distress', d.severity) })), photos).filter(group => group.photos.length)}
+        onRemove={editable ? photo => setConfirmation(`photo:${photo.id}`) : undefined} />
       {editable && <View style={{ gap: 12, marginTop: 12 }}>
         <Text style={{ color: p.muted }}>Photographs are optional. You can submit an inspection without one.</Text>
         {!!photoSelectionError && <Notice error>{photoSelectionError}</Notice>}
@@ -273,7 +280,8 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
       {traceOpen && sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton tone="secondary" palette={p} disabled={busy} label="Calculate provisional D6433-07 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
 
       {editable && !confirmation && <View style={{ marginTop: 16 }}><AdminButton palette={p} disabled={busy || dirty || submitIssues.length > 0} label="Submit for engineer review" onPress={() => setConfirmation('submit')} /></View>}
-      {reviewer && computation?.verification !== 'verified' && <Notice>Approval is unavailable: this revision needs an eligible verified reference calculation. You may return the submission with comments.</Notice>}
+      {reviewer && !computation?.output_snapshot && <Notice>No PCI has been saved for this revision yet. Show calculation details and calculate it before approving.</Notice>}
+      {reviewer && computation?.output_snapshot?.status === 'provisional' && <Notice>This PCI is provisional. Approving and publishing it keeps the provisional label until engineering validation.</Notice>}
       {reviewer && DEMO_PREVIEW_ENABLED && sample.workflow_state === 'submitted' && <View style={{ gap: 10, marginTop: 12 }}>
         <AdminButton palette={p} tone="secondary" label={simulatedApproval ? 'Clear simulated approval' : 'Simulate approval (demo only)'} onPress={() => setSimulatedApproval(!simulatedApproval)} />
         {simulatedApproval && <Notice>SYNTHETIC DEMO — approval simulated on this screen only. Nothing was saved to the database; the sample remains Submitted. It is not a verified ASTM D6433-07 result and cannot be published.</Notice>}
@@ -281,7 +289,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
       {reviewer && !confirmation && ['submitted', 'approved'].includes(sample.workflow_state) && <View style={{ gap: 12, marginTop: 16 }}>
         <AdminField palette={p} label="Engineer review comments (required when returning)" multiline value={comments} onChangeText={setComments} />
         <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>{sample.workflow_state === 'submitted' && <AdminButton palette={p} disabled={busy || !comments.trim()} tone="secondary" label="Return for correction" onPress={() => setConfirmation('return')} />}
-          <AdminButton palette={p} disabled={busy || computation?.verification !== 'verified'} label={sample.workflow_state === 'approved' ? 'Publish approved reference result' : 'Approve reference result'} onPress={() => setConfirmation(sample.workflow_state === 'approved' ? 'publish' : 'approve')} /></View>
+          <AdminButton palette={p} disabled={busy || !computation?.output_snapshot} label={sample.workflow_state === 'approved' ? 'Publish approved result' : 'Approve result'} onPress={() => setConfirmation(sample.workflow_state === 'approved' ? 'publish' : 'approve')} /></View>
       </View>}
 
     </AdminPanel>}

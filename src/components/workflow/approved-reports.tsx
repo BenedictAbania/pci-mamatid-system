@@ -9,7 +9,7 @@ import { loadApprovedPage, loadApprovedSummary, loadSectionReportPage, REPORT_PA
 import { approvedReportCsv, type ApprovedResult } from '@/lib/data/approved-results';
 import { downloadCsv, formatDate } from '@/lib/utils/admin-utils';
 import { useAuth } from '@/providers/AuthProvider';
-import { PhotoCard } from '@/components/workflow/photo-card';
+import { distressLabel, photoGroups, PhotoGroups } from '@/components/workflow/distress-photos';
 import { DEMO_PREVIEW_ENABLED } from '@/lib/ui/demo-preview';
 
 export function ApprovedReports({ title, mode: initialMode = 'results', initialTab = 'current', hub = false }: { title: string; mode?: 'results' | 'overview' | 'reports' | 'rankings'; initialTab?: string; hub?: boolean }) {
@@ -107,7 +107,7 @@ export function ApprovedReports({ title, mode: initialMode = 'results', initialT
       <Text selectable style={{ color: palette.text }}>PCI {selected.report_snapshot.output.pci} · {selected.report_snapshot.output.condition}</Text>
       <Text selectable style={{ color: palette.muted }}>Total deduct value {selected.report_snapshot.output.total_deduct_value} · Corrected deduct value {selected.report_snapshot.output.max_corrected_deduct_value}</Text>
       {selected.report_snapshot.sample.latitude !== null && selected.report_snapshot.sample.longitude !== null && <AdminButton palette={palette} tone="secondary" label="Open saved location" onPress={() => void Linking.openURL('https://www.openstreetmap.org/?mlat=' + selected.report_snapshot.sample.latitude + '&mlon=' + selected.report_snapshot.sample.longitude)} />}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>{selected.report_snapshot.photos.map(photo => <PhotoCard key={photo.id} photo={{ ...photo, sample_unit_id: selected.sample_unit_id }} />)}</View>
+      <PhotoGroups palette={palette} groups={photoGroups(selected.report_snapshot.distresses.map(d => ({ id: d.id, label: distressLabel(d.name, d.severity) })), selected.report_snapshot.photos).filter(group => group.photos.length)} empty="No photographs were saved with this result." />
     </AdminPanel>}
   </AdminShell>;
 }

@@ -5,7 +5,7 @@ export type ReportSnapshot = {
   sample: { id: string; unit_number: number; area_sqm: number; sample_type: string; surveyed_at: string | null; latitude: number | null; longitude: number | null; inspection_notes: string | null };
   road: { section_id: string; section_name: string; branch_name: string; length_meters?: number; width_meters?: number; area_sqm?: number; start_description?: string; end_description?: string };
   distresses: { id: string; name: string; severity: string | null; quantity: number; unit_of_measure: string; notes: string | null }[];
-  photos: { id: string; photo_path: string; caption: string | null }[];
+  photos: { id: string; photo_path: string; caption: string | null; distress_record_id?: string | null }[];
   edition: string; reference_id: string; algorithm_version: string; output: CalculationOutput;
 };
 export type ApprovedResult = {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AdminButton, AdminEmpty, AdminField, AdminPanel, AdminShell, useAdminPalette, type AdminPalette } from '@/components/admin/admin-shell';
+import { ROLE_ORDER, roleColors, roleHints } from '@/lib/auth/access';
 import { brand, layout } from '@/lib/ui/design-system';
 import { formatDate, titleCase } from '@/lib/utils/admin-utils';
 import { supabase } from '@/lib/data/supabase';
@@ -11,13 +12,6 @@ import { callWorkflow, ensureWorkflowReady } from '@/lib/data/workflow-data';
 import { useAuth, UserRole } from '@/providers/AuthProvider';
 
 const roles: UserRole[] = ['admin', 'reviewer', 'encoder', 'viewer'];
-/** One-line summary shown on each role card. */
-const roleHints: Record<UserRole, string> = {
-  admin: 'Manages accounts and settings',
-  reviewer: 'Approves or returns',
-  encoder: 'Records inspections',
-  viewer: 'Read-only results',
-};
 /** "What a <role> can do" box under the role cards. Mirrors the route rules in src/lib/auth/access.ts. */
 const rolePermissions: Record<UserRole, { can: string[]; cannot: string[] }> = {
   admin: {
@@ -37,11 +31,7 @@ const rolePermissions: Record<UserRole, { can: string[]; cannot: string[] }> = {
     cannot: ['Cannot record or edit inspections', 'Cannot approve results or manage accounts'],
   },
 };
-/** Solid pill colours with dark text; the same in light and dark themes. */
-const roleColors: Record<UserRole, string> = { admin: '#FF5757', encoder: '#FF914D', reviewer: '#FFDE59', viewer: '#5CE1E6' };
 const statusColors = { active: '#00BF63', inactive: '#A9B4CC' };
-/** Role card order on the form: two columns, Admin and Encoder on top. */
-const formRoles: UserRole[] = ['admin', 'encoder', 'reviewer', 'viewer'];
 /** Choices for "Office or department". Saved as text in profiles.office, so this list can change freely. */
 const offices = [
   'City Engineering Office',
@@ -67,8 +57,23 @@ export interface LakadAccount {
   job_title?: string;
 }
 
-/** An activate/deactivate waiting for confirmation in a dialog. */
-type Pending = { account: LakadAccount; active: boolean };
+/** An activate/deactivate or a permanent delete waiting for confirmation in a dialog. */
+type Pending = { kind: 'status'; account: LakadAccount; active: boolean } | { kind: 'delete'; account: LakadAccount };
+const MIN_PASSWORD = 8;
+const MAX_PASSWORD = 72;
+
+/**
+ * Calls the admin-account Edge Function (set_password or delete). Throws an Error carrying the
+ * function's own reason when it gives one.
+ */
+async function accountAction(body: { action: 'set_password' | 'delete'; target: string; password?: string }) {
+  const { error: failure } = await supabase.functions.invoke('admin-account', { body });
+  if (!failure) return;
+  // FunctionsHttpError carries the function's JSON reply; use its reason when there is one.
+  const reply = (failure as { context?: Response }).context;
+  const reason = reply && typeof reply.json === 'function' ? await reply.json().then(json => json?.error, () => null) : null;
+  throw new Error(typeof reason === 'string' && reason ? reason : 'The account service did not respond. Verify that the protected admin-account function has been deployed.');
+}
 /** The Add User or Edit User form, shown in place of the account list. */
 type FormMode = { mode: 'add' } | { mode: 'edit'; account: LakadAccount };
 type Draft = { name: string; email: string; office: string; jobTitle: string; role: UserRole | null };
@@ -89,8 +94,6 @@ export default function UsersScreen() {
   const [message, setMessage] = useState('');
   const [form, setForm] = useState<FormMode | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
-  const [quickName, setQuickName] = useState('');
-  const [quickEmail, setQuickEmail] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const isPhone = width < 760;
   const dark = palette.background !== '#F3F6FC';
@@ -147,6 +150,25 @@ export default function UsersScreen() {
     }
   }
 
+  async function deleteAccount(account: LakadAccount) {
+    if (account.id === user?.id) return false;
+    const name = account.full_name || account.email || 'The account';
+    setSavingId(account.id);
+    setError('');
+    setMessage('');
+    try {
+      await accountAction({ action: 'delete', target: account.id });
+      await refresh();
+      setMessage(`${name} was deleted. Their login and profile are gone.`);
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The account could not be deleted.');
+      return false;
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   /** Shared checks for both forms. Returns the role when every required field is filled. */
   function validDraft(): UserRole | null {
     if (!draft.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
@@ -183,17 +205,6 @@ export default function UsersScreen() {
     } finally {
       setSavingId(null);
     }
-  }
-
-  /** Quick invite: name and email only. The account starts as Encoder; the role can change later. */
-  function quickInvite() {
-    const name = quickName.trim();
-    const email = quickEmail.trim();
-    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Enter a full name and valid email address.');
-      return;
-    }
-    void sendInvite('quick', { email, full_name: name }, `Invitation sent to ${email}. They join as Encoder; you can change the role from the list.`);
   }
 
   /** Full Add User form: details and role are saved right away; they set a password from the email link. */
@@ -244,8 +255,6 @@ export default function UsersScreen() {
   function closeForm() {
     setForm(null);
     setDraft(emptyDraft);
-    setQuickName('');
-    setQuickEmail('');
   }
 
   const setField = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft(current => ({ ...current, [key]: value }));
@@ -257,15 +266,6 @@ export default function UsersScreen() {
       {message ? <Notice message={message} palette={palette} tone="success" /> : null}
 
       {form ? <>
-        {form.mode === 'add' ? (
-          <AdminPanel palette={palette} subtitle="Not with you right now? Send an email invitation. They join as Encoder; you can change the role later." title="Invite Users">
-            <View style={[styles.inviteRow, isPhone && styles.stack]}>
-              <View style={styles.gridCell}><AdminField label="Full name" onChangeText={setQuickName} palette={palette} placeholder="First name and last name" value={quickName} /></View>
-              <View style={styles.gridCell}><AdminField keyboardType="email-address" label="Email address" onChangeText={setQuickEmail} palette={palette} placeholder="name@example.com" value={quickEmail} /></View>
-              <AdminButton disabled={savingId !== null} icon="send" label={savingId === 'quick' ? 'Sending…' : 'Send Invitation'} onPress={quickInvite} palette={palette} />
-            </View>
-          </AdminPanel>
-        ) : null}
         <AccountForm
           busy={savingId !== null}
           draft={draft}
@@ -277,6 +277,7 @@ export default function UsersScreen() {
           palette={palette}
           saving={savingId === 'form'}
         />
+        {form.mode === 'edit' ? <PasswordPanel account={form.account} isPhone={isPhone} palette={palette} /> : null}
       </> : <>
 
       <View style={[styles.filters, isPhone && styles.filtersPhone]}>
@@ -333,8 +334,9 @@ export default function UsersScreen() {
                 isLast={index === filtered.length - 1}
                 isPhone={isPhone}
                 isSelf={profile.id === user?.id}
+                onDelete={() => setPending({ kind: 'delete', account: profile })}
                 onEdit={() => openEdit(profile)}
-                onToggle={() => setPending({ account: profile, active: !profile.is_active })}
+                onToggle={() => setPending({ kind: 'status', account: profile, active: !profile.is_active })}
                 palette={palette}
                 profile={profile}
               />
@@ -345,10 +347,15 @@ export default function UsersScreen() {
 
       <PageControls page={cursors.length} busy={loading} hasNext={profiles.length === PAGE_SIZE} previous={() => setCursors(cursors.slice(0, -1))} next={() => { const last = profiles.at(-1); if (last) setCursors([...cursors, last.id]); }} />
 
-      <StatusDialog
+      <ConfirmDialog
         busy={savingId !== null}
         onCancel={() => setPending(null)}
-        onConfirm={() => { if (pending) void updateAccount(pending.account, pending.active).then((saved) => { if (saved) setPending(null); }); }}
+        onConfirm={() => {
+          if (!pending) return;
+          // A failed delete closes the dialog so the reason shows on the page.
+          if (pending.kind === 'delete') void deleteAccount(pending.account).then(() => setPending(null));
+          else void updateAccount(pending.account, pending.active).then((saved) => { if (saved) setPending(null); });
+        }}
         palette={palette}
         pending={pending}
       />
@@ -357,8 +364,8 @@ export default function UsersScreen() {
   );
 }
 
-function AccountRow({ profile, palette, isPhone, isSelf, isLast, busy, onEdit, onToggle }: {
-  profile: LakadAccount; palette: AdminPalette; isPhone: boolean; isSelf: boolean; isLast: boolean; busy: boolean; onEdit: () => void; onToggle: () => void;
+function AccountRow({ profile, palette, isPhone, isSelf, isLast, busy, onEdit, onToggle, onDelete }: {
+  profile: LakadAccount; palette: AdminPalette; isPhone: boolean; isSelf: boolean; isLast: boolean; busy: boolean; onEdit: () => void; onToggle: () => void; onDelete: () => void;
 }) {
   const name = profile.full_name || 'Unnamed user';
   const identity = <View style={styles.nameCell}>
@@ -370,6 +377,7 @@ function AccountRow({ profile, palette, isPhone, isSelf, isLast, busy, onEdit, o
     : <View style={styles.actions}>
       <LinkAction disabled={busy} label="Edit" a11y={`Edit ${name}`} onPress={onEdit} color={palette.blue} />
       <LinkAction disabled={busy} label={profile.is_active ? 'Deactivate' : 'Reactivate'} a11y={`${profile.is_active ? 'Deactivate' : 'Reactivate'} ${name}`} onPress={onToggle} color={palette.blue} />
+      <LinkAction disabled={busy} label="Delete" a11y={`Delete ${name}`} onPress={onDelete} color={palette.red} />
     </View>;
 
   if (isPhone) {
@@ -420,9 +428,9 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
   return (
     <AdminPanel palette={palette} style={[styles.form, editing && { borderTopColor: palette.action, borderTopWidth: 3 }]}>
       <View style={styles.formHead}>
-        <Pressable accessibilityLabel="Back to user accounts" accessibilityRole="button" hitSlop={10} onPress={onCancel} style={({ pressed }: PressState) => [styles.back, pressed && styles.pressed]}>
+        {editing ? <Pressable accessibilityLabel="Back to user accounts" accessibilityRole="button" hitSlop={10} onPress={onCancel} style={({ pressed }: PressState) => [styles.back, pressed && styles.pressed]}>
           <Feather color={palette.text} name="arrow-left" size={22} />
-        </Pressable>
+        </Pressable> : null}
         <Text accessibilityRole="header" style={[styles.formTitle, { color: palette.text }]}>{editing ? 'Edit User' : 'Add User'}</Text>
         {editing ? <View style={[styles.editBadge, { backgroundColor: palette.blueSoft }]}>
           <Feather color={palette.blue} name="edit-2" size={12} />
@@ -437,7 +445,7 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
             <Text style={[styles.editBannerText, { color: palette.muted }]}>Changes apply as soon as you save. The sign-in email cannot be changed here.</Text>
           </View>
         </View>
-      ) : <Text style={[styles.formNote, { color: palette.muted }]}>One account per person. Shared accounts are not allowed.</Text>}
+      ) : null}
 
       <Text style={[styles.section, { color: palette.muted }]}>Person</Text>
       <View style={[styles.grid, isPhone && styles.stack]}>
@@ -451,7 +459,7 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
 
       <Text style={[styles.section, { color: palette.muted }]}>Role<Text style={{ color: palette.red }}>*</Text></Text>
       <View accessibilityRole="radiogroup" style={styles.roleGrid}>
-        {formRoles.map((role) => {
+        {ROLE_ORDER.map((role) => {
           const selected = draft.role === role;
           const current = editing?.role === role;
           return <Pressable key={role} accessibilityLabel={`${titleCase(role)}: ${roleHints[role]}${current ? ' (current role)' : ''}`} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => onField('role')(role)}
@@ -486,29 +494,75 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
   );
 }
 
-function StatusDialog({ pending, palette, busy, onConfirm, onCancel }: {
+function ConfirmDialog({ pending, palette, busy, onConfirm, onCancel }: {
   pending: Pending | null; palette: AdminPalette; busy: boolean; onConfirm: () => void; onCancel: () => void;
 }) {
   if (!pending) return null;
   const name = pending.account.full_name || pending.account.email || 'this account';
+  const remove = pending.kind === 'delete';
+  const title = remove ? 'Delete account' : pending.active ? 'Reactivate account' : 'Deactivate account';
+  const text = remove
+    ? `${name} (${pending.account.email ?? 'no email'}) will be permanently deleted. Their login and profile are removed and cannot be restored. Only accounts with no inspection records can be deleted; deactivate the others instead.`
+    : pending.active
+      ? `${name} will be able to sign in and use LAKAD again.`
+      : `${name} will no longer be able to sign in. Their inspection history stays saved.`;
+  const confirmLabel = busy ? (remove ? 'Deleting…' : 'Saving…') : remove ? 'Delete Permanently' : pending.active ? 'Reactivate' : 'Deactivate';
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
       <View style={styles.backdrop}>
         <Pressable accessibilityLabel="Close dialog" accessibilityRole="button" onPress={onCancel} style={StyleSheet.absoluteFill} />
         <View accessibilityViewIsModal style={[styles.dialog, { backgroundColor: palette.panel, borderColor: palette.border }]}>
-          <Text accessibilityRole="header" style={[styles.dialogTitle, { color: palette.text }]}>{pending.active ? 'Reactivate account' : 'Deactivate account'}</Text>
-          <Text style={[styles.dialogText, { color: palette.muted }]}>
-            {pending.active
-              ? `${name} will be able to sign in and use LAKAD again.`
-              : `${name} will no longer be able to sign in. Their inspection history stays saved.`}
-          </Text>
+          <Text accessibilityRole="header" style={[styles.dialogTitle, { color: palette.text }]}>{title}</Text>
+          <Text style={[styles.dialogText, { color: palette.muted }]}>{text}</Text>
           <View style={styles.dialogActions}>
             <AdminButton label="Cancel" onPress={onCancel} palette={palette} tone="secondary" />
-            <AdminButton disabled={busy} label={busy ? 'Saving…' : pending.active ? 'Reactivate' : 'Deactivate'} onPress={onConfirm} palette={palette} tone={pending.active ? 'primary' : 'danger'} />
+            <AdminButton disabled={busy} label={confirmLabel} onPress={onConfirm} palette={palette} tone={!remove && pending.active ? 'primary' : 'danger'} />
           </View>
         </View>
       </View>
     </Modal>
+  );
+}
+
+/** Edit User only: the administrator sets a new sign-in password for this account. */
+function PasswordPanel({ account, isPhone, palette }: { account: LakadAccount; isPhone: boolean; palette: AdminPalette }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const name = account.full_name || account.email || 'this account';
+
+  async function save() {
+    setError('');
+    setMessage('');
+    if (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) { setError(`Use a password of ${MIN_PASSWORD} to ${MAX_PASSWORD} characters.`); return; }
+    if (password !== confirm) { setError('The two passwords do not match.'); return; }
+    setBusy(true);
+    try {
+      await accountAction({ action: 'set_password', target: account.id, password });
+      setPassword('');
+      setConfirm('');
+      setMessage(`The password for ${name} was changed. Give them the new password; they can sign in with it now.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The password could not be changed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AdminPanel palette={palette} style={styles.form} subtitle="Set a new sign-in password for this account. The old password stops working right away." title="Password">
+      {error ? <Notice message={error} palette={palette} tone="error" /> : null}
+      {message ? <Notice message={message} palette={palette} tone="success" /> : null}
+      <View style={[styles.grid, isPhone && styles.stack]}>
+        <View style={styles.gridCell}><AdminField autoComplete="new-password" label="New password" onChangeText={value => { setPassword(value); setError(''); }} palette={palette} placeholder={`At least ${MIN_PASSWORD} characters`} required secureTextEntry value={password} /></View>
+        <View style={styles.gridCell}><AdminField autoComplete="new-password" label="Confirm new password" onChangeText={value => { setConfirm(value); setError(''); }} palette={palette} placeholder="Type it again" required secureTextEntry value={confirm} /></View>
+      </View>
+      <View style={styles.formActions}>
+        <AdminButton disabled={busy || !password || !confirm} icon="lock" label={busy ? 'Saving…' : 'Set Password'} onPress={() => void save()} palette={palette} />
+      </View>
+    </AdminPanel>
   );
 }
 
@@ -572,11 +626,9 @@ function Notice({ message, palette, tone }: { message: string; palette: AdminPal
 
 const styles = StyleSheet.create({
   form: { gap: 16, padding: 24 },
-  inviteRow: { alignItems: 'flex-end', flexDirection: 'row', gap: 12 },
   formHead: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   back: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 },
   formTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
-  formNote: { fontSize: 14.5, marginTop: -4 },
   section: { fontSize: 13, fontWeight: '800', letterSpacing: 1, marginTop: 8, textTransform: 'uppercase' },
   grid: { flexDirection: 'row', gap: 16 },
   gridCell: { flex: 1, minWidth: 0 },
@@ -626,11 +678,11 @@ const styles = StyleSheet.create({
   roleCell: { flex: 1, minWidth: 110 },
   statusCell: { flex: 1, minWidth: 110 },
   seenCell: { flex: 1.1, minWidth: 120 },
-  actionCell: { flex: 1.5, minWidth: 190 },
+  actionCell: { flex: 1.7, minWidth: 250 },
   name: { fontSize: 16 },
   email: { fontSize: 16 },
   seenText: { fontSize: 16 },
-  pill: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: 999, justifyContent: 'center', minWidth: 92, paddingHorizontal: 12, paddingVertical: 2 },
+  pill: { alignItems: 'center', borderRadius: 999, justifyContent: 'center', minWidth: 92, paddingHorizontal: 12, paddingVertical: 2 },
   pillText: { color: '#111111', fontSize: 15 },
   dot: { borderRadius: 4, height: 7, width: 7 },
   actions: { flexDirection: 'row', gap: 22 },
@@ -638,7 +690,7 @@ const styles = StyleSheet.create({
   linkText: { fontSize: 16 },
   selfNote: { fontSize: 13, fontStyle: 'italic' },
   card: { gap: 10, padding: 16 },
-  cardPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cardPills: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cardMeta: { fontSize: 13 },
   backdrop: { alignItems: 'center', backgroundColor: layout.scrim, flex: 1, justifyContent: 'center', padding: 20 },
   dialog: { borderRadius: 18, borderWidth: 1, maxWidth: 440, padding: 26, width: '100%' },

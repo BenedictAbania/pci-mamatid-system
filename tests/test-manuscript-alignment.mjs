@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import ts from 'typescript';
+import { moduleUrl } from './helpers/typescript-test-loader.mjs';
 
 let checks = 0;
 function check(value, message) { assert.ok(value, message); checks++; }
@@ -10,18 +11,12 @@ async function compileUrl(path) {
   const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
   return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}`;
 }
-async function compileUrlWithImports(path, replacements) {
-  const source = await fs.readFile(path, 'utf8');
-  let output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-  for (const [specifier, url] of Object.entries(replacements)) output = output.replaceAll(`'${specifier}'`, JSON.stringify(url));
-  return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}`;
-}
 
 const classificationUrl = await compileUrl('src/lib/pci/pci-classification.ts');
 const classification = await import(classificationUrl);
 const severityColorsUrl = await compileUrl('src/lib/pci/severity-colors.ts');
 const severityColors = await import(severityColorsUrl);
-const engine = await import(await compileUrlWithImports('src/lib/pci/pci-engine.ts', { './pci-classification': classificationUrl, './severity-colors': severityColorsUrl }));
+const engine = await import(await moduleUrl('src/lib/pci/pci-engine.ts'));
 const expectedConditions = [
   { rating: 'Good', minPCI: 85, maxPCI: 100, range: '85\u2013100', color: '#166534', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#4ADE80', darkForegroundColor: '#052E16' },
   { rating: 'Satisfactory', minPCI: 70, maxPCI: 84.99, range: '70\u2013below 85', color: '#15803D', softColor: '#DCFCE7', foregroundColor: '#FFFFFF', darkColor: '#86EFAC', darkForegroundColor: '#052E16' },
@@ -54,8 +49,20 @@ for (const [pci, expected] of cases) check(classification.getPciCondition(pci) =
 check(classification.getPciCondition(-1) === 'Failed', 'Out-of-range PCI is clamped at 0');
 check(classification.getPciCondition(101) === 'Good', 'Out-of-range PCI is clamped at 100');
 assert.throws(() => classification.getPciCondition(Number.NaN), /finite/); checks++;
-const prototypeResult = engine.computePCI(engine.DEFAULT_SAMPLE, engine.DEFAULT_SAMPLE_AREA);
-check(prototypeResult.pci === 62 && prototypeResult.rating === 'Fair', 'Prototype default displays PCI 62 = Good');
+const prototypeResult = engine.computeDemoPci(engine.DEFAULT_SAMPLE, engine.DEFAULT_SAMPLE_AREA);
+check(prototypeResult.edition === 'ASTM D6433-07' && prototypeResult.reference_id === engine.DEMO_REFERENCE_ID, 'Prototype runs the shared D6433-07 procedure with illustrative curves');
+check(prototypeResult.pci === 62 && prototypeResult.condition === 'Fair' && prototypeResult.category.rating === 'Fair', 'Prototype default displays PCI 62 = Fair');
+check(prototypeResult.rows.some(row => row.name === 'Longitudinal and Transverse Cracking'), 'Prototype uses D6433-07 distress names');
+const alternateResult = engine.computeDemoPci(engine.ALTERNATE_SAMPLE, engine.DEFAULT_SAMPLE_AREA);
+const alternateM = alternateResult.allowable_deducts;
+check(alternateM > 4 && alternateM < 5 && Math.abs(alternateResult.iterations[0].adjusted_deducts[4] - alternateResult.sortedDeducts[4] * (alternateM - 4)) < 1e-9, 'Alternate sample applies the §9.5.4 fractional deduct');
+check(alternateResult.pci === 100 - alternateResult.max_corrected_deduct_value, 'PCI = 100 - max CDV');
+const shortcutResult = engine.computeDemoPci([{ uid: 's', code: 19, severity: 'low', quantity: 5 }], 250);
+check(shortcutResult.shortcut && shortcutResult.iterations.length === 0 && shortcutResult.max_corrected_deduct_value === shortcutResult.total_deduct_value, '§9.5.1 shortcut skips CDV iteration');
+const merged = engine.computeDemoPci([{ uid: 'a', code: 1, severity: 'low', quantity: 2 }, { uid: 'b', code: 1, severity: 'low', quantity: 3 }], 250);
+check(merged.rows.length === 1 && merged.rows[0].quantity === 5, '§9.1 combines the same distress and severity');
+assert.throws(() => engine.computeDemoPci(engine.DEFAULT_SAMPLE, 100), /135–315/); checks++;
+check(engine.computeDemoPci([], 250).pci === 100, 'No distress gives PCI 100');
 
 const service = await import(await compileUrl('src/lib/pci/pci-service.ts'));
 for (const [area, accepted] of [[134.99, false], [135, true], [225, true], [315, true], [315.01, false]]) {

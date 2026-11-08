@@ -34,7 +34,7 @@ export function createPalette(isDark: boolean) {
     panelAlt: isDark ? '#11214F' : '#EEF3FC', input: isDark ? '#091536' : '#F8FAFE',
     text: isDark ? '#F1F5FE' : brand.ink, muted: isDark ? '#A8B5D6' : '#4B5B7C',
     border: isDark ? '#1F3366' : '#DBE3F2', blue: isDark ? '#7DA8FF' : brand.royal, action: isDark ? '#2A5FF0' : brand.royal,
-    blueSoft: isDark ? '#13265A' : '#E9F0FE', icon: isDark ? '#16295F' : '#E2EBFE',
+    blueSoft: isDark ? '#13265A' : '#E9F0FE', tabActive: isDark ? '#1D4F7C' : '#8DCDF2', icon: isDark ? '#16295F' : '#E2EBFE',
     green: isDark ? '#76DEAD' : '#126B45', greenSoft: isDark ? '#0D3328' : '#EAF8F2',
     amber: isDark ? '#FFD06F' : '#B45309', amberSoft: isDark ? '#352811' : '#FFF7E6',
     red: isDark ? '#FFA4AF' : '#B62135', redSoft: isDark ? '#40202A' : '#FFF0F2',

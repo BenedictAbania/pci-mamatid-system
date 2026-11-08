@@ -30,4 +30,11 @@ for (const code of codes) {
 assert.equal(d07GuidanceFor('ASTM D6433-24', 1), undefined, 'D24 must never borrow D07 guidance');
 assert.equal(d07GuidanceFor('ASTM D6433-07', 20), undefined, 'Unknown D07 type must not invent wording');
 assert.equal(d07GuidanceSnapshot(12, 'low'), null, 'Polished Aggregate must not allow L/M/H');
+// An administrator's wording (distress_types.severity_descriptions) replaces the built-in cue in the snapshot.
+const custom = d07GuidanceSnapshot(1, 'low', '  Admin wording for low  ');
+assert.equal(custom.text, 'Admin wording for low', 'Admin wording is snapshotted, trimmed');
+assert.equal(custom.version, D07_GUIDANCE_VERSION, 'Admin wording keeps the accepted snapshot version');
+assert.equal(d07GuidanceSnapshot(1, 'low', '   ').text, D07_SEVERITY_GUIDANCE[1].low, 'Blank wording falls back to the built-in cue');
+assert.equal(d07GuidanceSnapshot(12, null, 'ignored').text, D07_SEVERITY_GUIDANCE[12].none, 'No-severity types keep their built-in cue');
+checks += 4;
 console.log(`Passed ${checks} D6433-07 distress-type guidance checks, including the no-severity type and edition isolation.`);

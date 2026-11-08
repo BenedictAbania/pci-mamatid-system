@@ -27,7 +27,7 @@ const icons={Feather:Icon,MaterialCommunityIcons:Icon};
 const themes={useAppTheme:()=>({colorScheme:dark?'dark':'light',toggleColorScheme(){dark=!dark;}})};
 const auth={useAuth:()=>({role,user:{id:userId,email:'synthetic@example.test'},profile:{full_name:'SYNTHETIC Test User'}})};
 const rn={...native,useWindowDimensions:()=>({width,height:900,scale:1,fontScale:1})};
-const shell=load('src/components/admin/admin-shell.tsx',{
+const shell=load('src/components/admin/admin-shell.tsx',{'@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, 
   'react-native':rn,'@expo/vector-icons':icons,'expo-image':{Image:()=>e('span',{'aria-hidden':true})},'expo-router':{usePathname:()=>role==='admin'?'/dashboard':'/workspace',useRouter:()=>({push:p=>paths.push(p),navigate:p=>paths.push(p)})},
   '@/lib/data/supabase':{supabase:{auth:{signOut:async()=>{signedOut++;}}}},'@/providers/AuthProvider':auth,'@/providers/ThemeProvider':themes,'@/lib/auth/access':access,'@/lib/ui/design-system':tokens,'@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display':identity,
 });
@@ -63,17 +63,18 @@ for(const r of ['admin','encoder','reviewer','viewer'])for(const w of [1672,820,
   await test(`${r}-${w}-${theme}`,'Actual React/RN Web role tree, responsive branch and authorized action delivery',async(host,root,user)=>{
     role=r;width=w;dark=theme==='dark';reply={work:r==='viewer'?{status:'unavailable',message:'Viewer scope'}:ready(work),results:r==='encoder'?{status:'unavailable',message:'Encoder role scope'}:ready(populated)};
     await React.act(async()=>root.render(e(RoleDashboard)));
-    check(getByRole(host,'heading',{name:r==='viewer'?'Overview':r==='encoder'?'Home':'Dashboard'}),'One page title');check(!queryByText(host,/Welcome back/),'No duplicate welcome heading');
+    check(getByRole(host,'heading',{name:'Dashboard'}),'One page title');check(!queryByText(host,/Welcome back/),'No duplicate welcome heading');
     check(!queryByText(host,'DEMO DATA'),'No implicit demo banner');
     const print=document.getElementById('lakad-print-styles')?.textContent ?? '';
-    check(print.includes('lakad-action')&&!print.includes('[role="button"]'),'Print hides controls without hiding report data rows');if(r!=='viewer'&&r!=='admin')check(queryByText(host,'Provisional calculations'),'Provisional notice retained');
+    check(print.includes('lakad-action')&&!print.includes('[role="button"]'),'Print hides controls without hiding report data rows');check(!queryByText(host,'Provisional calculations'),'No provisional notice on the dashboard');
     check(getByLabelText(host,'SYNTHETIC Test User, '+access.roleLabels[r]),'Account identity from auth');
     if(w<980)await React.act(async()=>user.click(getByRole(host,'button',{name:'Open navigation'})));
     const nav=host.querySelector('[data-testid="lakad-navigation"]');
-    const expected={admin:['Dashboard','User Accounts','Reference Data'],reviewer:['Dashboard','Road Network'],encoder:['Home','My Inspections'],viewer:['Overview','Published Results','Maintenance Priorities']}[r];
+    const expected={admin:['Dashboard','User Accounts','Reference Data'],reviewer:['Dashboard','Road Network','Inspections to Review'],encoder:['Dashboard','My Inspections'],viewer:['Dashboard','Sample Units Summaries','Sections Summaries']}[r];
     check(expected.every(name=>queryByRole(nav,'button',{name,exact:true})),'Exact role navigation labels');
-    check(r==='encoder'||r==='admin'?!queryByText(host,'Maintenance priorities'):!!queryByText(host,'Maintenance priorities'),'Reviewer and Viewer have a dashboard priorities panel; Encoder and Admin do not');
-    check(getAllByRole(nav,'button').length===expected.length+(w<980?2:1),'No duplicate or unauthorized navigation');
+    check(['Maintenance priorities','Next actions','Submitted inspections','Your pending work','System inspection register','Published snapshots','Access'].every(name=>!queryByText(host,name)),'Simple dashboard: no next actions, register or priorities panels');
+    check(r==='encoder'||r==='reviewer'?!!queryByText(host,'Your inspection status'):r==='viewer'?!!queryByText(host,'Published pavement results')&&!!queryByText(host,'Average published PCI'):true,'Each role keeps its own status or results section');
+    check(getAllByRole(nav,'button').length===expected.length+(w<980?3:2),'No duplicate or unauthorized navigation (role pages, My Profile, Sign out and the drawer close button)');
     if(w<980)await React.act(async()=>user.click(getByRole(host,'button',{name:'Close navigation'})));
     const buttons=getAllByRole(host,'button');
     if(r==='admin'){
@@ -81,7 +82,7 @@ for(const r of ['admin','encoder','reviewer','viewer'])for(const w of [1672,820,
       check(getByRole(host,'heading',{name:'Users by Role'})&&getByLabelText(host,'Viewer: 9 active accounts')&&getByLabelText(host,'Encoder: 5 active accounts'),'Admin users by role');
       check(!queryByText(host,'System inspection register')&&!queryByText(host,'Next actions'),'Admin home has only totals and users by role');
     }else{
-      const action=r==='encoder'?'Correct returned inspections':r==='reviewer'?'Review submitted inspections':'Browse published results';
+      const action=r==='encoder'?'Correct returned inspections':r==='reviewer'?'Review submitted inspections':'Browse sample unit results';
       await React.act(async()=>user.click(getByRole(host,'button',{name:action,exact:true})));
       check(paths.length===1&&access.canAccess(r,paths[0].split('?')[0]),'Role action routes to an authorized live screen');
     }
@@ -96,23 +97,19 @@ await test('state-transitions','Initial failure, populated success, failed refre
   await React.act(async()=>root.render(e(RoleDashboard)));
   check(getAllByRole(host,'alert').length>0,'Initial failure announced');check(!queryByText(host,'No current approved results yet'),'Failure is not successful empty');
   reply={work:ready(work),results:ready(populated)};await React.act(async()=>user.click(getByRole(host,'button',{name:'Refresh data'})));
-  check(getByText(host,'125'),'Exact assignment total shown');check(getByText(host,/SYNTHETIC frozen priority/),'Priority summary shown');
+  check(getByText(host,'125'),'Exact assignment total shown');
   reply={work:failed,results:failed};await React.act(async()=>user.click(getByRole(host,'button',{name:'Refresh data'})));
-  check(!queryByText(host,'125')&&!queryByText(host,/SYNTHETIC frozen priority/),'Failed refresh clears old metrics and summary');
+  check(!queryByText(host,'125'),'Failed refresh clears old metrics');
   check(!queryByText(host,'No current approved results yet'),'Failed refresh has no false empty result');
   reply={work:ready(work),results:ready(emptyResults)};await React.act(async()=>user.click(getAllByRole(host,'button',{name:'Retry dashboard'})[0]));
-  check(getByText(host,'No eligible priorities yet'),'Successful empty ranking retains the dashboard container');
+  check(getByText(host,'Your inspection status')&&getByText(host,'125'),'Retry restores the dashboard');
   reply={work:{status:'unavailable',message:'Missing prerequisite'},results:{status:'unavailable',message:'Missing prerequisite'}};await React.act(async()=>user.click(getByRole(host,'button',{name:'Refresh data'})));
-  check(queryByText(host,'Tasks unavailable'),'Missing prerequisite is unavailable');check(!queryByText(host,'No current approved results yet'),'Prerequisite failure never pretends empty');
+  check(queryByText(host,'Status unavailable'),'Missing prerequisite is unavailable');check(!queryByText(host,'No current approved results yet'),'Prerequisite failure never pretends empty');
 });
-await test('pagination','Actual next/previous controls, bounded register and disabled last page',async(host,root,user)=>{
+await test('pagination','Dashboard loads summaries only, no paged inspection register',async(host,root)=>{
   role='encoder';width=820;reply={work:ready(work),results:{status:'unavailable',message:'Role scope'}};
-  await React.act(async()=>root.render(e(RoleDashboard)));check(getByText(host,'SYNTHETIC section a'),'First page loaded');
-  check(getByRole(host,'button',{name:'Previous inspections'}).getAttribute('aria-disabled')==='true','Previous disabled initially');
-  await React.act(async()=>user.click(getByRole(host,'button',{name:'Next inspections'})));
-  check(getByText(host,'SYNTHETIC section b')&&!queryByText(host,'SYNTHETIC section a'),'Next replaces page');
-  check(getByRole(host,'button',{name:'Next inspections'}).getAttribute('aria-disabled')==='true','Final next disabled');
-  await React.act(async()=>user.click(getByRole(host,'button',{name:'Previous inspections'})));check(getByText(host,'SYNTHETIC section a'),'Previous reloads cursor');
+  await React.act(async()=>root.render(e(RoleDashboard)));
+  check(!calls.some(c=>c[0]==='register')&&!queryByText(host,'SYNTHETIC section a')&&!queryByRole(host,'button',{name:'Next inspections'}),'No register request or pagination');
 });
 await test('keyboard','Mobile drawer focus containment, Escape restoration, theme and sign-out',async(host,root,user)=>{
   role='reviewer';width=390;reply={work:ready(work),results:ready(emptyResults)};
@@ -211,11 +208,11 @@ for(const r of ['admin','encoder','reviewer','viewer'])await test(`${r}-resource
   check(!queryByLabelText(host,'Loading '+metric),'Successful zero metric leaves loading');
   if(r==='viewer')check(getByText(host,'No published results yet'),'Viewer successful empty');
   else if(r==='admin')check(getByLabelText(host,'Road Sections: 0'),'Admin successful zero total');
-  else check(getByText(host,/No assignments yet|No review assignments yet|No inspections have been planned yet/),'Staff successful empty');
+  else check(getByLabelText(host,'Planned: 0 of 0 authorized sample units'),'Staff successful empty shows zero status counts');
   const fail={status:'error',message:'SYNTHETIC network failure'};reply={work:r==='viewer'?loaded.work:fail,results:r==='encoder'?loaded.results:fail};
   await React.act(async()=>user.click(getByRole(host,'button',{name:'Refresh data'})));
   check(getAllByRole(host,'alert').length>0,'Role failure announced');
-  check(!queryByText(host,'No published results yet')&&!queryByText(host,/No assignments yet|No review assignments yet|No inspections have been planned yet/)&&!queryByLabelText(host,'Road Sections: 0'),'Role failure is not successful zero');
+  check(!queryByText(host,'No published results yet')&&!queryByLabelText(host,'Planned: 0 of 0 authorized sample units')&&!queryByLabelText(host,'Road Sections: 0'),'Role failure is not successful zero');
   const missing={status:'unavailable',message:'SYNTHETIC missing prerequisite'};reply={work:r==='viewer'?loaded.work:missing,results:r==='encoder'?loaded.results:missing};
   await React.act(async()=>user.click(getAllByRole(host,'button',{name:'Retry dashboard'})[0]));
   check(queryAllByText(host,/SYNTHETIC missing prerequisite/).length>0,'Missing prerequisite remains distinct');

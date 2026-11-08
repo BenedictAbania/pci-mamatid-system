@@ -32,11 +32,12 @@ function load(file, deps = {}) {
 const access = load('src/lib/auth/access.ts');
 const design = load('src/lib/ui/design-system.ts');
 const identity = load('src/lib/auth/account-display.ts');
-const shell = load('src/components/admin/admin-shell.tsx', {
+const shell = load('src/components/admin/admin-shell.tsx', {'@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 
   'react-native': rn,
   '@expo/vector-icons': { Feather: Icon, MaterialCommunityIcons: Icon },
   'expo-image': { Image: () => React.createElement('span', { 'aria-hidden': true }) },
   'expo-router': { usePathname: () => '/field-inspections', useRouter: () => ({ push() {} }) },
+  'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) },
   '@/lib/data/supabase': { supabase: { auth: { signOut: async () => {} } } },
   '@/providers/AuthProvider': { useAuth: () => ({ role: 'encoder', user: { email: 'synthetic@example.test' }, profile: { full_name: 'SYNTHETIC Inspector' } }) },
   '@/providers/ThemeProvider': { useAppTheme: () => ({ colorScheme: 'light', toggleColorScheme() {} }) },

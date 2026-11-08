@@ -13,6 +13,10 @@ export interface Profile {
   full_name: string;
   role: UserRole;
   is_active?: boolean;
+  office?: string;
+  job_title?: string;
+  /** Profile photo in storage bucket profile-photos, or null. */
+  avatar_path?: string | null;
   created_at: string;
   updated_at: string;
 }

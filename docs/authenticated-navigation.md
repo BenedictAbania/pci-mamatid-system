@@ -6,8 +6,8 @@ The October 2026 task redesign builds on the current local Expo 57 implementatio
 | --- | --- | --- |
 | Administrator | Home, Roads, Results & Reports, Users, Settings | Authorized inventory, accounts, workflow overview, administrative tasks |
 | Reviewer/CE | Home, Sampling Plans, Inspections to Review, Results | Unconfirmed authorized section plans and submitted independent review assignments |
-| Field Inspector | Home, My Inspections | Assigned units, drafts, returned revisions; pending register only |
-| Viewer | Overview, Published Results, Maintenance Priorities | Published Reviewer-approved snapshots and eligible published section priorities |
+| Field Inspector | Dashboard, My Inspections | Assigned units, drafts, returned revisions; pending register only |
+| Viewer | Dashboard, Sample Units Summaries, Sections Summaries | Published Reviewer-approved snapshots and eligible published section priorities |
 
 `access.ts` remains the route permission authority. `navigation.ts` reduces navigation without granting permissions. An Administrator still cannot access the field/review route. The legacy CRUD inspection route remains denied. Existing `/dashboard` and `/workspace` home URLs continue to work for their previously authorized roles. `/reports` redirects to `/pci-results?tab=history`; staff `/maintenance-plan` redirects to `/pci-results?tab=priorities`. Viewer priorities remain at `/maintenance-plan`. Results share current/history tabs, with a staff-only maintenance tab. Saved report URLs retain a destination.
 

@@ -10,15 +10,16 @@ const items: Record<Role, NavigationItem[]> = {
   reviewer: [
     { label: 'Dashboard', route: '/dashboard', icon: 'home' },
     { label: 'Road Network', route: '/road-network', icon: 'map' },
+    { label: 'Inspections to Review', route: '/field-inspections', icon: 'clipboard' },
   ],
   encoder: [
-    { label: 'Home', route: '/workspace', icon: 'home' },
+    { label: 'Dashboard', route: '/dashboard', icon: 'home' },
     { label: 'My Inspections', route: '/field-inspections', icon: 'clipboard' },
   ],
   viewer: [
-    { label: 'Overview', route: '/workspace', icon: 'home' },
-    { label: 'Published Results', route: '/pci-results', icon: 'file-text' },
-    { label: 'Maintenance Priorities', route: '/maintenance-plan', icon: 'alert-triangle' },
+    { label: 'Dashboard', route: '/workspace', icon: 'home' },
+    { label: 'Sample Units Summaries', route: '/sample-summaries', icon: 'file-text' },
+    { label: 'Sections Summaries', route: '/section-summaries', icon: 'layers' },
   ],
 };
 export function navigationForRole(role: Role) { return items[role].filter(item => canAccess(role, item.route)); }
@@ -26,6 +27,8 @@ export function navigationForRole(role: Role) { return items[role].filter(item =
 export function navigationRoute(role: Role, pathname: string) {
   if (pathname === '/reports' || (pathname === '/maintenance-plan' && role !== 'viewer')) return '/pci-results';
   if (pathname === '/dashboard' && role === 'viewer') return '/workspace';
-  if (pathname === '/workspace' && role === 'reviewer') return '/dashboard';
+  if (role === 'viewer' && pathname === '/pci-results') return '/sample-summaries';
+  if (role === 'viewer' && pathname === '/maintenance-plan') return '/section-summaries';
+  if (pathname === '/workspace' && (role === 'reviewer' || role === 'encoder')) return '/dashboard';
   return pathname;
 }

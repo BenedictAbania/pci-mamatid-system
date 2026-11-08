@@ -13,7 +13,7 @@ async function moduleFrom(path) {
 }
 const access = await moduleFrom('src/lib/auth/access.ts');
 for (const role of ['admin', 'reviewer', 'encoder', 'viewer']) {
-  check(access.homeForRole(role) === (role === 'admin' || role === 'reviewer' ? '/dashboard' : '/workspace'), `${role} lands on the correct dashboard`);
+  check(access.homeForRole(role) === (role === 'viewer' ? '/workspace' : '/dashboard'), `${role} lands on the correct dashboard`);
   check(access.canAccess(role, '/workspace') === (role !== 'admin'), `${role} role workspace access`);
   check(access.canAccess(role, '/users') === (role === 'admin'), `${role} user management`);
   check(access.canAccess(role, '/road-network') === (role === 'reviewer'), `${role} road inventory access`);
@@ -39,7 +39,7 @@ const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
 check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
 const fieldSource = await fs.readFile('src/app/field-inspections.tsx', 'utf8');
 check(fieldSource.includes('PROVISIONAL_LABEL') && !fieldSource.includes('computePCI'), 'Authenticated sample preview is explicitly preliminary');
-check(fieldSource.includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
+check(fieldSource.includes('removeInspectionPhoto(sample, photo)') && (await fs.readFile('src/lib/data/inspection-photos.ts', 'utf8')).includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
 check(fieldSource.includes('Inspection date cannot be in the future.'), 'Encoder form rejects future inspection dates');
 const workspaceSource = await fs.readFile('src/components/workflow/approved-reports.tsx', 'utf8');
 check(workspaceSource.includes('Section aggregation remains pending engineering validation.'), 'Missing section aggregation is explicitly pending');

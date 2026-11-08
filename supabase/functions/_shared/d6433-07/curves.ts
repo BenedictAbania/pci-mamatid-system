@@ -11,6 +11,8 @@ export interface CurveReader {
   readonly id: string; readonly digest: string;
   deduct(code: number, severity: Severity | null, density: number): number;
   corrected(total: number, q: number): number;
+  /** Provisional policies applied during this calculation, in plain words. */
+  readonly notes?: string[];
 }
 export class ReferenceUnavailable extends Error {}
 export function curveKey(code: number, severity: Severity | null) { return code+':'+(severity ?? 'none'); }
@@ -69,6 +71,50 @@ export function privateCurveReader(pack: CurvePackage, digest: string): CurveRea
       const curve=pack.cdv[String(q)];
       if (!curve) throw new ReferenceUnavailable('No supplied CDV curve for q='+q);
       return interpolateCurve(curve,total);
+    },
+  };
+}
+
+/**
+ * PROVISIONAL reader for an unreviewed curve trace, so the workflow can run before
+ * engineering validation. Every policy below is recorded in `notes` and saved with the
+ * output. A Civil Engineer must review these policies before any result is approved.
+ * - A density or TDV outside the traced range is held at the nearest traced point.
+ * - A TDV below the first traced CDV point is scaled in proportion to that point (CDV <= TDV).
+ * - q >= 8 has no curve in Fig. X3.26, so the q = 7 curve is used.
+ */
+export function provisionalCurveReader(pack: Pick<CurvePackage, 'edition' | 'id' | 'usage' | 'dv' | 'cdv'>, digest: string): CurveReader & { readonly notes: string[] } {
+  if (!pack || pack.edition !== EDITION || pack.usage !== 'private-server' || !pack.id?.trim() || !/^[a-f0-9]{64}$/.test(digest)) throw new ReferenceUnavailable('A private D6433-07 curve package is required');
+  validateCurveMaps(pack);
+  const notes: string[] = [];
+  const note = (text: string) => { if (!notes.includes(text)) notes.push(text); };
+  const round = (value: number) => String(Math.round(value * 1000) / 1000);
+  function held(curve: Curve, x: number, label: string) {
+    const first = curve.points[0], last = curve.points[curve.points.length - 1];
+    if (x < first[0]) { note(`${label} ${round(x)} is below the traced range (from ${round(first[0])}); the first traced value was used.`); return first[1]; }
+    if (x > last[0]) { note(`${label} ${round(x)} is above the traced range (to ${round(last[0])}); the last traced value was used.`); return last[1]; }
+    return interpolateCurve(curve, x);
+  }
+  return {
+    id: pack.id, digest, notes,
+    deduct(code, severity, density) {
+      const d = definition(code); positive(density, 'Density');
+      const curve = pack.dv[curveKey(code, severity)];
+      if (!curve || (severity === null ? d.severities.length > 0 : !d.severities.includes(severity))) throw new ReferenceUnavailable('Missing distress/severity reference');
+      return held(curve, density, `${d.name}${severity ? ` (${severity})` : ''} density %`);
+    },
+    corrected(total, q) {
+      if (!Number.isFinite(total) || total < 0 || !Number.isInteger(q) || q < 1 || q > 10) throw new ReferenceUnavailable('Invalid CDV query');
+      if (q === 1) return total;
+      const used = Math.min(q, 7);
+      if (q > 7) note(`q = ${q} has no curve in Fig. X3.26; the q = 7 curve was used.`);
+      const curve = pack.cdv[String(used)];
+      const [firstTdv, firstCdv] = curve.points[0];
+      if (total < firstTdv) {
+        note(`CDV (q = ${used}): TDV ${round(total)} is below the traced range (from ${round(firstTdv)}); CDV was scaled in proportion to the first traced point.`);
+        return total * firstCdv / firstTdv;
+      }
+      return Math.min(total, held(curve, total, `CDV (q = ${used}) TDV`));
     },
   };
 }

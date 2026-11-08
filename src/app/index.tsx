@@ -11,7 +11,7 @@ import { useAppTheme } from '@/providers/ThemeProvider';
 
 const road = require('../../assets/images/lakad_landing_road.png');
 const logo = require('../../assets/images/LAKAD.png');
-const poster = require('../../assets/images/lakad_hero_bg.jpg');
+const poster = require('../../assets/images/lakad_hero_bg.png');
 type Section = 'home' | 'features' | 'roads' | 'about' | 'contact';
 type PressState = { pressed: boolean; hovered?: boolean };
 const nav: { label: string; target: Section }[] = [
@@ -423,10 +423,13 @@ export default function LandingPage() {
           <Text style={{ color: '#FFFFFF', fontSize: phone ? 15 : 17, lineHeight: phone ? 23 : 26, marginTop: phone ? 18 : 30, maxWidth: 640 }}>Record inspections, Compute PCI, and Generate reports in one place.</Text>
           <View style={{ flexDirection: phone ? 'column' : 'row', flexWrap: phone ? 'nowrap' : 'wrap', alignItems: phone ? 'stretch' : 'flex-start', gap: phone ? 10 : 8, marginTop: phone ? 26 : 50 }}>
             <HeroButton label="Access Your Workspace" onPress={openApp} />
-            <HeroButton label="Learn More" onPress={() => router.push('/prototype')} outline />
+            <HeroButton label="PCI Automation Workflow" onPress={() => router.push('/prototype')} outline />
           </View>
         </View>
-        <Text style={{ color: '#FFFFFF', fontSize: phone ? 13 : 15, fontWeight: '300', ...(phone ? { paddingHorizontal: heroPad, paddingBottom: 28 } : { position: 'absolute', right: stacked ? 24 : 54, bottom: 30 }) }}>Built for Local Road Networks.</Text>
+        <View style={{ alignItems: 'center', flexDirection: 'row', gap: 6, ...(phone ? { paddingHorizontal: heroPad, paddingBottom: 28 } : { position: 'absolute', right: stacked ? 24 : 54, bottom: 30 }) }}>
+          <Feather name="map-pin" size={phone ? 13 : 15} color="#FFFFFF" />
+          <Text style={{ color: '#FFFFFF', fontSize: phone ? 13 : 15, fontWeight: '300' }}>Barangay Mamatid, Cabuyao, Laguna.</Text>
+        </View>
       </View>
     </ImageBackground>
 

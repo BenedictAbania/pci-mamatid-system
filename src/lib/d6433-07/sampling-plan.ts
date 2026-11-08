@@ -1,7 +1,8 @@
 /**
- * Round-1 sampling plan for an asphalt section (ASTM D6433-07).
+ * Sampling plan for an asphalt section (ASTM D6433-07).
  * Mirrors lakad_private.required_sample_units / confirm_sampling_plan in
- * supabase/migrations/20261107160000_section_sampling_plan.sql, so the preview matches what is saved.
+ * supabase/migrations/20261107160000_section_sampling_plan.sql and start_survey_round in
+ * supabase/migrations/20261108150000_survey_rounds.sql, so the preview matches what is saved.
  */
 import { SAMPLE_UNIT_MAX_AREA, SAMPLE_UNIT_MIN_AREA, SAMPLE_UNIT_TARGET_AREA } from '../pci/pci-service';
 import { minimumRandomSamples, systematicRandomUnits } from './section';
@@ -32,25 +33,28 @@ export function sectionSampleUnits(area: number) {
   return unitArea >= SAMPLE_UNIT_MIN_AREA && unitArea <= SAMPLE_UNIT_MAX_AREA ? { total, unitArea } : null;
 }
 
-/** n for each round-1 option: all units, §7.5.2 Eq. 1 (s = 10, e = 5), or the reduced table. */
-export function requiredSampleUnits(method: SamplingMethod, total: number) {
+/**
+ * n for each option: all units, §7.5.2 Eq. 1 (e = 5), or the reduced table. Round 1 uses s = 10;
+ * later rounds pass s measured from the previous round (§7.5.2.1 Eq. 2).
+ */
+export function requiredSampleUnits(method: SamplingMethod, total: number, deviation = 10) {
   if (method === 'all') return total;
-  if (method === 'confidence') return minimumRandomSamples(total);
+  if (method === 'confidence') return minimumRandomSamples(total, deviation);
   return REDUCED_SAMPLING_TABLE.find((row) => total <= row.upTo)!.count(total);
 }
 
 /** §7.5.3 Eq. 3: interval i = floor(N/n); units s, s+i, s+2i, … through the section. */
-export function samplingSelection(method: SamplingMethod, total: number, first: number) {
-  const required = requiredSampleUnits(method, total);
+export function samplingSelection(method: SamplingMethod, total: number, first: number, deviation = 10) {
+  const required = requiredSampleUnits(method, total, deviation);
   if (method === 'all') return { required, interval: 1, first: 1, units: Array.from({ length: total }, (_, index) => index + 1) };
   const { interval, units } = systematicRandomUnits(total, required, first);
   return { required, interval, first, units };
 }
 
 /** Random start s in 1..i. */
-export function randomStart(method: SamplingMethod, total: number, random = Math.random) {
+export function randomStart(method: SamplingMethod, total: number, random = Math.random, deviation = 10) {
   if (method === 'all') return 1;
-  const interval = Math.floor(total / requiredSampleUnits(method, total));
+  const interval = Math.floor(total / requiredSampleUnits(method, total, deviation));
   return Math.floor(random() * interval) + 1;
 }
 

@@ -1,9 +1,11 @@
 import { Feather } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { usePathname, useRouter } from 'expo-router';
 import { ComponentRef, ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleProp,
@@ -14,12 +16,14 @@ import {
   useWindowDimensions,
   View,
   ViewStyle,
+  type ViewProps,
 } from 'react-native';
 
 import { supabase } from '@/lib/data/supabase';
+import { changeOwnPassword, PASSWORD_MIN_LENGTH, profilePhotoUrl, saveOwnProfile } from '@/lib/data/profile-data';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { canAccess, roleLabels } from '@/lib/auth/access';
+import { canAccess, ROLE_ORDER, roleColors, roleHints, roleLabels } from '@/lib/auth/access';
 import { brand, createPalette, layout } from '@/lib/ui/design-system';
 import { accountDisplayName } from '@/lib/auth/account-display';
 import { navigationForRole, navigationRoute } from '@/lib/auth/navigation';
@@ -78,6 +82,7 @@ export function AdminShell({
   const { colorScheme, toggleColorScheme } = useAppTheme();
   const palette = useAdminPalette();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [hasShownPage, setHasShownPage] = useState(!loading);
   const sidebarRef = useRef<ComponentRef<typeof View>>(null);
   const isCompact = width < layout.compact;
@@ -198,13 +203,19 @@ export function AdminShell({
 
             {/* Signed-in account and sign out live at the foot of the sidebar. */}
             <View style={styles.sidebarFooter}>
-              <View accessibilityLabel={`${name}, ${roleLabels[role]}`} style={styles.profile}>
-                <View style={styles.profileAvatar}><Text style={styles.profileInitials}>{getInitials(name)}</Text></View>
+              <Pressable
+                accessibilityHint="Opens My Profile"
+                accessibilityLabel={`${name}, ${roleLabels[role]}`}
+                accessibilityRole="button"
+                onPress={() => { setMenuOpen(false); setProfileOpen(true); }}
+                style={({ hovered, pressed }: PressState) => [styles.profile, hovered && styles.profileHover, pressed && styles.navItemPressed]}>
+                <ProfileAvatar name={name} path={profile?.avatar_path} size={42} />
                 <View style={styles.profileCopy}>
                   <Text numberOfLines={1} style={styles.profileName}>{name}</Text>
                   <Text numberOfLines={1} style={styles.profileRole}>{roleLabels[role]}</Text>
                 </View>
-              </View>
+                <Feather color="#9FB3E6" name="edit-2" size={14} />
+              </Pressable>
               <Pressable accessibilityRole="button" onPress={() => void supabase.auth.signOut()} style={({ hovered, pressed }: PressState) => [styles.signOut, hovered && styles.signOutHover, pressed && styles.navItemPressed]}>
                 <Feather color="#D7E5FF" name="log-out" size={16} />
                 <Text style={styles.signOutText}>Sign out</Text>
@@ -214,12 +225,14 @@ export function AdminShell({
         </>
       ) : null}
 
+      {profileOpen ? <ProfileDialog onClose={() => setProfileOpen(false)} palette={palette} /> : null}
       <View testID="lakad-main" style={styles.main}>
         <View testID="lakad-toolbar" style={[styles.header, isPhone && styles.headerPhone, { backgroundColor: palette.panel, borderColor: palette.border }]}>
           {isCompact ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: menuOpen }} accessibilityLabel="Open navigation" onPress={() => setMenuOpen(true)} style={styles.iconButton}>
             <Feather color={palette.text} name="menu" size={22} />
           </Pressable> : null}
-          <View style={[styles.titleBlock, !headerSearch && styles.titleBlockGrow]}>
+          {/* Title always grows so search, refresh and theme sit together at the right. */}
+          <View style={[styles.titleBlock, styles.titleBlockGrow]}>
             <Text accessibilityRole="header" numberOfLines={1} style={[styles.pageTitle, isPhone && styles.pageTitlePhone, { color: palette.text }]}>{title}</Text>
             {!isPhone && subtitle ? <Text numberOfLines={1} style={[styles.pageSubtitle, { color: palette.muted }]}>{subtitle}</Text> : null}
           </View>
@@ -238,7 +251,11 @@ export function AdminShell({
             <Feather color={colorScheme === 'dark' ? '#FFD66B' : palette.text} name={colorScheme === 'dark' ? 'sun' : 'moon'} size={17} />
           </Pressable>
           {/* Tablets and phones hide the sidebar, so the signed-in account shows here until the drawer opens. */}
-          {isCompact && !menuOpen ? <View accessibilityLabel={`${name}, ${roleLabels[role]}`} style={styles.headerAvatar}><Text style={styles.profileInitials}>{getInitials(name)}</Text></View> : null}
+          {isCompact && !menuOpen ? (
+            <Pressable accessibilityHint="Opens My Profile" accessibilityLabel={`${name}, ${roleLabels[role]}`} accessibilityRole="button" onPress={() => setProfileOpen(true)} style={({ pressed }: PressState) => [pressed && styles.pressedScale]}>
+              <ProfileAvatar name={name} path={profile?.avatar_path} size={42} />
+            </Pressable>
+          ) : null}
         </View>
 
         <ScrollView testID="lakad-content" contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
@@ -266,21 +283,199 @@ export function AdminShell({
   );
 }
 
+/** Message of a thrown error, also when it comes from another JavaScript realm. */
+function messageOf(reason: unknown, fallback: string) {
+  const message = (reason as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message ? message : fallback;
+}
+
+/** Profile photo when one is saved (or chosen), otherwise the person's initials. */
+export function ProfileAvatar({ name, path, preview, size }: { name: string; path?: string | null; preview?: string | null; size: number }) {
+  const [loaded, setLoaded] = useState<{ path: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!path || preview) return;
+    let live = true;
+    profilePhotoUrl(path).then((url) => { if (live) setLoaded({ path, url }); }, () => { if (live) setLoaded(null); });
+    return () => { live = false; };
+  }, [path, preview]);
+  const source = preview ?? (loaded && loaded.path === path ? loaded.url : null);
+  const round = { borderRadius: size / 2, height: size, width: size };
+  return (
+    <View style={[styles.profileAvatar, round]}>
+      {source
+        ? <Image accessibilityIgnoresInvertColors accessibilityLabel={`Profile photo of ${name}`} source={{ uri: source }} style={round} />
+        : <Text style={[styles.profileInitials, size >= 64 && styles.profileInitialsLarge]}>{getInitials(name)}</Text>}
+    </View>
+  );
+}
+
+/** My Profile: the signed-in person edits their own name, office, job title, photo and password. Same layout as Edit User. */
+function ProfileDialog({ onClose, palette }: { onClose: () => void; palette: AdminPalette }) {
+  const { profile, refreshProfile, role, user } = useAuth();
+  const { width } = useWindowDimensions();
+  const wide = width >= 640;
+  const [fullName, setFullName] = useState(profile?.full_name ?? '');
+  const [office, setOffice] = useState(profile?.office ?? '');
+  const [jobTitle, setJobTitle] = useState(profile?.job_title ?? '');
+  const [photo, setPhoto] = useState<{ uri: string } | 'remove' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordResult, setPasswordResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const currentPath = profile?.avatar_path ?? null;
+  const shownPath = photo === 'remove' ? null : currentPath;
+  const hasPhoto = photo ? photo !== 'remove' : !!currentPath;
+  const name = getName(fullName.trim() || profile?.full_name, user?.email);
+
+  async function choosePhoto() {
+    setError('');
+    try {
+      // Imported up front: an on-demand import() of the picker failed in the web build.
+      const picked = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], mediaTypes: ['images'], quality: 0.8 });
+      if (picked.canceled) return;
+      // Large originals are fine: the photo is compressed before upload.
+      setPhoto({ uri: picked.assets[0].uri });
+    } catch (reason) {
+      setError(messageOf(reason, 'The photo picker is unavailable on this device.'));
+    }
+  }
+
+  async function save() {
+    if (!user) return;
+    if (!fullName.trim()) { setError('Enter your full name.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await saveOwnProfile({ userId: user.id, fullName, office, jobTitle, currentPath, photo });
+      await refreshProfile();
+      onClose();
+    } catch (reason) {
+      setError(messageOf(reason, 'Your profile could not be saved.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changePassword() {
+    const problem = !currentPassword || !newPassword || !confirmPassword ? 'Fill in all three password fields.'
+      : newPassword.length < PASSWORD_MIN_LENGTH ? `Use at least ${PASSWORD_MIN_LENGTH} characters for the new password.`
+      : newPassword !== confirmPassword ? 'The new passwords do not match.'
+      : newPassword === currentPassword ? 'Choose a new password that is different from your current one.' : '';
+    if (problem) { setPasswordResult({ ok: false, text: problem }); return; }
+    if (!user?.email) { setPasswordResult({ ok: false, text: 'Your account has no email address to confirm the current password.' }); return; }
+    setPasswordBusy(true);
+    setPasswordResult(null);
+    try {
+      await changeOwnPassword(user.email, currentPassword, newPassword);
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setPasswordResult({ ok: true, text: 'Password changed. Use the new password the next time you sign in.' });
+    } catch (reason) {
+      setPasswordResult({ ok: false, text: messageOf(reason, 'Your password could not be changed.') });
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.dialogBackdrop}>
+        <View accessibilityLabel="My Profile" accessibilityViewIsModal style={[styles.dialogCard, { backgroundColor: palette.panel, borderColor: palette.border }]}>
+          <ScrollView contentContainerStyle={[styles.dialogBody, wide && styles.dialogBodyWide]}>
+            <View style={styles.dialogHead}>
+              <Pressable accessibilityLabel="Close My Profile" accessibilityRole="button" hitSlop={10} onPress={onClose} style={({ pressed }: PressState) => [styles.dialogBack, pressed && styles.pressedScale]}>
+                <Feather color={palette.text} name="arrow-left" size={22} />
+              </Pressable>
+              <Text accessibilityRole="header" style={[styles.dialogTitle, { color: palette.text }]}>My Profile</Text>
+            </View>
+            <Text style={[styles.dialogLead, { color: palette.text }]}>Update your own details. Your email and role are managed by the system administrator.</Text>
+
+            <View style={styles.dialogPhotoRow}>
+              <ProfileAvatar name={name} path={shownPath} preview={photo && photo !== 'remove' ? photo.uri : null} size={88} />
+              <View style={styles.dialogPhotoActions}>
+                <View style={styles.dialogPhotoButtons}>
+                  <AdminButton disabled={saving} icon="camera" label={hasPhoto ? 'Change photo' : 'Add photo'} onPress={() => void choosePhoto()} palette={palette} tone="secondary" />
+                  {hasPhoto ? <AdminButton disabled={saving} icon="trash-2" label="Remove photo" onPress={() => setPhoto(currentPath ? 'remove' : null)} palette={palette} tone="secondary" /> : null}
+                </View>
+                <Text style={[styles.dialogHint, { color: palette.muted }]}>JPEG, PNG or WebP. Photos are resized and compressed before upload.</Text>
+              </View>
+            </View>
+
+            <Text style={[styles.dialogSectionLabel, { color: palette.muted }]}>Person</Text>
+            <View style={[styles.dialogGrid, !wide && styles.dialogGridStack]}>
+              <View style={styles.dialogCell}><AdminField label="Full name" onChangeText={setFullName} palette={palette} placeholder="First name and last name" required value={fullName} /></View>
+              <View style={styles.dialogCell}><AdminField editable={false} label="Email" onChangeText={() => {}} palette={palette} value={user?.email ?? ''} /></View>
+            </View>
+            <View style={[styles.dialogGrid, !wide && styles.dialogGridStack]}>
+              <View style={styles.dialogCell}><AdminField label="Office or department" onChangeText={setOffice} palette={palette} placeholder="Example, City Engineering Office" value={office} /></View>
+              <View style={styles.dialogCell}><AdminField label="Position or job title" onChangeText={setJobTitle} palette={palette} placeholder="Example, Civil Engineer" value={jobTitle} /></View>
+            </View>
+            {error ? <Text accessibilityLiveRegion="polite" role="alert" style={[styles.dialogError, { color: palette.red }]}>{error}</Text> : null}
+
+            <Text style={[styles.dialogSectionLabel, { color: palette.muted }]}>Role</Text>
+            <View accessibilityLabel={`Role: ${role ? roleLabels[role] : 'none'}`} accessibilityRole="radiogroup" style={styles.dialogRoleGrid}>
+              {ROLE_ORDER.map((item) => {
+                const selected = item === role;
+                return (
+                  <View key={item} accessibilityLabel={`${roleLabels[item]}: ${roleHints[item]}`} accessibilityRole="radio" aria-checked={selected} aria-disabled
+                    style={[styles.dialogRoleCard, !wide && styles.dialogRoleCardStack, { borderColor: selected ? palette.blue : palette.border, backgroundColor: selected ? palette.blueSoft : palette.input }, !selected && styles.dialogRoleOther]}>
+                    <View style={[styles.dialogRadio, { borderColor: selected ? palette.blue : palette.muted }]}>{selected ? <View style={[styles.dialogRadioDot, { backgroundColor: palette.blue }]} /> : null}</View>
+                    <View style={styles.dialogRoleBody}>
+                      <View style={styles.dialogRoleName}>
+                        <View style={[styles.dialogRoleDot, { backgroundColor: roleColors[item] }]} />
+                        <Text style={[styles.dialogRoleTitle, { color: palette.text }]}>{roleLabels[item]}</Text>
+                      </View>
+                      <Text style={[styles.dialogRoleHint, { color: palette.muted }]}>{roleHints[item]}.</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={[styles.dialogHint, { color: palette.muted }]}>Only an administrator can change your role.</Text>
+
+            <Text style={[styles.dialogSectionLabel, { color: palette.muted }]}>Change password</Text>
+            <View style={[styles.dialogGrid, !wide && styles.dialogGridStack]}>
+              <View style={styles.dialogCell}><AdminField autoComplete="current-password" label="Current password" onChangeText={setCurrentPassword} palette={palette} secureTextEntry value={currentPassword} /></View>
+              {wide ? <View style={styles.dialogCell} /> : null}
+            </View>
+            <View style={[styles.dialogGrid, !wide && styles.dialogGridStack]}>
+              <View style={styles.dialogCell}><AdminField autoComplete="new-password" label="New password" onChangeText={setNewPassword} palette={palette} placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`} secureTextEntry value={newPassword} /></View>
+              <View style={styles.dialogCell}><AdminField autoComplete="new-password" label="Confirm new password" onChangeText={setConfirmPassword} palette={palette} placeholder="Type it again" secureTextEntry value={confirmPassword} /></View>
+            </View>
+            {passwordResult ? <Text accessibilityLiveRegion="polite" role={passwordResult.ok ? 'status' : 'alert'} style={[styles.dialogError, { color: passwordResult.ok ? palette.green : palette.red }]}>{passwordResult.text}</Text> : null}
+            <View style={styles.dialogInlineAction}>
+              <AdminButton disabled={passwordBusy || saving} icon="lock" label={passwordBusy ? 'Changing...' : 'Change password'} onPress={() => void changePassword()} palette={palette} tone="secondary" />
+            </View>
+          </ScrollView>
+          <View style={[styles.dialogActions, { borderTopColor: palette.border }]}>
+            <AdminButton disabled={saving} label="Cancel" onPress={onClose} palette={palette} tone="secondary" />
+            <AdminButton disabled={saving} icon="check" label={saving ? 'Saving...' : 'Save changes'} onPress={() => void save()} palette={palette} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function AdminPanel({
   children,
+  onLayout,
   palette,
   style,
   subtitle,
   title,
 }: {
   children: ReactNode;
+  onLayout?: ViewProps['onLayout'];
   palette: AdminPalette;
   style?: StyleProp<ViewStyle>;
   subtitle?: string;
   title?: string;
 }) {
   return (
-    <View style={[styles.panel, { backgroundColor: palette.panel, borderColor: palette.border }, style]}>
+    <View onLayout={onLayout} style={[styles.panel, { backgroundColor: palette.panel, borderColor: palette.border }, style]}>
       {title ? (
         <View style={styles.panelHeading}>
           <Text style={[styles.panelTitle, { color: palette.text }]}>{title}</Text>
@@ -334,6 +529,7 @@ export function AdminButton({
 }
 
 export function AdminField({
+  autoComplete,
   editable = true,
   keyboardType,
   label,
@@ -342,8 +538,10 @@ export function AdminField({
   palette,
   placeholder,
   required,
+  secureTextEntry,
   value,
 }: {
+  autoComplete?: 'current-password' | 'new-password' | 'email' | 'name' | 'off';
   editable?: boolean;
   keyboardType?: 'default' | 'numeric' | 'email-address';
   label: string;
@@ -353,6 +551,8 @@ export function AdminField({
   placeholder?: string;
   /** Shows a red asterisk after the label. */
   required?: boolean;
+  /** Hides the typed text, for passwords. */
+  secureTextEntry?: boolean;
   value: string;
 }) {
   const labelId = `lakad-field-label-${useId()}`;
@@ -363,7 +563,10 @@ export function AdminField({
         accessibilityLabel={label}
         accessibilityLabelledBy={Platform.OS === 'android' ? labelId : undefined}
         aria-labelledby={Platform.OS === 'web' ? labelId : undefined}
+        autoCapitalize={secureTextEntry ? 'none' : undefined}
+        autoComplete={autoComplete}
         editable={editable}
+        secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
         multiline={multiline}
         onChangeText={onChangeText}
@@ -416,6 +619,38 @@ const styles = StyleSheet.create({
   profile: { alignItems: 'center', flexDirection: 'row', gap: 11, paddingHorizontal: 6, paddingBottom: 6 },
   profileAvatar: { alignItems: 'center', backgroundColor: layout.navy.active, borderColor: 'rgba(255,255,255,0.25)', borderRadius: 21, borderWidth: 1, height: 42, justifyContent: 'center', width: 42 },
   profileInitials: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  profileInitialsLarge: { fontSize: 28 },
+  profileHover: { backgroundColor: 'rgba(255,255,255,0.08)' },
+  dialogBackdrop: { alignItems: 'center', backgroundColor: layout.scrim, flex: 1, justifyContent: 'center', padding: 18 },
+  dialogCard: { borderRadius: 22, borderWidth: 1, maxHeight: '94%', maxWidth: 760, overflow: 'hidden', width: '100%' },
+  dialogTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
+  dialogBody: { gap: 14, padding: 20 },
+  dialogBodyWide: { paddingHorizontal: 28, paddingTop: 26 },
+  dialogHead: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  dialogBack: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 },
+  dialogLead: { fontSize: 14.5, lineHeight: 20, marginTop: -6 },
+  dialogPhotoRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 18, marginTop: 4 },
+  dialogPhotoActions: { flexGrow: 1, flexShrink: 1, gap: 8, minWidth: 200 },
+  dialogPhotoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  dialogSectionLabel: { fontSize: 13, fontWeight: '800', letterSpacing: 1, marginTop: 10, textTransform: 'uppercase' },
+  dialogGrid: { flexDirection: 'row', gap: 16 },
+  dialogGridStack: { flexDirection: 'column', gap: 14 },
+  dialogCell: { flex: 1, minWidth: 0 },
+  dialogRoleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  dialogRoleCard: { alignItems: 'center', borderRadius: 12, borderWidth: 1, flexBasis: '45%', flexDirection: 'row', flexGrow: 1, gap: 12, minHeight: 60, paddingHorizontal: 14, paddingVertical: 10 },
+  dialogRoleCardStack: { flexBasis: '100%' },
+  dialogRoleOther: { opacity: 0.6 },
+  dialogRoleBody: { flex: 1, gap: 3 },
+  dialogRoleName: { alignItems: 'center', flexDirection: 'row', gap: 7 },
+  dialogRoleDot: { borderRadius: 4, height: 7, width: 7 },
+  dialogRoleTitle: { fontSize: 15, fontWeight: '800' },
+  dialogRoleHint: { fontSize: 12.5 },
+  dialogRadio: { alignItems: 'center', borderRadius: 10, borderWidth: 2, height: 20, justifyContent: 'center', width: 20 },
+  dialogRadioDot: { borderRadius: 5, height: 10, width: 10 },
+  dialogHint: { fontSize: 12, lineHeight: 17 },
+  dialogError: { fontSize: 13, fontWeight: '600' },
+  dialogInlineAction: { alignItems: 'flex-start' },
+  dialogActions: { borderTopWidth: 1, flexDirection: 'row', gap: 9, justifyContent: 'flex-end', padding: 16 },
   profileCopy: { flex: 1, minWidth: 0 },
   profileName: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   profileRole: { color: '#B9C9F2', fontSize: 12, marginTop: 2 },
@@ -430,7 +665,7 @@ const styles = StyleSheet.create({
   headerAvatar: { alignItems: 'center', backgroundColor: layout.navy.active, borderRadius: 21, height: 42, justifyContent: 'center', width: 42 },
   phoneIntro: { gap: 12 },
   iconButton: { padding: 10, minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
-  search: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flex: 1, flexDirection: 'row', gap: 8, maxWidth: 460, paddingHorizontal: 12 },
+  search: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', flexShrink: 1, gap: 8, paddingHorizontal: 12, width: 460 },
   phoneSearchRow: { flexDirection: 'row' },
   searchInput: { flex: 1, minWidth: 0, fontSize: 16, height: 44 },
   roundButton: { alignItems: 'center', borderRadius: 24, borderWidth: 1, height: 42, justifyContent: 'center', width: 42 },

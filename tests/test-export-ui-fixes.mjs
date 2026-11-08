@@ -88,7 +88,7 @@ function componentHarness(mode = 'reports') {
     './shared': { Notice: 'Notice' }, './task-tabs': { TaskTabs: 'TaskTabs' }, './pagination': { PageControls: 'PageControls' },
     '@/lib/data/approved-data': { REPORT_PAGE_SIZE: 50, loadApprovedPage: () => backend.error ? Promise.reject(new Error(backend.error)) : Promise.resolve(backend.page), loadApprovedSummary: () => backend.error ? Promise.reject(new Error(backend.error)) : Promise.resolve(backend.summary), loadSectionReportPage: () => backend.error ? Promise.reject(new Error(backend.error)) : Promise.resolve(backend.sections) },
     '@/lib/data/approved-results': load('src/lib/data/approved-results.ts'), '@/lib/utils/admin-utils': csv,
-    '@/providers/AuthProvider': { useAuth: () => ({ role: 'viewer' }) }, '@/components/workflow/photo-card': { PhotoCard: 'PhotoCard' },
+    '@/providers/AuthProvider': { useAuth: () => ({ role: 'viewer' }) }, '@/components/workflow/photo-card': { PhotoCard: 'PhotoCard' }, '@/components/workflow/distress-photos': { PhotoGroups: 'PhotoGroups', photoGroups: () => [], distressLabel: name => name },
     'expo-router': { useRouter: () => ({ push() {} }) }, '@/lib/ui/demo-preview': { DEMO_PREVIEW_ENABLED: false },
   };
   const { ApprovedReports } = load('src/components/workflow/approved-reports.tsx', dependencies);
@@ -142,7 +142,7 @@ await test('F03', 'Initial failure, success/failure/retry, real empty state and 
 
 await test('F04', 'Actual React Native Web markup: area/date/orientation/notes labels and validation alert', () => {
   const native = require('react-native-web');
-  const { AdminField } = load('src/components/admin/admin-shell.tsx', {
+  const { AdminField } = load('src/components/admin/admin-shell.tsx', {'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 
     'react-native': native, '@expo/vector-icons': {}, 'expo-image': { Image: () => null }, 'expo-router': {},
     '@/lib/data/supabase': {}, '@/providers/AuthProvider': {}, '@/providers/ThemeProvider': {}, '@/lib/auth/access': {},
     '@/lib/ui/design-system': load('src/lib/ui/design-system.ts'), '@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display': load('src/lib/auth/account-display.ts'),

@@ -14,7 +14,8 @@ for(const path of ['tests/fixtures/schema-fixture.sql','supabase/migrations/2026
   'supabase/migrations/20260916140000_align_sample_unit_area_with_manuscript.sql',
   'supabase/migrations/20261004151522_published_revisions_and_reports.sql',
   'supabase/migrations/20261031211658_reviewer_branch_registration.sql',
-  'supabase/migrations/20261102023605_reviewer_section_registration.sql']) await db.exec(await fs.readFile(path,'utf8'));
+  'supabase/migrations/20261102023605_reviewer_section_registration.sql',
+  'supabase/migrations/20261108130000_section_summaries.sql']) await db.exec(await fs.readFile(path,'utf8'));
 const ids=Object.fromEntries(['admin','reviewer','encoder','viewer','other'].map((role,index)=>[role,'00000000-0000-4000-8000-'+String(index+1).padStart(12,'0')]));
 for(const [role,id] of Object.entries(ids)) {
   await db.query('insert into auth.users(id,email) values($1,$2)',[id,role+'@example.test']);
@@ -227,6 +228,14 @@ equal(scoped.length,1,'Inventory fetches only the loaded section results');equal
 equal(new Set([...rank1,...rank2].map(r=>r.section_id)).size,100,'Ranking pages do not duplicate sections');
 equal((await db.query('select lakad_section_reports(null,1000) as r')).rows[0].r.length,100,'Section RPC clamps oversize requests');
 equal(Object.hasOwn(rank1[0],'approved_by'),false,'Section report excludes Reviewer account');
+const summaries=(await db.query('select lakad_section_summaries() as s')).rows[0].s;
+const rank3=(await db.query('select lakad_section_reports($1,100) as r',[rank2.at(-1).id])).rows[0].r;
+equal([summaries.total,summaries.rows.length],[rank1.length+rank2.length+rank3.length,5],'Section summaries count every valid section and return a five-row preview');
+equal(summaries.rows[0].inspected,summaries.rows[0].samples.length,'Each summary carries its frozen sample results');
+equal(Object.hasOwn(summaries.rows[0],'approved_by'),false,'Section summaries exclude the Reviewer account');
+equal((await db.query("select lakad_section_summaries(filter_condition=>'TEST ONLY',page_size=>1000) as s")).rows[0].s.rows.length,100,'Summary page size is clamped');
+equal((await db.query("select lakad_section_summaries(filter_search=>'no such fictional road') as s")).rows[0].s.total,0,'Summary search filters in the database');
+equal((await db.query("select lakad_section_summaries(filter_sample_type=>'additional') as s")).rows[0].s.total,0,'Sample type filter requires a matching sample');
 await as('admin');equal((await db.query('select * from lakad_accounts_page(null,1000)')).rows.length,100,'Account RPC clamps oversize requests');
 const accounts1=(await db.query('select * from lakad_accounts_page(null,50)')).rows;
 const accounts2=(await db.query('select * from lakad_accounts_page($1,50)',[accounts1.at(-1).id])).rows;
