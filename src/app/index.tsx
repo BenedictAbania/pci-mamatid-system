@@ -92,7 +92,17 @@ function HighlightVideo({ dark }: { dark: boolean }) {
     boxShadow: dark ? '0px 18px 40px rgba(0,0,0,0.35)' : '0px 22px 48px rgba(10,27,77,0.16)' } as ViewStyle;
   if (highlightVideo && Platform.OS === 'web') {
     return <View style={frame}>
-      <video src={highlightVideo} poster={highlightPoster} controls playsInline preload="metadata" aria-label="LAKAD highlight video" style={{ width: '100%', height: '100%', objectFit: 'cover', backgroundColor: hero.bar }} />
+      {/* Ambient loop: plays by itself with no controls. Browsers only autoplay muted video, and React
+          does not reliably set the muted attribute, so the ref sets it before starting playback. */}
+      <video src={highlightVideo} poster={highlightPoster} autoPlay muted loop playsInline disablePictureInPicture preload="auto"
+        ref={element => {
+          if (!element) return;
+          element.muted = true;
+          // Older browsers return no promise; a refused autoplay just leaves the poster showing.
+          try { void element.play()?.catch(() => {}); } catch { /* autoplay unavailable */ }
+        }}
+        aria-label="LAKAD highlight video" onContextMenu={event => event.preventDefault()}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', backgroundColor: hero.bar, pointerEvents: 'none' }} />
     </View>;
   }
   return <View style={frame} accessibilityLabel="LAKAD highlight video, coming soon">
@@ -350,12 +360,21 @@ export default function LandingPage() {
   const cols = (ratio: number) => (stacked ? {} : { flex: ratio });
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const [positions, setPositions] = useState<Partial<Record<Section, number>>>({ home: 0 });
+  const [heights, setHeights] = useState<Partial<Record<Section, number>>>({});
+  /** Height of the scroll viewport, in the same units as the section positions. */
+  const [viewHeight, setViewHeight] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const openApp = () => router.navigate(session && role ? homeForRole(role) : '/login');
   const [active, setActive] = useState<Section>('home');
   /** Height of the sticky header bar; section jumps stop below it so headings are not hidden behind it. */
   const [barHeight, setBarHeight] = useState(0);
-  const sectionY = (target: Section) => Math.max(0, (positions[target] ?? 0) - (target === 'home' ? 0 : barHeight));
+  const sectionY = (target: Section) => {
+    if (target === 'home') return 0;
+    const top = positions[target] ?? 0, height = heights[target], visible = viewHeight - barHeight;
+    // Highlight centres the whole section (video and access cards) under the header when its content fits.
+    if (target === 'roads' && height && visible > 0 && height - 2 * (phone ? 60 : 88) <= visible) return Math.max(0, top + height / 2 - barHeight - visible / 2);
+    return Math.max(0, top - barHeight);
+  };
   const jump = (target: Section) => { scrollRef.current?.scrollTo({ y: sectionY(target), animated: true }); setActive(target); setMenuOpen(false); };
   /** Opening /#contact (the sign-in page's "Contact your system administrator" link) scrolls to Contact once it is measured. */
   const hashJumped = useRef(false);
@@ -370,12 +389,15 @@ export default function LandingPage() {
   const track = (event: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => {
     const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
     const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - 4;
-    const current = atEnd ? 'contact' : nav.reduce<Section>((found, item) => (positions[item.target] ?? Infinity) <= contentOffset.y + 140 ? item.target : found, 'home');
+    // A section is current once its top passes the middle of the area under the header.
+    const probe = contentOffset.y + Math.max(140, barHeight + (layoutMeasurement.height - barHeight) / 2);
+    const current = atEnd ? 'contact' : nav.reduce<Section>((found, item) => (positions[item.target] ?? Infinity) <= probe ? item.target : found, 'home');
     if (current !== active) setActive(current);
   };
-  const mark = (target: Section) => ({ onLayout: (event: { nativeEvent: { layout: { y: number } } }) => {
-    const y = event.nativeEvent.layout.y;
+  const mark = (target: Section) => ({ onLayout: (event: { nativeEvent: { layout: { y: number; height: number } } }) => {
+    const { y, height } = event.nativeEvent.layout;
     setPositions(previous => previous[target] === y ? previous : { ...previous, [target]: y });
+    setHeights(previous => previous[target] === height ? previous : { ...previous, [target]: height });
   } });
   const navLinks = nav.map(item => {
     const current = item.target === active;
@@ -395,7 +417,7 @@ export default function LandingPage() {
   const sectionTitle = phone ? 29 : Math.min(44, Math.max(30, Math.floor((effectiveWidth - heroPad * 2) / 26.5)));
   const headline = phone ?(width < 390 ? 27 : 30) : Math.min(58, Math.max(34, Math.floor((effectiveWidth - heroPad * 2) / 18.6)));
 
-  return <ScrollView ref={scrollRef} stickyHeaderIndices={[0]} onScroll={track} scrollEventThrottle={64}style={[{ flex: 1, backgroundColor: background }, Platform.OS === 'web' && width >= 1000 ? { zoom: pageZoom } as any : null]} contentContainerStyle={{ flexGrow: 1 }} accessibilityLabel="LAKAD landing page">
+  return <ScrollView ref={scrollRef} stickyHeaderIndices={[0]} onScroll={track} scrollEventThrottle={64} onLayout={event => { const h = event.nativeEvent.layout.height; setViewHeight(previous => previous === h ? previous : h); }} style={[{ flex: 1, backgroundColor: background }, Platform.OS === 'web' && width >= 1000 ? { zoom: pageZoom } as any : null]} contentContainerStyle={{ flexGrow: 1 }} accessibilityLabel="LAKAD landing page">
     <View {...mark('home')} style={{ backgroundColor: hero.bar }}>
       <View onLayout={event => { const h = event.nativeEvent.layout.height; setBarHeight(previous => previous === h ? previous : h); }} style={{ width: '100%', maxWidth: 1600, alignSelf: 'center', paddingLeft: phone ? 14 : 12, paddingRight: phone ? 14 : stacked ? 24 : 44, minHeight: compactHeader ? 72 : 96, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <Brand compact={compactHeader} dark large />
@@ -476,7 +498,7 @@ export default function LandingPage() {
         </View>
       </View>
 
-      <View style={{ height: 1, backgroundColor: dark ? '#1F3366' : indigo.line, marginVertical: phone ? 36 : 48 }} />
+      <View style={{ height: phone ? 24 : 36 }} />
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 18 }}>
         {accessCards.map((card, index) => <AccessCard key={card.title} {...card} basis={phone || (stacked && index === 0) ? '100%' : stacked ? '45%' : '30%'} />)}
