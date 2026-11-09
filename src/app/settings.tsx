@@ -303,7 +303,8 @@ export default function ReferenceDataScreen() {
                 </View>
                 <AdminButton label="Add Distress" onPress={openAdd} palette={palette} />
               </View>
-              {types.length ? <View>
+              {/* Five columns need about 640 px; narrower screens scroll the table sideways, like the other tables. */}
+              {types.length ? <ScrollView horizontal contentContainerStyle={{ minWidth: '100%' }}><View style={{ minWidth: 640, flex: 1 }}>
                 <View style={[styles.distressRow, { borderBottomColor: palette.border }]}>
                   {['#', 'Distress type', 'Measured in', 'Severity levels', 'Criteria'].map((label, index) => <Text key={label} style={[styles.distressHead, distressColumns[index], { color: palette.muted }]}>{label}</Text>)}
                 </View>
@@ -326,7 +327,7 @@ export default function ReferenceDataScreen() {
                 </View>)}
                 </ScrollView>
                 </View>
-              </View> : <Text style={[styles.note, { color: palette.muted }]}>No distress types yet. Press Add Distress to add one.</Text>}
+              </View></ScrollView> : <Text style={[styles.note, { color: palette.muted }]}>No distress types yet. Press Add Distress to add one.</Text>}
               <PageControls {...pagination} />
             </AdminPanel>
             </View>

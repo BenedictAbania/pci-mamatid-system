@@ -541,7 +541,8 @@ const styles = StyleSheet.create({
   previewRange: { fontSize: 11 },
   // Panels in one row stretch to the tallest, so all three boxes end on the same line.
   columns: { alignItems: 'stretch', flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  full: { width: '100%' },
+  // Phones stack the panels; drop their desktop minimum widths so narrow screens do not overflow.
+  full: { width: '100%', minWidth: 0 },
   detailsPanel: { flexBasis: 260, flexGrow: 1, minWidth: 260 },
   detailRow: { alignItems: 'baseline', borderTopWidth: 1, flexDirection: 'row', gap: 12, justifyContent: 'space-between', paddingVertical: 7 },
   detailLabel: { flexShrink: 0, fontSize: 14, fontWeight: '600' },

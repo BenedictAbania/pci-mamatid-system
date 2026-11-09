@@ -420,7 +420,8 @@ export default function LandingPage() {
   return <ScrollView ref={scrollRef} stickyHeaderIndices={[0]} onScroll={track} scrollEventThrottle={64} onLayout={event => { const h = event.nativeEvent.layout.height; setViewHeight(previous => previous === h ? previous : h); }} style={[{ flex: 1, backgroundColor: background }, Platform.OS === 'web' && width >= 1000 ? { zoom: pageZoom } as any : null]} contentContainerStyle={{ flexGrow: 1 }} accessibilityLabel="LAKAD landing page">
     <View {...mark('home')} style={{ backgroundColor: hero.bar }}>
       <View onLayout={event => { const h = event.nativeEvent.layout.height; setBarHeight(previous => previous === h ? previous : h); }} style={{ width: '100%', maxWidth: 1600, alignSelf: 'center', paddingLeft: phone ? 14 : 12, paddingRight: phone ? 14 : stacked ? 24 : 44, minHeight: compactHeader ? 72 : 96, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <Brand compact={compactHeader} dark large />
+        {/* Under 380 px the large logo pushes Sign In against the screen edge; use the smaller size there. */}
+        <Brand compact={compactHeader} dark large={width >= 380} />
         {!compactHeader && <View accessibilityRole="navigation" accessibilityLabel="Landing page navigation" style={{ flexDirection: 'row', gap: stacked ? 26 : 42 }}>{navLinks}</View>}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: compactHeader ? 6 : 10 }}>
           {compactHeader && <Pressable accessibilityRole="button" accessibilityLabel={menuOpen ? 'Close menu' : 'Open menu'} onPress={() => setMenuOpen(!menuOpen)} style={({ hovered }: PressState) => ({ width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: hovered ? 'rgba(255,255,255,0.1)' : 'transparent' })}><Feather name={menuOpen ? 'x' : 'menu'} size={22} color="#FFFFFF" /></Pressable>}
