@@ -54,7 +54,6 @@ export function SampleSummaries() {
   function apply(next: SummaryFilters) { setApplied(next); setCursors([null]); setSelectedId(null); }
   const sectionChoices = draft.branch ? options.sectionsByBranch[draft.branch] ?? [] : [...new Set(Object.values(options.sectionsByBranch).flat())].sort();
   const selected = rows.find(row => row.id === selectedId) ?? null;
-  const provisional = rows.some(row => (row.report_snapshot.output as { status?: string }).status === 'provisional');
   const shown = (cursors.length - 1) * SUMMARY_PAGE_SIZE + rows.length;
   const filtered = Object.values(applied).some(Boolean);
 
@@ -67,7 +66,6 @@ export function SampleSummaries() {
       <FilterSelect label="Sample Type" placeholder="All Sample Types" value={draft.sampleType} options={SAMPLE_TYPES} onChange={sampleType => setDraft(d => ({ ...d, sampleType }))} />
     </FilterBar>
     {!!error && <View style={{ gap: 10 }}><Notice error>{error}</Notice><AdminButton palette={p} label="Retry" onPress={() => void refresh()} /></View>}
-    {provisional && <Notice>Some results are provisional and await civil-engineering validation.</Notice>}
     <SummaryTable palette={p} title="Sample Unit PCI Results" icon="map" columns={COLUMNS} label="Sample unit PCI results"
       footer={<>
         <SummaryFooter palette={p} shown={shown} total={total} expanded={expanded} onToggle={() => { setExpanded(!expanded); setCursors([null]); }} />
@@ -78,8 +76,8 @@ export function SampleSummaries() {
         const s = row.report_snapshot;
         const unit = `SU-${String(s.sample.unit_number).padStart(3, '0')}`;
         return <SummaryRow key={row.id} palette={p} columns={COLUMNS} selected={row.id === selectedId} onView={() => setSelectedId(row.id)}
-          label={`${unit}, ${s.road.branch_name}, ${s.road.section_name}, PCI ${Number(s.output.pci).toFixed(1)}, ${s.output.condition}`}
-          cells={[unit, s.road.branch_name, s.road.section_name, Number(s.output.pci).toFixed(1), s.output.condition]} />;
+          label={`${unit}, ${s.road.branch_name}, ${s.road.section_name}, PCI ${Number(s.output.pci).toFixed(2)}, ${s.output.condition}`}
+          cells={[unit, s.road.branch_name, s.road.section_name, Number(s.output.pci).toFixed(2), s.output.condition]} />;
       })}
       {!rows.length && !loading && !error && <Text style={{ color: p.muted, padding: 20, textAlign: 'center' }}>{filtered ? 'No published results match these filters. Change or clear the filters.' : 'No published sample unit results yet. Results appear here after the Civil Engineer approves and publishes them.'}</Text>}
       {!rows.length && loading && <Text style={{ color: p.muted, padding: 20, textAlign: 'center' }}>Loading results…</Text>}

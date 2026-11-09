@@ -123,7 +123,7 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
     metric('Review assignments', 'All units assigned for your review', value(work, d => d.samples)),
   ] : [
     metric('Published results', 'Sample units with a published PCI', value(results, d => d.published)),
-    metric('Average published PCI', 'Across published sample units; — if none', value(results, d => d.average === null ? null : d.average.toFixed(1))),
+    metric('Average published PCI', 'Across published sample units; — if none', value(results, d => d.average === null ? null : d.average.toFixed(2))),
   ];
   // Cards share the row evenly, whatever their number.
   const columns = Math.min(responsive.metricColumns, metrics.length);
@@ -134,7 +134,7 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
     <View style={styles.intro}><Text style={[styles.body, styles.lead, { color: p.muted }]}>{role === 'viewer' ? 'Published information only. Internal inspection and review records are excluded.' : 'Choose your next task. Counts cover your full authorized scope.'}</Text><AdminButton label={primary[0]} palette={p} onPress={() => go(primary[1])} /></View>
     <View style={styles.metricGrid}>{metrics.map(item => <View key={item.title} style={{ width: metricWidth as `${number}%` }}><MetricCard {...item} palette={p} compact={responsive.phone} /></View>)}</View>
     {role === 'viewer'
-      ? <AdminPanel palette={p}><PanelHeader title="Published pavement results" palette={p} />{state(results, 'Results unavailable')}{results.status === 'ready' && (results.data.published ? currentApprovedResults(results.data.rows, true).map(row => <View key={row.id} style={[styles.task, { borderColor: p.border }]}><Text style={[styles.rowTitle, { color: p.text }]}>{row.report_snapshot.road.section_name} · SU-{row.report_snapshot.sample.unit_number}</Text><Text style={[styles.body, { color: p.muted }]}>PCI {row.report_snapshot.output.pci.toFixed(1)} · {row.report_snapshot.output.condition || getPciConditionCategory(row.report_snapshot.output.pci).rating}</Text><StatusBadge state="published" palette={p} /></View>) : <DashboardState palette={p} status="empty" title="No published results yet" message="Results appear after eligible calculation approval and separate publication." />)}</AdminPanel>
+      ? <AdminPanel palette={p}><PanelHeader title="Published pavement results" palette={p} />{state(results, 'Results unavailable')}{results.status === 'ready' && (results.data.published ? currentApprovedResults(results.data.rows, true).map(row => <View key={row.id} style={[styles.task, { borderColor: p.border }]}><Text style={[styles.rowTitle, { color: p.text }]}>{row.report_snapshot.road.section_name} · SU-{row.report_snapshot.sample.unit_number}</Text><Text style={[styles.body, { color: p.muted }]}>PCI {row.report_snapshot.output.pci.toFixed(2)} · {row.report_snapshot.output.condition || getPciConditionCategory(row.report_snapshot.output.pci).rating}</Text><StatusBadge state="published" palette={p} /></View>) : <DashboardState palette={p} status="empty" title="No published results yet" message="Results appear after eligible calculation approval and separate publication." />)}</AdminPanel>
       : <AdminPanel palette={p}><PanelHeader title="Your inspection status" subtitle="Latest revision; approval and publication are separate" palette={p} />{state(work, 'Status unavailable')}{work.status === 'ready' ? <WorkflowProgress states={work.data.states} palette={p} /> : null}</AdminPanel>}
   </AdminShell>;
 }

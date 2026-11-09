@@ -147,7 +147,7 @@ await test('F04', 'Actual React Native Web markup: area/date/orientation/notes l
     '@/lib/data/supabase': {}, '@/providers/AuthProvider': {}, '@/providers/ThemeProvider': {}, '@/lib/auth/access': {},
     '@/lib/ui/design-system': load('src/lib/ui/design-system.ts'), '@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display': load('src/lib/auth/account-display.ts'),
   });
-  const labels = ['Measured sample area (m², 135–315)', 'Inspection date (YYYY-MM-DD)', 'Sample orientation / sketch description (§8.2)', 'General inspection notes'];
+  const labels = ['Measured sample area (m², 135–315)', 'Inspection date (YYYY-MM-DD)', 'Sample orientation / sketch description', 'General inspection notes'];
   const html = renderToStaticMarkup(React.createElement(React.Fragment, null, ...labels.map((label, i) => React.createElement(AdminField, { key: label, label, multiline: i > 1, value: '', onChangeText() {}, palette: {} }))));
   if (evidence) fs.writeFileSync(evidence + '/synthetic-labels-' + (before ? 'before' : 'after') + '.html', html);
   const refs = [...html.matchAll(/aria-labelledby="([^"]+)"/g)].map(x => x[1]);

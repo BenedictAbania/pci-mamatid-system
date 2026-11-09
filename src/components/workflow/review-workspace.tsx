@@ -98,7 +98,7 @@ export function ReviewWorkspace({ sample, data, busy, run, error }: { sample: Sa
       <PhotoGroups palette={p} groups={groups} busy={busy} empty="The encoder did not add photos. Photos are optional." />
     </View>
     <InspectionResults palette={p} sample={sample} data={data} output={output} busy={busy} confirming={false} onCancel={() => {}} onConfirm={() => {}} />
-    {reviewer && <DecisionCard palette={p} sample={sample} hasPci={!!output} provisional={output?.status === 'provisional'} canCompute={sample.workflow_state === 'submitted' && !output && computation?.verification === 'pending'} busy={busy} run={run} error={error} />}
+    {reviewer && <DecisionCard palette={p} sample={sample} hasPci={!!output} canCompute={sample.workflow_state === 'submitted' && !output && computation?.verification === 'pending'} busy={busy} run={run} error={error} />}
     {!!history.length && <View style={{ borderWidth: 1, borderColor: p.border, borderRadius: 10, backgroundColor: p.panel, padding: 16, gap: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <Text accessibilityRole="header" style={{ color: p.text, fontSize: 17, fontWeight: '700' }}>Review history</Text>
@@ -110,8 +110,8 @@ export function ReviewWorkspace({ sample, data, busy, run, error }: { sample: Sa
 }
 
 /** One calm card: status, optional comments, one primary action and one secondary action. */
-function DecisionCard({ palette: p, sample, hasPci, provisional, canCompute, busy, run, error }: {
-  palette: AdminPalette; sample: Sample; hasPci: boolean; provisional: boolean; canCompute: boolean; busy: boolean; run: Run; error?: string;
+function DecisionCard({ palette: p, sample, hasPci, canCompute, busy, run, error }: {
+  palette: AdminPalette; sample: Sample; hasPci: boolean; canCompute: boolean; busy: boolean; run: Run; error?: string;
 }) {
   const [comments, setComments] = useState('');
   const [confirming, setConfirming] = useState<Decision | null>(null);
@@ -136,13 +136,12 @@ function DecisionCard({ palette: p, sample, hasPci, provisional, canCompute, bus
     <Text style={{ color: p.muted, lineHeight: 21 }}>{message}</Text>
     {!!sample.review_notes && <Text style={{ color: p.text, lineHeight: 21 }}>Last comments: {sample.review_notes}</Text>}
     {open && !hasPci && <Notice>No PCI is saved for this revision. Compute it before approving.</Notice>}
-    {open && hasPci && provisional && <Text style={{ color: p.amber, lineHeight: 20 }}>This PCI is provisional. It keeps the provisional label after approval.</Text>}
     {!!error && <Notice error>{error}</Notice>}
 
     {open && !confirming && <>
       {state === 'submitted' && <AdminField palette={p} multiline label="Comments to the encoder (required to return)" value={comments} onChangeText={setComments} />}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end' }}>
-        {canCompute && <AdminButton palette={p} tone="secondary" icon="activity" label="Compute PCI" disabled={busy} onPress={() => void run(() => calculateProvisional('sample', sample.id), 'Provisional PCI computed.')} />}
+        {canCompute && <AdminButton palette={p} tone="secondary" icon="activity" label="Compute PCI" disabled={busy} onPress={() => void run(() => calculateProvisional('sample', sample.id), 'PCI computed.')} />}
         {state === 'submitted' && <AdminButton palette={p} tone="secondary" icon="corner-up-left" label="Return for correction" disabled={busy || !comments.trim()} onPress={() => setConfirming('return')} />}
         {state === 'submitted' && <AdminButton palette={p} icon="check" label="Approve result" disabled={busy || !hasPci} onPress={() => setConfirming('approve')} />}
         {state === 'approved' && <AdminButton palette={p} icon="globe" label="Publish result" disabled={busy || !hasPci} onPress={() => setConfirming('publish')} />}

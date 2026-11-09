@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { AdminButton, AdminField, type AdminPalette } from '@/components/admin/admin-shell';
-import { Notice } from '@/components/workflow/shared';
 import { brand, layout } from '@/lib/ui/design-system';
-import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL } from '@/lib/d6433-07/catalog';
+import { ASPHALT_CATALOG, EDITION } from '@/lib/d6433-07/catalog';
 import { clampPci, getPciConditionCategory, getPciConditionVisual } from '@/lib/pci/pci-classification';
 import type { Computation, FinishDetails, Sample, WorkflowData } from '@/lib/data/workflow-data';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -34,18 +33,34 @@ export function InspectionResults({ palette: p, sample, data, output, confirming
   palette: AdminPalette; sample: Sample; data: WorkflowData; output: Output | null;
   confirming: boolean; busy: boolean; onCancel: () => void; onConfirm: (details: FinishDetails) => void;
 }) {
+  const records = data.distresses.filter(d => d.sample_unit_id === sample.id);
+  const pending = [...new Map(records.map(r => [`${r.distress_type_id}:${r.severity}`, r])).values()].map(r => ({ key: `${r.distress_type_id}:${r.severity}`, name: data.types.find(t => t.id === r.distress_type_id)?.name ?? 'Saved distress', severity: r.severity }));
+  return <View style={{ gap: 16 }}>
+    {confirming && <FinishCard palette={p} sample={sample} hasDistress={records.length > 0} busy={busy} onCancel={onCancel} onConfirm={onConfirm} />}
+    <PciResultCards palette={p} output={output} pending={pending} />
+  </View>;
+}
+
+/**
+ * Cards 3–6 on their own, for any D6433-07 output. `pending` lists the recorded
+ * distresses (one per type and severity) shown with empty values before the PCI is computed.
+ * The public prototype uses these cards with its unsaved sample.
+ */
+export function PciResultCards({ palette: p, output, pending }: {
+  palette: AdminPalette; output: Output | null;
+  pending: { key: string; name: string; severity: string | null }[];
+}) {
   const { width } = useWindowDimensions();
   const wide = width >= layout.columns;
-  const records = data.distresses.filter(d => d.sample_unit_id === sample.id);
   const rows: DeductRow[] = output?.groups
     ? output.groups.map((g, i) => ({ key: `${g.code}-${g.severity}-${i}`, name: ASPHALT_CATALOG.find(d => d.code === g.code)?.name ?? `Distress ${g.code}`, severity: g.severity ? SEVERITY_NAMES[g.severity] : 'Not applicable', quantity: `${trim(g.quantity)} ${g.unit}`, density: fixed(g.density, 2), deduct: fixed(g.deduct_value, 2) }))
-    : [...new Map(records.map(r => [`${r.distress_type_id}:${r.severity}`, r])).values()].map(r => ({ key: `${r.distress_type_id}:${r.severity}`, name: data.types.find(t => t.id === r.distress_type_id)?.name ?? 'Saved distress', severity: r.severity ? SEVERITY_NAMES[r.severity] ?? r.severity : 'Not applicable', quantity: '', density: '', deduct: '' }));
+    : pending.map(r => ({ key: r.key, name: r.name, severity: r.severity ? SEVERITY_NAMES[r.severity] ?? r.severity : 'Not applicable', quantity: '', density: '', deduct: '' }));
   const deducts = output ? [...(output.deduct_values ?? output.groups?.map(g => g.deduct_value) ?? [])].sort((a, b) => b - a) : [];
   const iterating = !!output && output.iterations.length > 0;
   const q = output ? String(iterating ? output.iterations[0].q : output.q) : '';
 
   const mcdv = <Card palette={p} title="4. Maximum Corrected Deduct Value">
-    <LabeledRow palette={p} label="Deduct Values"><Text accessibilityLabel={`Deduct values: ${deducts.map(v => fixed(v, 2)).join(', ') || 'not computed'}`} style={{ color: p.text, fontSize: 16, fontWeight: '700', flexShrink: 1 }}>{deducts.map(v => fixed(v, 1)).join('     ')}</Text></LabeledRow>
+    <LabeledRow palette={p} label="Deduct Values"><Text accessibilityLabel={`Deduct values: ${deducts.map(v => fixed(v, 2)).join(', ') || 'not computed'}`} style={{ color: p.text, fontSize: 16, fontWeight: '700', flexShrink: 1 }}>{deducts.map(v => fixed(v, 2)).join('     ')}</Text></LabeledRow>
     <LabeledRow palette={p} label="q"><ValueBox palette={p} label="q" value={q} /></LabeledRow>
     {!iterating && <LabeledRow palette={p} label="Total Deduct Value"><ValueBox palette={p} label="Total deduct value" value={fixed(output?.total_deduct_value, 2)} /></LabeledRow>}
   </Card>;
@@ -58,14 +73,14 @@ export function InspectionResults({ palette: p, sample, data, output, confirming
       <View accessibilityLabel="CDV correction iterations" style={{ minWidth: 460, flex: 1, gap: 6 }}>
         <View style={{ flexDirection: 'row' }}>{CDV_COLUMNS.map(c => <Text key={c.label} style={{ flex: c.flex, color: p.text, fontSize: 15, textAlign: 'center' }}>{c.label}</Text>)}</View>
         {output.iterations.map((it, i) => <View key={i} accessibilityLabel={`Iteration ${i + 1}: m ${fixed(output.allowable_deducts, 2)}, adjusted deducts ${it.adjusted_deducts.map(v => fixed(v, 2)).join(', ')}, TDV ${fixed(it.total_deduct_value, 2)}, q ${it.q}, CDV ${fixed(it.corrected_deduct_value, 2)}`} style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          {[String(i + 1), fixed(output.allowable_deducts, 2), it.adjusted_deducts.map(v => fixed(v, 1)).join(', '), fixed(it.total_deduct_value, 1), String(it.q), fixed(it.corrected_deduct_value, 1)].map((cell, c) => c === 0
+          {[String(i + 1), fixed(output.allowable_deducts, 2), it.adjusted_deducts.map(v => fixed(v, 2)).join(', '), fixed(it.total_deduct_value, 2), String(it.q), fixed(it.corrected_deduct_value, 2)].map((cell, c) => c === 0
             ? <Text key={c} style={{ flex: CDV_COLUMNS[c].flex, color: p.text, fontSize: 16, textAlign: 'center' }}>{cell}</Text>
             : <View key={c} style={{ flex: CDV_COLUMNS[c].flex }}><Text style={{ backgroundColor: p.blueSoft, color: p.text, fontSize: 15, textAlign: 'center', paddingVertical: 4, paddingHorizontal: 4 }}>{cell}</Text></View>)}
         </View>)}
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
           <View style={{ flexDirection: 'row', borderWidth: 1, borderColor: p.border }}>
             <Text style={{ color: p.text, fontSize: 16, paddingHorizontal: 12, paddingVertical: 4 }}>Max CDV</Text>
-            <Text accessibilityLabel={`Maximum CDV: ${fixed(output.max_corrected_deduct_value, 2)}`} style={{ backgroundColor: p.blueSoft, color: p.text, fontSize: 16, fontWeight: '700', minWidth: 70, textAlign: 'center', paddingVertical: 4 }}>{fixed(output.max_corrected_deduct_value, 1)}</Text>
+            <Text accessibilityLabel={`Maximum CDV: ${fixed(output.max_corrected_deduct_value, 2)}`} style={{ backgroundColor: p.blueSoft, color: p.text, fontSize: 16, fontWeight: '700', minWidth: 70, textAlign: 'center', paddingVertical: 4 }}>{fixed(output.max_corrected_deduct_value, 2)}</Text>
           </View>
         </View>
       </View>
@@ -73,8 +88,6 @@ export function InspectionResults({ palette: p, sample, data, output, confirming
   </Card> : null;
 
   return <View style={{ gap: 16 }}>
-    {confirming && <FinishCard palette={p} sample={sample} hasDistress={records.length > 0} busy={busy} onCancel={onCancel} onConfirm={onConfirm} />}
-    {output?.status === 'provisional' && <Notice>{PROVISIONAL_LABEL}{output.provisional_notes?.length ? `\n\nProvisional policies used:\n• ${output.provisional_notes.join('\n• ')}` : ''}</Notice>}
     <Card palette={p} title="3. Deduct Values">
       <ScrollView horizontal contentContainerStyle={{ minWidth: '100%' }}>
         <View accessibilityLabel="Deduct values by distress" style={{ minWidth: 640, flex: 1, borderWidth: 1, borderColor: p.border, borderRadius: 6, overflow: 'hidden' }}>
@@ -114,7 +127,7 @@ function FinishCard({ palette: p, sample, hasDistress, busy, onCancel, onConfirm
   const [noDistress, setNoDistress] = useState(sample.no_distress_confirmed);
   const ready = !!orientation.trim() && rulesChecked && (hasDistress || noDistress);
   return <Card palette={p} title="Finish inspection">
-    <Text style={{ color: p.text, lineHeight: 22 }}>Save these details and compute the provisional PCI. You can still change distresses until you submit the report.</Text>
+    <Text style={{ color: p.text, lineHeight: 22 }}>Save these details and compute the PCI. You can still change distresses until you submit the report.</Text>
     <AdminField palette={p} required multiline label="Sample orientation / sketch description" value={orientation} onChangeText={setOrientation} />
     <CheckRow palette={p} checked={rulesChecked} onPress={() => setRulesChecked(!rulesChecked)} label="I checked severity, SI units, patch exclusions and overlapping distress rules." />
     {!hasDistress && <CheckRow palette={p} checked={noDistress} onPress={() => setNoDistress(!noDistress)} label="I inspected this unit and found no distress." />}
@@ -142,13 +155,13 @@ export function PciGauge({ palette: p, pci }: { palette: AdminPalette; pci: numb
   const category = value === null ? null : getPciConditionCategory(value);
   const visual = category ? getPciConditionVisual(category, colorScheme === 'dark') : null;
   const angle = value === null ? 0 : -45 + (value / 100 - 1) * 180;
-  return <View accessibilityLabel={category && value !== null ? `PCI ${Math.round(value)} out of 100, condition ${category.rating}` : 'PCI rating not computed yet'} style={{ alignItems: 'center', paddingVertical: 8 }}>
+  return <View accessibilityLabel={category && value !== null ? `PCI ${value.toFixed(2)} out of 100, condition ${category.rating}` : 'PCI rating not computed yet'} style={{ alignItems: 'center', paddingVertical: 8 }}>
     <View style={{ width: size, height: size / 2, overflow: 'hidden' }}>
       <View style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2, borderWidth: ring, borderColor: p.panelAlt }} />
       {visual && <View style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2, borderWidth: ring, borderColor: 'transparent', borderTopColor: visual.accentColor, borderRightColor: visual.accentColor, transform: [{ rotate: `${angle}deg` }] }} />}
     </View>
     <View style={{ alignItems: 'center', marginTop: -62 }}>
-      <Text style={{ color: p.text, fontSize: 52, fontWeight: '800', lineHeight: 58 }}>{value === null ? '—' : Math.round(value)}</Text>
+      <Text style={{ color: p.text, fontSize: 52, fontWeight: '800', lineHeight: 58 }}>{value === null ? '—' : value.toFixed(2)}</Text>
       <Text style={{ color: p.muted, fontSize: 17 }}>/ 100</Text>
     </View>
     <Text style={{ color: p.text, fontSize: 12, fontWeight: '700', marginTop: 10 }}>Condition Rating</Text>

@@ -4,15 +4,20 @@ import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-na
 import type { AdminPalette } from '@/components/admin/admin-shell';
 import { sectionBreakdown, type SectionSample, type SectionSummary } from '@/lib/data/summary-data';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { ConditionPill, InfoRows, ReportCard, ReportFrame, ScoreCard, area, one } from './report-frame';
+import { ConditionPill, InfoRows, ReportCard, ReportFrame, ScoreCard, area, one, two } from './report-frame';
 
 type Tab = 'overview' | 'samples' | 'computation';
 const TABS = [{ value: 'overview', label: 'Overview' }, { value: 'samples', label: 'Sample Units' }, { value: 'computation', label: 'Computation' }] as const;
 const su = (n: number) => `SU-${String(n).padStart(3, '0')}`;
 
-/** Viewer report for one published section: frozen sample results and the §11.1 area weighting. */
-export function SectionReportModal({ palette: p, row, onClose, onViewSample, hidden = false }: {
+/**
+ * Report for one section: frozen sample results and the §11.1 area weighting.
+ * Viewers open published sections; the reviewer also opens a computed, unpublished one
+ * (`title` and `status` say which).
+ */
+export function SectionReportModal({ palette: p, row, onClose, onViewSample, hidden = false, title, status }: {
   palette: AdminPalette; row: SectionSummary | null; onClose: () => void; onViewSample: (sampleResultId: string) => void; hidden?: boolean;
+  title?: string; status?: string;
 }) {
   const [tab, setTab] = useState<Tab>('overview');
   const { width } = useWindowDimensions();
@@ -22,13 +27,13 @@ export function SectionReportModal({ palette: p, row, onClose, onViewSample, hid
   const close = () => { setTab('overview'); onClose(); };
   const breakdown = sectionBreakdown(row);
 
-  return <ReportFrame palette={p} visible={!hidden} title={`Section Details - ${row.section_name}`} tabs={TABS} tab={tab} onTab={setTab} onClose={close}>
+  return <ReportFrame palette={p} visible={!hidden} title={title ?? `Section Details - ${row.section_name}`} tabs={TABS} tab={tab} onTab={setTab} onClose={close}>
     {tab === 'overview' && <View style={{ flexDirection: wide ? 'row' : 'column', gap: 14 }}>
       <ReportCard palette={p} style={{ flex: 1.5 }}>
         <Text style={{ color: p.text, fontSize: 19, fontWeight: '700', marginBottom: 6 }}>Section Information</Text>
         <InfoRows palette={p} rows={[['Branch', row.branch_name], ['Section', row.section_name], ['Pavement Type', 'Asphalt (AC)'],
           ['Section Area', row.area_sqm === null ? '—' : `${area(Number(row.area_sqm))} m²`], ['Total Sample Units', row.total_sample_units === null ? '—' : String(row.total_sample_units)],
-          ['Inspected Sample Units', String(row.inspected)]]} />
+          ['Inspected Sample Units', String(row.inspected)], ...(status ? [['Status', status] as [string, string]] : [])]} />
       </ReportCard>
       <ScoreCard palette={p} label="Section PCI" pci={Number(row.pci)} dark={dark} tinted suffix="" />
     </View>}
@@ -41,12 +46,12 @@ export function SectionReportModal({ palette: p, row, onClose, onViewSample, hid
           <View style={{ flexDirection: 'row', backgroundColor: p.blueSoft, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10 }}>
             {SAMPLE_COLUMNS.map(c => <Text key={c.label} style={{ flex: c.flex, color: p.text, fontWeight: '700', fontSize: 14, textAlign: c.align }}>{c.label}</Text>)}
           </View>
-          {row.samples.map((s, i) => <View key={s.id} accessibilityLabel={`${su(s.unit_number)}, ${s.sample_type}, ${one(Number(s.area_sqm))} m², PCI ${one(Number(s.pci))}, ${s.condition}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: p.border }}>
+          {row.samples.map((s, i) => <View key={s.id} accessibilityLabel={`${su(s.unit_number)}, ${s.sample_type}, ${one(Number(s.area_sqm))} m², PCI ${two(Number(s.pci))}, ${s.condition}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: p.border }}>
             <Text style={{ flex: SAMPLE_COLUMNS[0].flex, color: p.text, fontWeight: '700' }}>{i + 1}</Text>
             <Text style={{ flex: SAMPLE_COLUMNS[1].flex, color: p.blue, fontWeight: '700', textAlign: 'center' }}>{su(s.unit_number)}</Text>
             <Text style={{ flex: SAMPLE_COLUMNS[2].flex, color: p.text, fontWeight: '700', textAlign: 'center' }}>{s.sample_type === 'additional' ? 'Additional' : 'Random'}</Text>
             <Text style={{ flex: SAMPLE_COLUMNS[3].flex, color: p.text, fontWeight: '700', textAlign: 'center' }}>{area(Number(s.area_sqm))}</Text>
-            <Text style={{ flex: SAMPLE_COLUMNS[4].flex, color: p.text, fontWeight: '700', textAlign: 'center' }}>{one(Number(s.pci))}</Text>
+            <Text style={{ flex: SAMPLE_COLUMNS[4].flex, color: p.text, fontWeight: '700', textAlign: 'center' }}>{two(Number(s.pci))}</Text>
             <View style={{ flex: SAMPLE_COLUMNS[5].flex, alignItems: 'center' }}><ConditionPill pci={Number(s.pci)} dark={dark} /></View>
             <View style={{ flex: SAMPLE_COLUMNS[6].flex, alignItems: 'center' }}>
               <Pressable accessibilityRole="button" accessibilityLabel={`View ${su(s.unit_number)}`} onPress={() => onViewSample(s.id)}
@@ -74,9 +79,9 @@ export function SectionReportModal({ palette: p, row, onClose, onViewSample, hid
         </View>
         <View style={{ flex: 1.4, gap: 12 }}>
           <SampleProducts palette={p} title="Random Sample Computation" rows={breakdown.random} totalArea={breakdown.randomArea} totalProduct={breakdown.randomProduct}
-            result={`PCIr = ${area(breakdown.randomProduct)} ÷ ${area(breakdown.randomArea)} = ${one(breakdown.randomMean)}`} />
+            result={`PCIr = ${area(breakdown.randomProduct)} ÷ ${area(breakdown.randomArea)} = ${two(breakdown.randomMean)}`} />
           {!!breakdown.additional.length && <SampleProducts palette={p} title="Additional Sample Computation" rows={breakdown.additional} totalArea={breakdown.additionalArea} totalProduct={breakdown.additionalProduct}
-            result={`PCIs = [${one(breakdown.randomMean)} × (${area(Number(row.area_sqm))} − ${area(breakdown.additionalArea)}) + ${area(breakdown.additionalProduct)}] ÷ ${area(Number(row.area_sqm))} = ${one(breakdown.sectionPci)}`} />}
+            result={`PCIs = [${two(breakdown.randomMean)} × (${area(Number(row.area_sqm))} − ${area(breakdown.additionalArea)}) + ${area(breakdown.additionalProduct)}] ÷ ${area(Number(row.area_sqm))} = ${two(breakdown.sectionPci)}`} />}
         </View>
         <View style={{ flex: 0.9 }}><ScoreCard palette={p} label="Section PCI" pci={Number(row.pci)} dark={dark} tinted suffix="" /></View>
       </View>
@@ -103,8 +108,8 @@ function SampleProducts({ palette: p, title, rows, totalArea, totalProduct, resu
   return <View style={{ borderWidth: 1, borderColor: p.border, borderRadius: 8, padding: 10, gap: 4, backgroundColor: p.panel }}>
     <Text style={{ color: p.text, fontWeight: '700', marginBottom: 4 }}>{title}</Text>
     <View style={{ flexDirection: 'row', backgroundColor: p.blueSoft, borderRadius: 6, paddingVertical: 6 }}>{cell(1, 'SU ID', true)}{cell(0.8, 'PCI', true)}{cell(1, 'Area (m²)', true)}{cell(1.2, 'PCI × Area', true)}</View>
-    {rows.map(s => <View key={s.id} accessibilityLabel={`${su(s.unit_number)}: PCI ${one(Number(s.pci))} × ${area(Number(s.area_sqm))} = ${area(Number(s.pci) * Number(s.area_sqm))}`} style={{ flexDirection: 'row', paddingVertical: 3 }}>
-      {cell(1, su(s.unit_number))}{cell(0.8, one(Number(s.pci)))}{cell(1, area(Number(s.area_sqm)))}{cell(1.2, area(Number(s.pci) * Number(s.area_sqm)))}
+    {rows.map(s => <View key={s.id} accessibilityLabel={`${su(s.unit_number)}: PCI ${two(Number(s.pci))} × ${area(Number(s.area_sqm))} = ${area(Number(s.pci) * Number(s.area_sqm))}`} style={{ flexDirection: 'row', paddingVertical: 3 }}>
+      {cell(1, su(s.unit_number))}{cell(0.8, two(Number(s.pci)))}{cell(1, area(Number(s.area_sqm)))}{cell(1.2, area(Number(s.pci) * Number(s.area_sqm)))}
     </View>)}
     <View style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: p.border, paddingTop: 4 }}>{cell(1, 'Σ', true)}{cell(0.8, '-')}{cell(1, area(totalArea), true)}{cell(1.2, area(totalProduct), true)}</View>
     <Text accessibilityLabel={result} style={{ color: p.text, fontWeight: '700', textAlign: 'center', backgroundColor: p.blueSoft, borderRadius: 6, paddingVertical: 6, marginTop: 4 }}>{result}</Text>

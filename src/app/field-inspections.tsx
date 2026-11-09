@@ -20,8 +20,8 @@ import { useAuth } from '@/providers/AuthProvider';
 import { removeInspectionPhoto, uploadInspectionPhoto } from '@/lib/data/inspection-photos';
 import { DEMO_PREVIEW_ENABLED } from '@/lib/ui/demo-preview';
 
-import { ASPHALT_CATALOG, EDITION, PROVISIONAL_LABEL, type Unit } from '@/lib/d6433-07/catalog';
-import { d07GuidanceFor, d07GuidanceSnapshot, D07_GUIDANCE_VERSION, type SeverityCode } from '@/lib/d6433-07/severity-guidance';
+import { ASPHALT_CATALOG, EDITION, type Unit } from '@/lib/d6433-07/catalog';
+import { d07GuidanceFor, d07GuidanceSnapshot, type SeverityCode } from '@/lib/d6433-07/severity-guidance';
 import { blankPart, describePart, measureParts, partToDraft, severityEvidence, SEVERITY_MEASUREMENT_LABELS, type PartDraft } from '@/lib/d6433-07/measurement-parts';
 import type { SampleOutput } from '@/lib/d6433-07/sample';
 
@@ -193,7 +193,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
       {editable ? <View style={{ gap: 14 }}>
         <AdminField palette={p} label="Inspection date (YYYY-MM-DD) *" value={date} onChangeText={setDate} />
         <AdminField palette={p} label="Measured sample area (m², 135–315) *" keyboardType="numeric" value={measuredArea} onChangeText={setMeasuredArea} />
-        <AdminField palette={p} label="Sample orientation / sketch description (§8.2) *" multiline value={orientation} onChangeText={setOrientation} />
+        <AdminField palette={p} label="Sample orientation / sketch description *" multiline value={orientation} onChangeText={setOrientation} />
         <Choices label="Field measurement and severity rules (Appendix X1)" value={fieldConfirmed ? "yes" : "no"} options={[{value:"no",label:"Needs checking"},{value:"yes",label:"I checked severity, SI units, patch exclusions and overlapping distress rules"}]} onChange={value=>setFieldConfirmed(value==="yes")} />
         <AdminField palette={p} label="General inspection notes" multiline value={notes} onChangeText={setNotes} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}><View style={{ flexGrow: 1, minWidth: 180 }}><AdminField palette={p} label="Latitude (optional)" value={latitude} onChangeText={setLatitude} /></View><View style={{ flexGrow: 1, minWidth: 180 }}><AdminField palette={p} label="Longitude (optional)" value={longitude} onChangeText={setLongitude} /></View></View>
@@ -210,7 +210,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
         <Text style={{ color: p.muted }}>{d.quantity} {d.unit_of_measure} · Location {d.measurement_details?.location_m ?? 'not specified'} m · {d.notes || 'No notes'}</Text>
         {d.measurement_details?.measurement_parts && <Text style={{ color: p.muted }}>Saved measured parts: {d.measurement_details.measurement_parts.map(describePart).join('; ')} · Total Q: {d.quantity} {d.unit_of_measure}</Text>}
         {d.measurement_details?.severity_evidence && <Text style={{ color: p.muted }}>Separate severity measurement: {d.measurement_details.severity_evidence.value_mm} mm ({d.measurement_details.severity_evidence.metric})</Text>}
-        {d.measurement_details?.severity_guidance && <Text selectable style={{ color: p.muted, lineHeight: 20 }}>Saved provisional cue ({d.measurement_details.severity_guidance.version}): {d.measurement_details.severity_guidance.text}</Text>}
+        {d.measurement_details?.severity_guidance && <Text selectable style={{ color: p.muted, lineHeight: 20 }}>Saved cue ({d.measurement_details.severity_guidance.version}): {d.measurement_details.severity_guidance.text}</Text>}
         {data.types.find(t => t.id === d.distress_type_id)?.astm_edition === EDITION && !d.measurement_details?.severity_guidance && <Text style={{ color: p.muted }}>Draft severity wording was not captured with this earlier measurement.</Text>}
         {editable && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><AdminButton palette={p} disabled={busy || dirty} tone="secondary" label="Edit measurement" onPress={() => { setEditingId(d.id); setTypeId(d.distress_type_id); setSeverity(d.severity ?? ''); setParts(d.measurement_details?.measurement_parts?.map(partToDraft) ?? []); setSeverityMeasure(d.measurement_details?.severity_evidence?.value_mm?.toString() ?? ''); setLocation(d.measurement_details?.location_m?.toString() ?? ''); setDistressNotes(d.notes ?? ''); }} /><AdminButton palette={p} disabled={busy || dirty} tone="danger" label="Remove" onPress={() => setConfirmation(`remove:${d.id}`)} /></View>}
       </View>)}</View>
@@ -218,7 +218,6 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
       {editable && <View style={{ gap: 14, marginTop: 16 }}>
         <CatalogDropdown label="Asphalt distress type *" value={typeId} options={activeTypes.map(t => ({ value: t.id, label: t.name }))} onChange={id => { setTypeId(id); setSeverity(''); setSeverityMeasure(''); const selected = activeTypes.find(t => t.id === id); setParts(selected ? [blankPart(selected.default_unit_of_measure as Unit)] : []); }} />
         {!activeTypes.length && <Notice>The active D6433-07 distress catalog is unavailable. Ask the Civil Engineer to check the reference data.</Notice>}
-        {type?.astm_edition === EDITION && <Notice>Draft D6433-07 Appendix X1 cues ({D07_GUIDANCE_VERSION}). Civil Engineer wording review is pending. Record what you measured; these choices do not validate PCI.</Notice>}
         {type && d07GuidanceFor(type.astm_edition, type.astm_code)?.context && <Text selectable style={{ color: p.muted, lineHeight: 21 }}>{d07GuidanceFor(type.astm_edition, type.astm_code)?.context}</Text>}
         {type && (type.severity_required ? <>
           <Choices label="Observed distress severity *" value={severity} options={severityChoices(type)} onChange={setSeverity} />
@@ -226,7 +225,7 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
         </> : <Notice>{d07GuidanceFor(type.astm_edition, type.astm_code)?.none ?? 'No severity level for this distress. Record the measured quantity.'}</Notice>)}
         {type && unit && <View style={{ gap: 12 }}>
           <Text style={{ color: p.text, fontWeight: '700' }}>Measured parts · catalog unit: {unit}</Text>
-          {type.astm_code === 13 && <Notice>Provisional Table X1.1: each small-hole part needs count, diameter and maximum depth. Large holes need measured area; their equivalent count is area ÷ 0.5 m². Exact 200, 450 and 750 mm boundaries require CE review.</Notice>}
+          {type.astm_code === 13 && <Notice>Table X1.1: each small-hole part needs count, diameter and maximum depth. Large holes need measured area; their equivalent count is area ÷ 0.5 m². Exact 200, 450 and 750 mm boundaries require CE review.</Notice>}
           {parts.map((part, index) => <View key={`${typeId}-${index}`} style={{ padding: 12, gap: 9, borderWidth: 1, borderColor: p.border, borderRadius: 8 }}>
             <Text style={{ color: p.text, fontWeight: '700' }}>Part {index + 1}</Text>
             {unit === 'm²' && <Choices label={`Part ${index + 1} shape`} value={part.mode} options={[{ value: 'rectangle', label: 'Rectangle: length × width' }, { value: 'irregular', label: 'Irregular: measured area' }]} onChange={mode => setParts(rows => rows.map((r, i) => i === index ? { ...r, mode: mode as PartDraft['mode'] } : r))} />}
@@ -276,12 +275,11 @@ export function InspectionEditor({ sample, data, busy, run, step, setStep, error
       {sample.no_distress_confirmed && <Text style={{ color: p.text }}>Inspector explicitly confirmed no distress.</Text>}
       {editable && submitIssues.length > 0 && <Notice error>{submitIssues.join(' ')}</Notice>}
       <AdminButton palette={p} tone="secondary" label={traceOpen ? 'Hide calculation details' : 'Show calculation details'} onPress={() => setTraceOpen(!traceOpen)} />
-      {traceOpen && (computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} label={computation.output_snapshot.status==='provisional' ? PROVISIONAL_LABEL : 'Saved calculation — see approved snapshot for historical evidence'} /> : <Notice>No D6433-07 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>)}
-      {traceOpen && sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton tone="secondary" palette={p} disabled={busy} label="Calculate provisional D6433-07 PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'Provisional calculation saved; engineering validation remains required.')} />}
+      {traceOpen && (computation?.output_snapshot ? <PciResultDetails result={computation.output_snapshot} /> : <Notice>No D6433-07 calculation saved. Submitted measurements need a private, reviewed reference package; prototype curves are never used here.</Notice>)}
+      {traceOpen && sample.workflow_state==='submitted' && computation?.verification==='pending' && <AdminButton tone="secondary" palette={p} disabled={busy} label="Calculate PCI" onPress={()=>void run(()=>calculateProvisional('sample',sample.id),'PCI computed.')} />}
 
       {editable && !confirmation && <View style={{ marginTop: 16 }}><AdminButton palette={p} disabled={busy || dirty || submitIssues.length > 0} label="Submit for engineer review" onPress={() => setConfirmation('submit')} /></View>}
       {reviewer && !computation?.output_snapshot && <Notice>No PCI has been saved for this revision yet. Show calculation details and calculate it before approving.</Notice>}
-      {reviewer && computation?.output_snapshot?.status === 'provisional' && <Notice>This PCI is provisional. Approving and publishing it keeps the provisional label until engineering validation.</Notice>}
       {reviewer && DEMO_PREVIEW_ENABLED && sample.workflow_state === 'submitted' && <View style={{ gap: 10, marginTop: 12 }}>
         <AdminButton palette={p} tone="secondary" label={simulatedApproval ? 'Clear simulated approval' : 'Simulate approval (demo only)'} onPress={() => setSimulatedApproval(!simulatedApproval)} />
         {simulatedApproval && <Notice>SYNTHETIC DEMO — approval simulated on this screen only. Nothing was saved to the database; the sample remains Submitted. It is not a verified ASTM D6433-07 result and cannot be published.</Notice>}
@@ -314,15 +312,14 @@ function SeverityBadge({ severity }: { severity: string }) {
   return <View style={{ backgroundColor: colors.backgroundColor, borderColor: colors.borderColor, borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ color: colors.textColor, fontSize: 11, fontWeight: '800' }}>{label}</Text></View>;
 }
 
-function PciResultDetails({label,result}:{label:string;result:CalculationOutput & Partial<SampleOutput>}) {
+function PciResultDetails({result}:{result:CalculationOutput & Partial<SampleOutput>}) {
   const p=useAdminPalette();
   return <View style={{gap:12,marginTop:14}}>
-    <Text style={{color:p.amber,fontWeight:'700'}}>{label}</Text>
-    {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{result.edition === EDITION ? ASPHALT_CATALOG.find(d=>d.code===g.code)?.name : `Saved ${result.edition} distress code ${g.code}`} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(4)}</Text></View>)}
-    <View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}><ResultMetric label="TDV (before fractional trim)" value={formatMetric(result.total_deduct_value,4)} /><ResultMetric label="Allowable deducts (m)" value={result.iterations.length ? formatMetric(result.allowable_deducts,6) : 'Shortcut: not applicable'} /><ResultMetric label="Maximum CDV" value={formatMetric(result.max_corrected_deduct_value,4)} /><ResultMetric label="Provisional PCI" value={formatMetric(result.pci,2)} /><ResultMetric label="Saved condition" value={result.condition} /></View>
+    {result.groups?.map((g,i)=><View key={i} style={{gap:4}}><Text style={{color:p.text}}>{result.edition === EDITION ? ASPHALT_CATALOG.find(d=>d.code===g.code)?.name : `Saved ${result.edition} distress code ${g.code}`} · {g.severity ?? 'Not applicable'} · {g.quantity} {g.unit}</Text><Text style={{color:p.muted}}>Density {g.density.toFixed(4)} · DV {g.deduct_value.toFixed(2)}</Text></View>)}
+    <View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}><ResultMetric label="TDV (before fractional trim)" value={formatMetric(result.total_deduct_value,2)} /><ResultMetric label="Allowable deducts (m)" value={result.iterations.length ? formatMetric(result.allowable_deducts,6) : 'Shortcut: not applicable'} /><ResultMetric label="Maximum CDV" value={formatMetric(result.max_corrected_deduct_value,2)} /><ResultMetric label="PCI" value={formatMetric(result.pci,2)} /><ResultMetric label="Saved condition" value={result.condition} /></View>
     {result.iterations.map((iteration, index) => <View key={index} style={{ borderTopWidth: 1, borderColor: p.border, paddingTop: 10, gap: 4 }}>
-      <Text selectable style={{ color: p.text }}>Iteration {index + 1} ? q {iteration.q} ? TDV {formatMetric(iteration.total_deduct_value, 6)} ? CDV {formatMetric(iteration.corrected_deduct_value, 6)}</Text>
-      <Text selectable style={{ color: p.muted }}>Retained deducts: {iteration.adjusted_deducts.map(value => formatMetric(value, 6)).join(', ')}</Text>
+      <Text selectable style={{ color: p.text }}>Iteration {index + 1} ? q {iteration.q} ? TDV {formatMetric(iteration.total_deduct_value, 2)} ? CDV {formatMetric(iteration.corrected_deduct_value, 2)}</Text>
+      <Text selectable style={{ color: p.muted }}>Retained deducts: {iteration.adjusted_deducts.map(value => formatMetric(value, 2)).join(', ')}</Text>
     </View>)}
     <Text style={{color:p.muted}}>Full precision is saved; displayed numbers are rounded. {result.reference_id ?? 'Legacy reference'} {result.reference_digest ?? ''}</Text>
   </View>;

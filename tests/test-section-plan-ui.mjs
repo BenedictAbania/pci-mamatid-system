@@ -164,9 +164,37 @@ try {
   check(!!queryByText(host,/Round 2 is in progress \(0 of 5 published\)/) && getByRole(host,'radio',{ name:/Option 2/ }).getAttribute('aria-checked') === 'true','round-2 plan is locked while in progress');
   check(!!getByLabelText(host,'Sampling interval, i: 5') && !!getByLabelText(host,'SU13, selected for inspection'),'round-2 units on the preview');
   check(!!queryByText(host,'Additional Sample Unit') && !getByLabelText(host,'Sample Unit Number').disabled,'round-2 additional units are editable');
-  check(!!queryByText(host,'Section PCI · Round 2') && !!getByLabelText(host,'Published sample units: 0 of 5'),'section PCI follows round 2');
+  check(!!queryByText(host,'Section PCI · Round 2') && !!getByLabelText(host,'Approved sample units: 0 of 5, published 0'),'section PCI follows round 2');
   await React.act(async()=>user.click(getByRole(host,'tab',{ name:'Round 1: first inspection' })));
   check(!!queryByText(host,/Round 1 is closed/) && getByLabelText(host,'Sample Unit Number').disabled,'round 1 is history once round 2 starts');
+
+  // Section PCI: compute once every unit is approved (not yet published), view the report, publish later.
+  const approvedUnits = published.map(unit => ({ ...unit, workflow_state:'approved' }));
+  let computes = 0, publishes = 0, views = 0;
+  const sectionActions = { rounds:ready, onComputeSection:async () => { computes++; return true; }, onPublishSection:async () => { publishes++; return true; }, onViewReport:() => { views++; } };
+  await render(confirmedReduced, approvedUnits, 's1', { ...sectionActions, report:null });
+  check(!!getByLabelText(host,'Approved sample units: 4 of 4, published 0'),'approved units count toward the section PCI');
+  check(getByRole(host,'button',{ name:'Compute section PCI' }).disabled === false,'section PCI can be computed before publication');
+  check(getByRole(host,'button',{ name:'Publish section PCI' }).disabled && !queryByText(host,'View section PCI report'),'nothing to publish or view before computing');
+  await React.act(async()=>user.click(getByRole(host,'button',{ name:'Compute section PCI' })));
+  check(computes === 1 && publishes === 0,'computing does not publish');
+  const result = (unit, published_at) => ({ id:'r'+unit, sample_unit_id:'p'+unit, is_current:true, superseded_at:null, published_at });
+  const report = (published_at, sectionPublished = false) => ({ calculationId:'calc', computedAt:'2026-11-09T00:00:00Z', published:sectionPublished,
+    output:{ pci:72.5, condition:'Satisfactory', method:'D6433-07 §11.1' },
+    samples:[2,8,14,20].map(unit => ({ id:'r'+unit, unit_number:unit, sample_type:'random', area_sqm:225, pci:72.5, condition:'Satisfactory' })),
+    results:[2,8,14,20].map(unit => result(unit, published_at)) });
+  await render(confirmedReduced, approvedUnits, 's2', { ...sectionActions, report:report(null) });
+  check(!!getByLabelText(host,'Computed section PCI 72.50, Satisfactory'),'computed section PCI is shown');
+  await React.act(async()=>user.click(getByRole(host,'button',{ name:'View section PCI report' })));
+  check(views === 1,'the report opens from the section');
+  check(getByRole(host,'button',{ name:'Publish section PCI' }).disabled,'publishing waits for every unit to be published');
+  await render(confirmedReduced, published, 's3', { ...sectionActions, report:report('2026-11-09T01:00:00Z') });
+  check(getByRole(host,'button',{ name:'Publish section PCI' }).disabled === false,'publish once every unit is published');
+  await render(confirmedReduced, published, 's4', { ...sectionActions, report:report('2026-11-09T01:00:00Z', true) });
+  check(getByRole(host,'button',{ name:'Published' }).disabled,'a published section PCI is not published twice');
+  const outdated = report(null); outdated.results[0].is_current = false;
+  await render(confirmedReduced, approvedUnits, 's5', { ...sectionActions, report:outdated });
+  check(!!queryByText(host,/changed since the last computation/) && !queryByText(host,'View section PCI report'),'a superseded result asks for a new computation');
 
   console.log(`Passed ${checks} section sampling plan UI checks with synthetic data.`);
 } finally {

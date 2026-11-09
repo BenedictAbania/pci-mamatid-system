@@ -7,7 +7,6 @@ import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
 import { possibleSampleUnits, SAMPLE_UNIT_GUIDANCE } from '@/lib/pci/pci-service';
 import { calculateProvisional, callWorkflow } from '@/lib/data/workflow-data';
 import { minimumRandomSamples } from '@/lib/d6433-07/section';
-import { PROVISIONAL_LABEL } from '@/lib/d6433-07/catalog';
 import type { calculateSection } from '@/lib/d6433-07/section';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -44,7 +43,6 @@ export default function Sampling() {
     <Notice>Sections and assignee choices are paged. The unit preview shows up to 50 units; use Field Inspections for the paged register.</Notice>
     {!!state.error && <Notice error>{state.error}</Notice>}{!!state.message && <Notice>{state.message}</Notice>}
     <Notice>{SAMPLE_UNIT_GUIDANCE}</Notice>
-    <Notice>D6433-07 §7.5.2 Eq. 1 initial AC estimate uses s=10 and e=5; it is not a completed confidence check. An engineer must justify the count, use preceding survey deviation when available, and check actual deviation after survey (§7.5.2.1–.2). Selection uses a random start and floor(N/n) intervals (§7.5.3).</Notice>
     {state.data && <AdminPanel palette={p} title="Section plan"><View style={{ gap: 16 }}>
       <Choices label="Pavement section" value={sectionId} options={state.data.sections.filter(s => attention !== 'unconfirmed' || !s.homogeneous_confirmed_by).map(s => ({ value: s.id, label: s.name }))} onChange={id => { setSectionId(id);setSectionResult(null);setUnusualId(""); setConfirm(false); setAdditional(false); const s = state.data?.sections.find(x => x.id === id); setStart(s?.start_description ?? ''); setEnd(s?.end_description ?? ''); }} />
       {section && <>
@@ -70,8 +68,8 @@ export default function Sampling() {
           <Notice>This plan is locked against boundary changes. Create a new section revision for a materially different layout.</Notice>
           {planned.sort((a, b) => a.unit_number - b.unit_number).map(s => <Text key={s.id} style={{ color: p.text }}>SU-{String(s.unit_number).padStart(3, '0')} · {s.sample_type === 'additional' ? 'Additional' : 'Random'} · {s.start_m}–{s.end_m} m · {s.workflow_state}</Text>)}
           {['reviewer','admin'].includes(role ?? '') && <View style={{gap:12}}>
-            <AdminButton palette={p} disabled={state.busy} tone="secondary" label="Calculate provisional section PCI" onPress={()=>void state.run(async()=>{const result=await calculateProvisional('section',sectionId);if(!('weights' in result))throw new Error('Unexpected section result');setSectionResult(result);})} />
-            {sectionResult && <View style={{gap:8}}><Notice>{PROVISIONAL_LABEL}. This result is private and does not enter published rankings.</Notice><Text style={{color:p.text}}>PCI {sectionResult.pci.toFixed(2)} · {sectionResult.condition} · Random mean {sectionResult.random_mean.toFixed(4)} · Additional area {sectionResult.additional_area.toFixed(2)} m²</Text><Text style={{color:p.muted}}>{sectionResult.method}. {sectionResult.census_reclassification ? 'Complete census: all units treated as random.' : 'Unsampled area represented by the random cohort.'}</Text>{Object.entries(sectionResult.weights).map(([id,w])=><Text key={id} style={{color:p.muted}}>Sample {id} · section weight {w.toFixed(6)}</Text>)}</View>}
+            <AdminButton palette={p} disabled={state.busy} tone="secondary" label="Calculate section PCI" onPress={()=>void state.run(async()=>{const result=await calculateProvisional('section',sectionId);if(!('weights' in result))throw new Error('Unexpected section result');setSectionResult(result);})} />
+            {sectionResult && <View style={{gap:8}}><Text style={{color:p.text}}>PCI {sectionResult.pci.toFixed(2)} · {sectionResult.condition} · Random mean {sectionResult.random_mean.toFixed(2)} · Additional area {sectionResult.additional_area.toFixed(2)} m²</Text><Text style={{color:p.muted}}>{sectionResult.method}. {sectionResult.census_reclassification ? 'Complete census: all units treated as random.' : 'Unsampled area represented by the random cohort.'}</Text>{Object.entries(sectionResult.weights).map(([id,w])=><Text key={id} style={{color:p.muted}}>Sample {id} · section weight {w.toFixed(6)}</Text>)}</View>}
           </View>}
           {role==='reviewer' && <View style={{gap:10}}>
             <Choices label="Unusual random unit (editable revision)" value={unusualId} onChange={setUnusualId} options={planned.filter(s=>s.sample_type==='random' && ['planned','draft','returned'].includes(s.workflow_state)).map(s=>({value:s.id,label:'SU-'+s.unit_number}))} />

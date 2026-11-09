@@ -30,7 +30,7 @@ eq(smallPotholeSeverity(150,20),'low');
 eq(smallPotholeSeverity(300,35),'medium');
 eq(smallPotholeSeverity(600,60),'high');
 fails(()=>measureParts([{...hole,count:'1.5',diameter:'150',depth:'20'}],'No.','low'),/whole number/);
-fails(()=>measureParts([{...hole,count:'1',diameter:'150',depth:'20'}],'No.','medium'),/selected provisional severity/);
+fails(()=>measureParts([{...hole,count:'1',diameter:'150',depth:'20'}],'No.','medium'),/selected severity/);
 eq(measureParts([{...hole,mode:'large_pothole',diameter:'800',depth:'20',area:'0.75'}],'No.','medium').quantity,1.5);
 eq(severityEvidence(15,'8'),{metric:'mean_rut_depth_mm',value_mm:8});
 fails(()=>severityEvidence(15,'0'),/positive/);

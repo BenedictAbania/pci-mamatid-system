@@ -72,7 +72,7 @@ export function ApprovedReports({ title, mode: initialMode = 'results', initialT
     <Notice>Prototype calculations and unvalidated PCI are excluded from these reports. Approval of a reference result does not itself establish ASTM compliance.</Notice>
     {DEMO_PREVIEW_ENABLED && (role === 'admin' || role === 'reviewer') && <AdminButton palette={palette} tone="secondary" label="Open synthetic priority preview" onPress={() => router.push('/demo-priorities')} />}
     {visibleSummary && mode !== 'rankings' && <AdminPanel palette={palette} title="Current approved sample results">
-      <Text style={{ color: palette.text, fontSize: 20 }}>{visibleSummary.count} current {viewer ? 'published ' : ''}approved samples · Average PCI {visibleSummary.average === null ? '—' : Number(visibleSummary.average).toFixed(1)}</Text>
+      <Text style={{ color: palette.text, fontSize: 20 }}>{visibleSummary.count} current {viewer ? 'published ' : ''}approved samples · Average PCI {visibleSummary.average === null ? '—' : Number(visibleSummary.average).toFixed(2)}</Text>
       <Text style={{ color: palette.muted }}>Totals cover all authorized current results, independently of this page. Historical revisions are excluded.</Text>
     </AdminPanel>}
     {(hub || mode !== 'rankings') && <TaskTabs label="Results and reports" value={tab} items={[
@@ -83,15 +83,15 @@ export function ApprovedReports({ title, mode: initialMode = 'results', initialT
     <View testID={selected ? 'lakad-report-register-with-selection' : 'lakad-report-register'}><AdminPanel palette={palette} title={mode === 'rankings' ? 'Current section priorities' : historical ? 'Approved historical snapshots' : 'Current approved results'}>
       <Text style={{ color: palette.muted, marginBottom: 12 }}>Up to {REPORT_PAGE_SIZE} records per page. Downloads include this page, or the selected snapshot.</Text>
       {mode === 'rankings' ? visibleSections.map(s => <View key={s.id} style={{ gap: 6, paddingVertical: 12 }}>
-        <Text style={{ color: palette.text, fontWeight: '700' }}>{s.rank}. {s.road_snapshot?.section_name ?? 'Legacy snapshot: label unavailable'} · PCI {s.pci}</Text>
+        <Text style={{ color: palette.text, fontWeight: '700' }}>{s.rank}. {s.road_snapshot?.section_name ?? 'Legacy snapshot: label unavailable'} · PCI {Number(s.pci).toFixed(2)}</Text>
         <Text style={{ color: palette.muted }}>{s.condition} · Safety/high severity: {s.safety || s.high_severity > 0 ? 'Present' : 'Not recorded'} · Affected area {s.affected_area} m²</Text>
         <Text style={{ color: palette.muted }}>Lower PCI first, then safety/high severity and affected area. {s.method} · Published {formatDate(s.published_at)}</Text>
       </View>) : visibleRows.map(row => <Pressable accessibilityRole="button" accessibilityLabel={`Open saved snapshot: ${row.report_snapshot.road.section_name}, sample ${row.report_snapshot.sample.unit_number}, revision ${row.input_revision}`} key={row.id} onPress={() => setSelectedId(row.id)} style={{ padding: 14, borderWidth: 1, borderColor: selected?.id === row.id ? palette.blue : palette.border, borderRadius: 8, marginBottom: 8 }}>
-        <Text style={{ color: palette.text, fontWeight: '700' }}>{row.report_snapshot.road.branch_name} / {row.report_snapshot.road.section_name} · SU-{row.report_snapshot.sample.unit_number} · PCI {row.report_snapshot.output.pci}</Text>
+        <Text style={{ color: palette.text, fontWeight: '700' }}>{row.report_snapshot.road.branch_name} / {row.report_snapshot.road.section_name} · SU-{row.report_snapshot.sample.unit_number} · PCI {Number(row.report_snapshot.output.pci).toFixed(2)}</Text>
         <Text style={{ color: palette.muted }}>Revision {row.input_revision} · {row.is_current ? 'Current' : 'Superseded'} · {row.published_at ? 'Published ' + formatDate(row.published_at) : 'Approved; awaiting publication'}</Text>
       </Pressable>)}
       {!dataPage.length && loading && loadedScope !== scope && <Text style={{ color: palette.muted, paddingVertical: 16 }}>Loading this view…</Text>}
-      {!dataPage.length && !loading && !error && visibleSummary !== null && <AdminEmpty palette={palette} icon="file-text" message={mode === 'rankings' ? 'No validated current section results are available. Section aggregation remains pending engineering validation.' : (viewer ? 'No published, approved results are available in this scope. Check again after eligible results are published.' : 'No approved results are available in this scope.')} />}
+      {!dataPage.length && !loading && !error && visibleSummary !== null && <AdminEmpty palette={palette} icon="file-text" message={mode === 'rankings' ? 'No current section results are available.' : (viewer ? 'No published, approved results are available in this scope. Check again after eligible results are published.' : 'No approved results are available in this scope.')} />}
       <PageControls page={cursors.length} busy={loading || !!error} hasNext={dataPage.length === REPORT_PAGE_SIZE} previous={() => { setSelectedId(null); setCursors(cursors.slice(0, -1)); }} next={() => { const last = dataPage[dataPage.length - 1]; if (last) { setSelectedId(null); setCursors([...cursors, last.id]); } }} />
       {Platform.OS === 'web' && <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
         <AdminButton palette={palette} disabled={loading || !dataPage.length} label={selected ? 'Download selected snapshot CSV' : 'Download this page CSV'} onPress={exportPage} />
@@ -104,8 +104,8 @@ export function ApprovedReports({ title, mode: initialMode = 'results', initialT
       <Text style={{ color: palette.text }}>{selected.report_snapshot.sample.inspection_notes}</Text>
       <Text selectable style={{ color: palette.muted }}>{selected.report_snapshot.edition} · Reference {selected.report_snapshot.reference_id} · Algorithm {selected.report_snapshot.algorithm_version}</Text>
       {selected.report_snapshot.distresses.map(d => <Text key={d.id} style={{ color: palette.text, marginVertical: 6 }}>{d.name} · {d.severity ?? 'Not applicable'} · {d.quantity} {d.unit_of_measure} · {d.notes}</Text>)}
-      <Text selectable style={{ color: palette.text }}>PCI {selected.report_snapshot.output.pci} · {selected.report_snapshot.output.condition}</Text>
-      <Text selectable style={{ color: palette.muted }}>Total deduct value {selected.report_snapshot.output.total_deduct_value} · Corrected deduct value {selected.report_snapshot.output.max_corrected_deduct_value}</Text>
+      <Text selectable style={{ color: palette.text }}>PCI {Number(selected.report_snapshot.output.pci).toFixed(2)} · {selected.report_snapshot.output.condition}</Text>
+      <Text selectable style={{ color: palette.muted }}>Total deduct value {Number(selected.report_snapshot.output.total_deduct_value).toFixed(2)} · Corrected deduct value {Number(selected.report_snapshot.output.max_corrected_deduct_value).toFixed(2)}</Text>
       {selected.report_snapshot.sample.latitude !== null && selected.report_snapshot.sample.longitude !== null && <AdminButton palette={palette} tone="secondary" label="Open saved location" onPress={() => void Linking.openURL('https://www.openstreetmap.org/?mlat=' + selected.report_snapshot.sample.latitude + '&mlon=' + selected.report_snapshot.sample.longitude)} />}
       <PhotoGroups palette={palette} groups={photoGroups(selected.report_snapshot.distresses.map(d => ({ id: d.id, label: distressLabel(d.name, d.severity) })), selected.report_snapshot.photos).filter(group => group.photos.length)} empty="No photographs were saved with this result." />
     </AdminPanel>}

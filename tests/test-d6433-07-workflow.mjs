@@ -173,6 +173,23 @@ const previewApi = handler({ authenticate: async () => ids.encoder, context: asy
   reference: async () => reader, save: async () => { writes++; } });
 const previewResponse = await previewApi(request({ kind: 'preview', target }));
 eq([previewResponse.status, (await previewResponse.json()).pci, writes], [200, 100, 1]);
+// Public prototype `demo` kind: no sign-in, nothing saved, results only, and only when switched on.
+const demoBody = { kind: 'demo', area_sqm: 250, observations: [{ code: 1, severity: 'low', quantity: 5 }] };
+const demoApi = (enabled) => handler({ authenticate: async () => { throw new Error('Demo must not authenticate'); },
+  context: async () => { throw new Error('Demo must not load an inspection'); },
+  reference: async () => reader, save: async () => { writes++; }, demoEnabled: () => enabled });
+eq((await demoApi(false)(request(demoBody, false))).status, 403);
+const demoResponse = await demoApi(true)(request(demoBody, false));
+const demoOutput = await demoResponse.json();
+eq([demoResponse.status, demoOutput.pci, demoOutput.status, writes], [200, 90, 'provisional', 1]);
+eq(['dv' in demoOutput, 'cdv' in demoOutput, JSON.stringify(demoOutput).includes('points')], [false, false, false]);
+eq((await demoApi(true)(request({ ...demoBody, target }, false))).status, 409);
+eq((await demoApi(true)(request({ ...demoBody, area_sqm: 100 }, false))).status, 409);
+eq((await demoApi(true)(request({ ...demoBody, observations: [{ code: 1, severity: 'low', quantity: 5, unit: 'm²' }] }, false))).status, 409);
+eq((await demoApi(true)(request({ ...demoBody, observations: [{ code: 1, severity: 'low', quantity: 300 }] }, false))).status, 409);
+const noDistressDemo = await demoApi(true)(request({ kind: 'demo', area_sqm: 250, observations: [] }, false));
+eq([noDistressDemo.status, (await noDistressDemo.json()).pci], [200, 100]);
+eq((await previewApi(request({ kind: 'preview', target }, false))).status, 401);
 // Defense switch: provisional results can be approved, published and aggregated into a section PCI.
 await db.exec('reset role');
 for (const suffix of ['_section_summaries.sql', '_provisional_publication.sql']) {

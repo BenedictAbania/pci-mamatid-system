@@ -38,11 +38,11 @@ check(pci.rankPriorities([{ id: 'a', pci: 40, safety: false, highSeverity: 0, af
 const publicSource = await fs.readFile('src/app/prototype.tsx', 'utf8');
 check(!/supabase|workflowAction|\.upload\(/i.test(publicSource), 'Public prototype has no database/storage dependency');
 const fieldSource = await fs.readFile('src/app/field-inspections.tsx', 'utf8');
-check(fieldSource.includes('PROVISIONAL_LABEL') && !fieldSource.includes('computePCI'), 'Authenticated sample preview is explicitly preliminary');
+check(!fieldSource.includes('PROVISIONAL_LABEL') && !fieldSource.includes('computePCI'), 'Sample calculation details carry no provisional notice');
 check(fieldSource.includes('removeInspectionPhoto(sample, photo)') && (await fs.readFile('src/lib/data/inspection-photos.ts', 'utf8')).includes("workflowAction(sample, 'remove_photo'"), 'Editable inspections support authorized photo removal');
 check(fieldSource.includes('Inspection date cannot be in the future.'), 'Encoder form rejects future inspection dates');
 const workspaceSource = await fs.readFile('src/components/workflow/approved-reports.tsx', 'utf8');
-check(workspaceSource.includes('Section aggregation remains pending engineering validation.'), 'Missing section aggregation is explicitly pending');
+check(workspaceSource.includes('No current section results are available.') && !workspaceSource.includes('engineering validation'), 'Empty section rankings show a plain message');
 check(!workspaceSource.includes('Section PCI is represented by the mean'), 'No unresolved section PCI formula is asserted');
 const dashboardSource = await fs.readFile('src/lib/data/dashboard.ts', 'utf8');
 check(dashboardSource.includes("'lakad_section_reports'"), 'Dashboard condition summaries use persisted section results');

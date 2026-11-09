@@ -4,6 +4,7 @@ import { Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimens
 import { AdminButton, useAdminPalette, type AdminPalette } from '@/components/admin/admin-shell';
 import { CatalogDropdown, Notice } from '@/components/workflow/shared';
 import { brand, layout } from '@/lib/ui/design-system';
+import { normalizeDistressSeverity } from '@/lib/pci/severity-colors';
 import { SAMPLE_UNIT_MAX_AREA, SAMPLE_UNIT_MIN_AREA, validateMeasurement } from '@/lib/pci/pci-service';
 import { EDITION, type Unit } from '@/lib/d6433-07/catalog';
 import { d07GuidanceFor, d07GuidanceSnapshot, type SeverityCode } from '@/lib/d6433-07/severity-guidance';
@@ -97,7 +98,7 @@ export function DistressEntry({ sample, data, busy, run, error, onRefresh }: {
   async function saveArea() {
     if (typedArea === null) throw new Error('Enter the sample unit length and width.');
     const area = Math.round(typedArea * 100) / 100;
-    if (area < SAMPLE_UNIT_MIN_AREA || area > SAMPLE_UNIT_MAX_AREA) throw new Error(`The sample unit area must be ${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m² (ASTM D6433-07 §2.1.7). ${formatNumber(area)} m² is outside that range.`);
+    if (area < SAMPLE_UNIT_MIN_AREA || area > SAMPLE_UNIT_MAX_AREA) throw new Error(`The sample unit area must be ${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m². ${formatNumber(area)} m² is outside that range.`);
     const started = sample.workflow_state === 'planned';
     const current = started ? await startInspection(sample) : sample;
     try {
@@ -223,7 +224,7 @@ export function DistressEntry({ sample, data, busy, run, error, onRefresh }: {
       </View>
       <ValueBox palette={p} label={`Sample unit area: ${shownArea === null ? 'not yet measured' : `${formatNumber(shownArea)} m²`}`} value={shownArea === null ? '' : formatNumber(shownArea)} unit="m²" />
       <Text style={{ color: p.muted, fontSize: 13 }}>
-        {typedArea === null ? (sample.area_sqm ? 'Saved area shown. Enter a new length and width to change it.' : `Measure the sample unit. Its area must be ${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m².`) : `Must be ${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m² (ASTM D6433-07 §2.1.7).`}
+        {typedArea === null ? (sample.area_sqm ? 'Saved area shown. Enter a new length and width to change it.' : `Measure the sample unit. Its area must be ${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m².`) : `Must be ${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m².`}
       </Text>
       {editable && <AdminButton palette={p} tone="secondary" label="Save area" disabled={busy || typedArea === null} onPress={() => void (async () => { if (await run(saveArea, 'Sample unit area saved.')) { setSampleLength(''); setSampleWidth(''); } })()} />}
     </Card>
@@ -248,6 +249,7 @@ export function DistressEntry({ sample, data, busy, run, error, onRefresh }: {
         })}
         </View>
       </ScrollView>}
+      {type && type.severity_required && guidance && <SeverityLevel palette={p} severity={severity} />}
       {type && type.severity_required && !guidance && <Notice>Severity descriptions are unavailable for this distress. Ask the Civil Engineer.</Notice>}
       {type && !type.severity_required && <Text style={{ color: p.muted, lineHeight: 20 }}>{guidance?.none ?? 'No severity level for this distress. Record the measured quantity.'}</Text>}
 
@@ -388,9 +390,9 @@ export const DISTRESS_COLUMNS = [
   { label: '#', flex: 0.5, align: 'center' as const },
   { label: 'Distress Type', flex: 2.4, align: 'left' as const },
   { label: 'Severity', flex: 1, align: 'center' as const },
-  { label: 'Length (m)', flex: 1.2, align: 'center' as const },
-  { label: 'Width (m)', flex: 1.2, align: 'center' as const },
-  { label: 'Area (m²)', flex: 1.2, align: 'center' as const },
+  { label: 'Length', flex: 1.2, align: 'center' as const },
+  { label: 'Width', flex: 1.2, align: 'center' as const },
+  { label: 'Quantity', flex: 1.2, align: 'center' as const },
   { label: 'Action', flex: 1.4, align: 'center' as const },
 ];
 
@@ -400,13 +402,14 @@ export function TableRow({ palette: p, index, name, severity, part, fallback, se
   /** Review tables have no Action column. */
   readOnly?: boolean;
 }) {
-  const lengthText = part && 'length_m' in part ? formatNumber(part.length_m) : '—';
-  const widthText = part?.mode === 'rectangle' ? formatNumber(part.width_m) : '—';
+  // Headers carry no units; each value shows its own unit (5 m², 8 m, 2 No.).
+  const lengthText = part && 'length_m' in part ? `${formatNumber(part.length_m)} m` : '—';
+  const widthText = part?.mode === 'rectangle' ? `${formatNumber(part.width_m)} m` : '—';
   const quantity = !part ? fallback
-    : part.mode === 'rectangle' ? formatNumber(part.length_m * part.width_m)
-      : part.mode === 'irregular' ? formatNumber(part.area_sqm)
+    : part.mode === 'rectangle' ? `${formatNumber(part.length_m * part.width_m)} m²`
+      : part.mode === 'irregular' ? `${formatNumber(part.area_sqm)} m²`
         : part.mode === 'length' ? `${formatNumber(part.length_m)} m`
-          : part.mode === 'small_pothole' ? `${part.count} No.` : `${formatNumber(part.area_sqm)} (hole)`;
+          : part.mode === 'small_pothole' ? `${part.count} No.` : `${formatNumber(part.area_sqm)} m² hole`;
   const cells = [String(index), name, severity, lengthText, widthText];
   return <View accessibilityLabel={`Row ${index}: ${name}, severity ${severity}, length ${lengthText}, width ${widthText}, ${quantity}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 8, backgroundColor: selected ? p.blueSoft : undefined }}>
     {cells.map((cell, i) => <Text key={i} style={{ flex: DISTRESS_COLUMNS[i].flex, color: p.text, fontSize: 16, textAlign: DISTRESS_COLUMNS[i].align }}>{cell}</Text>)}
@@ -425,6 +428,26 @@ function RowLink({ label, a11y, color, onPress }: { label: string; a11y: string;
   return <Pressable accessibilityLabel={a11y} accessibilityRole="button" hitSlop={6} onPress={onPress}>
     {({ hovered }: { hovered?: boolean }) => <Text style={{ color, fontSize: 15, fontWeight: '600', textDecorationLine: hovered ? 'underline' : 'none' }}>{label}</Text>}
   </Pressable>;
+}
+
+/** Same light-to-dark brand blues as the L, M and H badges in Settings. */
+const SEVERITY_LEVEL_COLORS = {
+  Low: { background: '#C9DAFF', text: brand.navy },
+  Medium: { background: brand.royal, text: '#FFFFFF' },
+  High: { background: brand.navy, text: '#FFFFFF' },
+} as const;
+
+/** "Severity Level: Low/Medium/High" under the severity choices, once one is selected. */
+export function SeverityLevel({ palette: p, severity }: { palette: AdminPalette; severity: string }) {
+  const label = normalizeDistressSeverity(severity);
+  if (!label) return null;
+  const colors = SEVERITY_LEVEL_COLORS[label];
+  return <View accessibilityLabel={`Severity level: ${label}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+    <Text style={{ color: p.text, fontWeight: '700', fontSize: 16 }}>Severity Level:</Text>
+    <View style={{ flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, borderColor: p.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
+      <Text style={{ color: colors.text, fontWeight: '800', fontSize: 15, textAlign: 'center' }}>{label}</Text>
+    </View>
+  </View>;
 }
 
 /** Read-only number box with its unit, used for computed areas and quantities. */
@@ -453,9 +476,9 @@ export function Heading({ palette: p, title, detail }: { palette: AdminPalette; 
   </View>;
 }
 
-function Field({ palette: p, label, accessibilityLabel, value, onChangeText, editable }: { palette: AdminPalette; label: string; accessibilityLabel?: string; value: string; onChangeText: (value: string) => void; editable: boolean }) {
-  return <View style={{ flex: 1, gap: 4 }}>
-    <Text style={{ color: p.text, fontSize: 16 }}>{label}</Text>
+export function Field({ palette: p, label, accessibilityLabel, value, onChangeText, editable }: { palette: AdminPalette; label: string; accessibilityLabel?: string; value: string; onChangeText: (value: string) => void; editable: boolean }) {
+  return <View style={{ flex: 1, minWidth: 0, gap: 4, justifyContent: 'flex-end' }}>
+    <Text numberOfLines={1} style={{ color: p.text, fontSize: 13 }}>{label}</Text>
     <TextInput accessibilityLabel={accessibilityLabel ?? label} keyboardType="decimal-pad" inputMode="decimal" editable={editable} value={value} onChangeText={onChangeText}
       style={{ minHeight: 44, borderWidth: 1, borderColor: p.border, borderRadius: 4, paddingHorizontal: 10, color: p.text, backgroundColor: editable ? p.panel : p.panelAlt, fontSize: 16 }} />
   </View>;

@@ -146,10 +146,47 @@ export async function submitReport(sample: Sample) {
     throw new Error(`The report was submitted for review, but the PCI could not be saved: ${reason instanceof Error ? reason.message : 'calculation failed'}. Use Compute PCI to try again.`);
   }
 }
-/** Reviewer: compute the provisional section PCI on the server, then publish it. */
+/**
+ * Reviewer: publish the latest computed section PCI. The server refuses when a sample unit of the
+ * current round is unpublished, or when the sample results changed since the computation.
+ */
 export async function publishSectionResult(sectionId: string) {
-  await calculateProvisional('section', sectionId);
   await callWorkflow('lakad_publish_section_result', { target: sectionId });
+}
+
+export type SectionOutput = ReturnType<typeof import('../d6433-07/section.ts').calculateSection>;
+/** The latest computed (not necessarily published) section PCI with the sample results it used. */
+export type SectionReport = {
+  calculationId: string; computedAt: string; output: SectionOutput;
+  /** True once this computation was published to the Viewer. */
+  published: boolean;
+  samples: import('./summary-data').SectionSample[]; results: import('./approved-results').ApprovedResult[];
+};
+
+/** Reviewer: the latest section PCI computed on the server, or null before the first computation. */
+export async function loadSectionReport(sectionId: string): Promise<SectionReport | null> {
+  const { data: calc, error } = await supabase.from('provisional_section_calculations')
+    .select('id,output_snapshot,created_at').eq('section_id', sectionId)
+    .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error('The section PCI report is unavailable: ' + error.message);
+  if (!calc) return null;
+  const output = calc.output_snapshot as SectionOutput;
+  const ids = output.sample_computation_ids ?? [];
+  const { data: rows, error: resultError } = ids.length
+    ? await supabase.from('approved_results').select('id,sample_unit_id,input_revision,report_snapshot,approved_at,published_at,is_current,superseded_at').in('id', ids)
+    : { data: [], error: null };
+  if (resultError) throw new Error('The sample results of this section are unavailable: ' + resultError.message);
+  const results = (rows ?? []) as import('./approved-results').ApprovedResult[];
+  const samples = results.map(r => ({
+    id: r.id, unit_number: r.report_snapshot.sample.unit_number,
+    sample_type: (r.report_snapshot.sample.sample_type === 'additional' ? 'additional' : 'random') as 'random' | 'additional',
+    area_sqm: Number(r.report_snapshot.sample.area_sqm), pci: Number(r.report_snapshot.output.pci), condition: r.report_snapshot.output.condition,
+  })).sort((a, b) => a.unit_number - b.unit_number);
+  // Publishing copies the latest computation into section_results, so a later publication means this one is out.
+  const { data: latest } = await supabase.from('section_results').select('published_at').eq('section_id', sectionId)
+    .order('published_at', { ascending: false }).limit(1).maybeSingle();
+  const published = !!latest?.published_at && Date.parse(latest.published_at) >= Date.parse(calc.created_at);
+  return { calculationId: calc.id, computedAt: calc.created_at, output, published, samples, results };
 }
 /** A confirmed plan for round 2 or later (round 1 lives on the section). */
 export type SurveyRoundPlan = { round: number; method: 'all' | 'confidence' | 'reduced'; total: number; required: number; interval: number; first: number; deviation: number | null; previous_count: number; confirmed_at: string };

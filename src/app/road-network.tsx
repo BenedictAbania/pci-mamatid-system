@@ -12,7 +12,10 @@ import {
 } from '@/components/admin/admin-shell';
 import { SectionPlan, type AdditionalUnitPayload, type ConfirmPlanPayload, type StartRoundPayload } from '@/components/road-network/section-plan';
 import { Notice, useWorkflow } from '@/components/workflow/shared';
-import { callWorkflow, loadSurveyRounds, publishSectionResult, type SurveyRounds } from '@/lib/data/workflow-data';
+import { calculateProvisional, callWorkflow, loadSectionReport, loadSurveyRounds, publishSectionResult, type SectionReport, type SurveyRounds } from '@/lib/data/workflow-data';
+import { SectionReportModal } from '@/components/summaries/section-report-modal';
+import { SampleReportModal } from '@/components/summaries/sample-report-modal';
+import type { ApprovedResult } from '@/lib/data/approved-results';
 import { layout } from '@/lib/ui/design-system';
 import {
     BranchFormValues,
@@ -77,6 +80,10 @@ export default function RoadNetworkScreen() {
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [rounds, setRounds] = useState<SurveyRounds | null>(null);
   const [roundsError, setRoundsError] = useState('');
+  /** Latest computed section PCI of the open section, and the report modals. */
+  const [report, setReport] = useState<SectionReport | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportSample, setReportSample] = useState<ApprovedResult | null>(null);
   const isPhone = width < 700;
   const canEdit = role === 'reviewer';
 
@@ -109,9 +116,26 @@ export default function RoadNetworkScreen() {
     setRounds(null);
     void reloadRounds();
   }, [reloadRounds]);
+  const reloadReport = useCallback(async () => {
+    if (!selectedSectionId || !roundsAllowed) return;
+    try {
+      setReport(await loadSectionReport(selectedSectionId));
+    } catch (reason) {
+      setReport(null);
+      setError(reason instanceof Error ? reason.message : 'The section PCI report could not be loaded.');
+    }
+  }, [roundsAllowed, selectedSectionId]);
+  useEffect(() => {
+    // Load the selected section's latest computed section PCI.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReport(null);
+    setReportOpen(false);
+    setReportSample(null);
+    void reloadReport();
+  }, [reloadReport]);
   const refreshAll = useCallback(async () => {
-    await Promise.all([refresh(), reloadCounts(), reloadRounds()]);
-  }, [refresh, reloadCounts, reloadRounds]);
+    await Promise.all([refresh(), reloadCounts(), reloadRounds(), reloadReport()]);
+  }, [refresh, reloadCounts, reloadRounds, reloadReport]);
 
   const branches = data?.branches ?? [];
   const sections = data?.sections ?? [];
@@ -149,9 +173,17 @@ export default function RoadNetworkScreen() {
     () => callWorkflow('lakad_confirm_sampling_plan', { target: selectedSection!.id, payload }),
     'Sampling plan confirmed. Assign an encoder to start the inspection.',
   );
+  const computeSection = async () => {
+    const done = await runPlanAction(
+      async () => { await calculateProvisional('section', selectedSection!.id); },
+      'Section PCI computed. It is not published yet.',
+    );
+    if (done) setReportOpen(true);
+    return done;
+  };
   const publishSection = () => runPlanAction(
     () => publishSectionResult(selectedSection!.id),
-    'Section PCI computed and published. Viewers can now see it in Sections Summaries.',
+    'Section PCI published. Viewers can now see it in Sections Summaries.',
   );
   const startRound = (payload: StartRoundPayload) => runPlanAction(
     () => callWorkflow('lakad_start_survey_round', { target: selectedSection!.id, payload }),
@@ -348,10 +380,13 @@ export default function RoadNetworkScreen() {
           onAddAdditional={addAdditional}
           onBack={() => { setSelectedSectionId(null); setMessage(''); setError(''); }}
           onConfirm={confirmPlan}
+          onComputeSection={computeSection}
           onEditDetails={() => openSection(selectedSection.branch_id, selectedSection)}
           onPublishSection={publishSection}
+          onViewReport={() => setReportOpen(true)}
           onStartRound={startRound}
           palette={palette}
+          report={report}
           rounds={rounds}
           roundsError={roundsError}
           samples={sectionSamples}
@@ -581,6 +616,20 @@ export default function RoadNetworkScreen() {
           </View>
         </View>
       </Modal>
+      {selectedSection && report ? <>
+        <SectionReportModal palette={palette} hidden={!reportOpen || !!reportSample} onClose={() => setReportOpen(false)}
+          title={`Section PCI Report - ${selectedSection.name}`}
+          status={report.published ? 'Published' : 'Computed, not yet published'}
+          row={{
+            id: report.calculationId, section_id: selectedSection.id, section_name: selectedSection.name,
+            branch_name: branchById.get(selectedSection.branch_id)?.name ?? 'Saved branch',
+            pci: report.output.pci, condition: report.output.condition, method: report.output.method, published_at: report.computedAt,
+            area_sqm: selectedSection.area_sqm === null ? null : Number(selectedSection.area_sqm),
+            total_sample_units: selectedSection.total_sample_units ?? null, inspected: report.samples.length, samples: report.samples,
+          }}
+          onViewSample={(id) => setReportSample(report.results.find((result) => result.id === id) ?? null)} />
+        <SampleReportModal palette={palette} row={reportSample} onClose={() => setReportSample(null)} />
+      </> : null}
     </AdminShell>
   );
 }

@@ -130,11 +130,11 @@ function plural(count: number, word: string) {
 export function retentionNote(sorted: readonly number[], m: number, shortcut: boolean): string {
   if (!sorted.length) return 'No distress recorded. Every deduct value is zero.';
   const aboveTwo = sorted.filter((value) => value > 2).length;
-  if (shortcut) return `${aboveTwo === 0 ? 'No' : 'Only one'} deduct value is greater than 2 (§9.5.1), so the maximum CDV equals the total deduct value. No iteration is needed.`;
+  if (shortcut) return `${aboveTwo === 0 ? 'No' : 'Only one'} deduct value is greater than 2, so the maximum CDV equals the total deduct value. No iteration is needed.`;
   const whole = Math.floor(m);
   const fraction = m - whole;
   if (sorted.length <= whole) return `m = ${m.toFixed(2)} allows ${plural(whole, 'deduct value')}, so all ${plural(sorted.length, 'deduct value')} are kept.`;
-  if (fraction > 0) return `m = ${m.toFixed(2)}: the ${plural(whole, 'highest deduct value')} are kept and the next one is multiplied by ${fraction.toFixed(2)} (§9.5.4).`;
+  if (fraction > 0) return `m = ${m.toFixed(2)}: the ${plural(whole, 'highest deduct value')} are kept and the next one is multiplied by ${fraction.toFixed(2)}.`;
   return `m = ${m.toFixed(2)}: only the ${plural(whole, 'highest deduct value')} are kept.`;
 }
 

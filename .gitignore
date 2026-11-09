@@ -57,3 +57,5 @@ supabase/.temp/
 
 # Provisional ASTM-derived curve values (never commit)
 /src/lib/d6433-07/cdv-preview.ts
+
+/docs/

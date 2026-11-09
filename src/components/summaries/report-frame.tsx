@@ -53,7 +53,7 @@ export function ScoreCard({ palette: p, label, pci, dark, tinted = false, suffix
   const visual = getPciConditionVisual(category, dark);
   return <ReportCard palette={p} style={{ flex: 1, minWidth: 220, alignItems: 'center', justifyContent: 'center', backgroundColor: tinted ? visual.backgroundColor + (dark ? '33' : '55') : p.panelAlt }}>
     <Text style={{ color: p.text, fontSize: 20, fontWeight: '700' }}>{label}</Text>
-    <Text accessibilityLabel={`${label} ${one(Number(pci))}`} style={{ color: visual.accentColor, fontSize: 44, fontWeight: '800', marginVertical: 4 }}>{one(Number(pci))}</Text>
+    <Text accessibilityLabel={`${label} ${two(Number(pci))}`} style={{ color: visual.accentColor, fontSize: 44, fontWeight: '800', marginVertical: 4 }}>{two(Number(pci))}</Text>
     <View style={{ backgroundColor: visual.backgroundColor, borderColor: visual.borderColor, borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 18 }}>
       <Text style={{ color: visual.foregroundColor, fontSize: 18, fontWeight: '700' }}>{category.rating}{suffix}</Text>
     </View>

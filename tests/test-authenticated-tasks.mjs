@@ -128,7 +128,7 @@ for (const w of [390, 820, 1440]) await test('inspector-flow-' + w, async ({ hos
   check(!queryByText(host, 'Measurement draft: add this distress or discard it before continuing.'), 'Successful save clears the local measurement draft');
   check(requests.at(-1).payload.severity === 'low', 'Description selection persists canonical low code');
   check(requests.at(-1).payload.severity_guidance.version === guidance.D07_GUIDANCE_VERSION, 'Saved measurement carries the draft guidance version');
-  check(getByText(host,/Saved provisional cue/), 'Reopened measurement shows its captured draft cue');
+  check(getByText(host,/Saved cue/), 'Reopened measurement shows its captured draft cue');
   check(requests.at(-1).payload.unit_of_measure === 'm²', 'Configured unit retained');
   check(requests.at(-1).payload.measurement_parts[0].length_m === 1, 'Individual measured part saved');
   await React.act(async () => user.click(getByRole(host,'button',{ name:'Edit measurement' })));
@@ -226,7 +226,7 @@ await test('reviewer-can-approve-provisional-result', async ({ host, root, user,
   role = 'reviewer';
   const computation = { id: 'synthetic-computation', sample_unit_id: baseline.id, input_revision: 3, edition: 'ASTM D6433-07', verification: 'pending', output_snapshot: { status: 'provisional', pci: 70, condition: 'Satisfactory', iterations: [], groups: [], deduct_values: [], total_deduct_value: 30, max_corrected_deduct_value: 30, allowable_deducts: 0, q: 0 }, created_at: '2026-11-08' };
   await React.act(async () => root.render(e(Form, { initial: { ...baseline, workflow_state: 'submitted', computation_id: computation.id }, initialStep: 'submit', computations: [computation] })));
-  check(getByText(host, /This PCI is provisional/), 'Reviewer is told the PCI is provisional');
+  check(!queryByText(host, /This PCI is provisional/), 'No provisional disclaimer in the review step');
   check(getByRole(host, 'button', { name: 'Approve result' }).getAttribute('aria-disabled') !== 'true', 'A saved provisional PCI can be approved');
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Approve result' })));
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Confirm' })));
@@ -251,7 +251,7 @@ await test('reviewer-workspace-approve', async ({ host, root, user, Form }) => {
   role = 'reviewer'; width = 390;
   const computation = { id: 'synthetic-computation', sample_unit_id: baseline.id, input_revision: 3, edition: 'ASTM D6433-07', verification: 'pending', output_snapshot: syntheticOutput, created_at: '2026-11-08' };
   await React.act(async () => root.render(e(Form, { Editor: ReviewWorkspace, initial: { ...baseline, workflow_state: 'submitted', computation_id: computation.id }, computations: [computation] })));
-  check(getByText(host, /This PCI is provisional\. It keeps/), 'Provisional PCI is flagged in the decision card');
+  check(!queryByText(host, /This PCI is provisional/), 'No provisional disclaimer in the decision card');
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Approve result' })));
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Confirm approval' })));
   check(requests.at(-1).action === 'approve', 'Approval is delivered to the server');
@@ -345,12 +345,13 @@ await test('distress-entry-adds-measured-parts', async ({ host, root, user }) =>
   check(getByRole(host, 'alert').textContent.includes('Choose the description'), 'Missing criterion is explained');
   await React.act(async () => user.click(getByRole(host, 'radio', { name: guidance.D07_SEVERITY_GUIDANCE[1].low })));
   check(getByRole(host, 'radio', { name: guidance.D07_SEVERITY_GUIDANCE[1].low }).getAttribute('aria-checked') === 'true', 'Chosen criterion is selected');
+  check(getByLabelText(host, 'Severity level: Low'), 'Severity Level shows the chosen level under the choices');
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Add distress' })));
   check(requests[0].action === 'start' && requests[1].action === 'distress', 'Planned unit starts before its first distress');
   check(requests[1].version === baseline.action_version + 1, 'Distress uses the started revision tokens');
   check(requests[1].payload.severity === 'low' && requests[1].payload.id === null && requests[1].payload.quantity === 10, 'First part creates a low-severity record');
   check(requests[1].payload.measurement_parts[0].length_m === 5 && requests[1].payload.measurement_parts[0].width_m === 2, 'Rectangle part saved');
-  check(getByLabelText(host, 'Row 1: SYNTHETIC Alligator, severity L, length 5, width 2, 10'), 'Added distress appears in the table');
+  check(getByLabelText(host, 'Row 1: SYNTHETIC Alligator, severity L, length 5 m, width 2 m, 10 m²'), 'Added distress appears in the table');
   check(getByLabelText(host, 'Distress length (m)').value === '' && getAllByRole(host, 'radio').every(node => node.getAttribute('aria-checked') !== 'true'), 'Entry clears after adding');
   check(getByRole(host, 'button', { name: 'Edit row 1, SYNTHETIC Alligator' }) && getByRole(host, 'button', { name: 'Delete row 1, SYNTHETIC Alligator' }), 'Each table row has Edit and Delete');
   check(getByRole(host, 'heading', { name: 'Distress photos' }) && getByLabelText(host, 'SYNTHETIC Alligator · Low: 0 photos'), 'Each distress gets its own photo group');
@@ -363,7 +364,7 @@ await test('distress-entry-adds-measured-parts', async ({ host, root, user }) =>
   await React.act(async () => user.click(getByRole(host, 'radio', { name: guidance.D07_SEVERITY_GUIDANCE[1].low })));
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Add distress' })));
   check(requests.length === 4 && requests[3].action === 'distress' && requests[3].payload.id === 'synthetic-record-1' && requests[3].payload.measurement_parts.length === 2 && requests[3].payload.quantity === 13, 'Same type and severity adds a part to the saved record (after the photo request)');
-  check(getByLabelText(host, 'Row 2: SYNTHETIC Alligator, severity L, length 3, width 1, 3'), 'Each measured part is its own table row');
+  check(getByLabelText(host, 'Row 2: SYNTHETIC Alligator, severity L, length 3 m, width 1 m, 3 m²'), 'Each measured part is its own table row');
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Edit row 2, SYNTHETIC Alligator' })));
   check(getByLabelText(host, 'Distress length (m)').value === '3' && getByLabelText(host, 'Distress width (m)').value === '1' && getByRole(host, 'button', { name: 'Update distress' }), 'Edit loads the row into the form');
   await React.act(async () => { await user.clear(getByLabelText(host, 'Distress width (m)')); await user.type(getByLabelText(host, 'Distress width (m)'), '2'); });
@@ -388,15 +389,15 @@ await test('distress-entry-adds-measured-parts', async ({ host, root, user }) =>
   check(requests.at(-1).action === 'finish' && requests.at(-1).payload.orientation_note === 'SYNTHETIC north to south' && requests.at(-1).payload.no_distress_confirmed === false, 'Finish delivers the required details');
   check(getByLabelText(host, 'Total deduct value: 30.00') && getByLabelText(host, 'q: 1'), 'q of 1 or less uses the total deduct value');
   check(!queryByText(host, 'CDV Correction Details'), 'No CDV iteration table when q is 1 or less');
-  check(getByLabelText(host, 'PCI 70 out of 100, condition Satisfactory') && getByLabelText(host, 'Pavement condition index: 70.00'), 'PCI and rating appear after finishing');
+  check(getByLabelText(host, 'PCI 70.00 out of 100, condition Satisfactory') && getByLabelText(host, 'Pavement condition index: 70.00'), 'PCI and rating appear after finishing');
   check(getByLabelText(host, 'Deduct row 1: Alligator Cracking, Low, quantity 13 m², density 5.78, deduct value 30.00'), 'Saved deduct values fill the table');
-  check(getByText(host, /SYNTHETIC policy note/), 'Provisional policies are shown with the results');
+  check(!queryByText(host, /SYNTHETIC policy note/) && !queryByText(host, /awaiting civil-engineering validation/), 'No provisional notice above the results');
   check(getByRole(host, 'button', { name: 'Add distress' }), 'Distress entry stays open until the report is submitted');
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Submit Report' })));
   check(requests.at(-1).action === 'finish', 'Submit Report asks for confirmation first');
   await React.act(async () => user.click(getByRole(host, 'button', { name: 'Confirm and submit' })));
   check(requests.at(-1).action === 'submit-report', 'Submit Report delivers the submission');
-  check(getByLabelText(host, 'PCI 70 out of 100, condition Satisfactory'), 'Saved results stay after submitting');
+  check(getByLabelText(host, 'PCI 70.00 out of 100, condition Satisfactory'), 'Saved results stay after submitting');
   check(!queryByRole(host, 'button', { name: 'Add distress' }) && !queryByRole(host, 'button', { name: 'Finish inspection' }) && !queryByRole(host, 'button', { name: 'Submit Report' }), 'Submitted report is locked');
 });
 await test('results-cdv-iteration-layout', async ({ host, root }) => {
@@ -409,7 +410,7 @@ await test('results-cdv-iteration-layout', async ({ host, root }) => {
   check(getByLabelText(host, 'Iteration 1: m 4.67, adjusted deducts 60.00, 35.00, TDV 95.00, q 2, CDV 68.00') && getByLabelText(host, 'Iteration 2: m 4.67, adjusted deducts 60.00, 2.00, TDV 62.00, q 1, CDV 62.00'), 'Each saved iteration is listed');
   check(getByLabelText(host, 'Maximum CDV: 68.00') && getByLabelText(host, 'q: 2'), 'Max CDV and q shown');
   check(!host.querySelector('[aria-label^="Total deduct value"]'), 'Total-deduct shortcut hidden when q is above 1');
-  check(getByLabelText(host, 'PCI 32 out of 100, condition Very Poor'), 'Gauge shows rounded PCI and condition');
+  check(getByLabelText(host, 'PCI 32.00 out of 100, condition Very Poor'), 'Gauge shows PCI to 2 decimals and condition');
 });
 await test('photo-preview-failure-retry-and-discard', async ({ host, root, user, Form }) => {
   role = 'encoder'; await React.act(async () => root.render(e(Form,{initialStep:'photos'})));

@@ -55,7 +55,7 @@ export default function DemoPrioritiesScreen() {
           <AdminButton palette={palette} label="Add synthetic scenario" onPress={addScenario} />
         </View>
       </AdminPanel>
-      <AdminPanel palette={palette} title="Provisional scenario ordering" subtitle="Lower hypothetical PCI first; ties use safety/high severity, then affected area.">
+      <AdminPanel palette={palette} title="Scenario ordering" subtitle="Lower hypothetical PCI first; ties use safety/high severity, then affected area.">
         {ranked.length ? ranked.map(row => <View key={row.id} style={{ borderBottomWidth: 1, borderBottomColor: palette.border, paddingVertical: 12, gap: 5 }}>
           <Text style={{ color: palette.text, fontWeight: '700' }}>SYNTHETIC DEMO · Rank {row.rank} · {rows.find(item => item.id === row.id)?.name} · hypothetical PCI {row.pci}</Text>
           <Text style={{ color: palette.muted }}>{row.reason}</Text>

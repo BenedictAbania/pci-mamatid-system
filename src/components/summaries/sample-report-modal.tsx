@@ -2,12 +2,10 @@ import { Feather } from '@expo/vector-icons';
 import { useState, type ReactNode } from 'react';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import type { AdminPalette } from '@/components/admin/admin-shell';
-import { Notice } from '@/components/workflow/shared';
 import { distressLabel, photoGroups, PhotoGroups } from '@/components/workflow/distress-photos';
 import type { ApprovedResult } from '@/lib/data/approved-results';
 import { PCI_CONDITION_SCALE, getPciConditionCategory, getPciConditionVisual } from '@/lib/pci/pci-classification';
 import { getDistressSeverityColors, normalizeDistressSeverity } from '@/lib/pci/severity-colors';
-import { PROVISIONAL_LABEL } from '@/lib/d6433-07/catalog';
 import { formatDate } from '@/lib/utils/admin-utils';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { InfoRows, ReportCard, ReportFrame, ScoreCard, one, two } from './report-frame';
@@ -32,7 +30,6 @@ export function SampleReportModal({ palette: p, row, onClose }: { palette: Admin
   const close = () => { setTab('overview'); onClose(); };
 
   return <ReportFrame palette={p} title={`Sample Unit PCI Results - ${unit}`} tabs={TABS} tab={tab} onTab={setTab} onClose={close}>
-    {output.status === 'provisional' && <Notice>{PROVISIONAL_LABEL}</Notice>}
     {tab === 'overview' && <>
       <View style={{ flexDirection: twoColumns ? 'row' : 'column', gap: 14 }}>
         <ReportCard palette={p} style={{ flex: 1.6 }}>
@@ -112,27 +109,27 @@ function ComputationTab({ palette: p, output, finalPci, twoColumns }: { palette:
       <View style={{ flexDirection: 'row', backgroundColor: p.blueSoft, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14 }}>
         <Text style={{ flex: 0.4, color: p.text, fontWeight: '700' }}>#</Text><Text style={{ flex: 2, color: p.text, fontWeight: '700' }}>Deduct Value (DV)</Text>
       </View>
-      {deducts.map((dv, i) => <View key={i} accessibilityLabel={`Deduct value ${i + 1}: ${one(dv)}`} style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 14, borderBottomWidth: 1, borderColor: p.border }}>
-        <Text style={{ flex: 0.4, color: p.text, fontWeight: '700' }}>{i + 1}</Text><Text style={{ flex: 2, color: p.text, fontWeight: '700' }}>{one(dv)}</Text>
+      {deducts.map((dv, i) => <View key={i} accessibilityLabel={`Deduct value ${i + 1}: ${two(dv)}`} style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 14, borderBottomWidth: 1, borderColor: p.border }}>
+        <Text style={{ flex: 0.4, color: p.text, fontWeight: '700' }}>{i + 1}</Text><Text style={{ flex: 2, color: p.text, fontWeight: '700' }}>{two(dv)}</Text>
       </View>)}
       {!deducts.length && <Text style={{ color: p.muted, padding: 10 }}>No deduct values: no distress was recorded.</Text>}
       <View style={{ borderWidth: 1, borderColor: p.border, borderRadius: 8, padding: 10, gap: 6, marginTop: 10 }}>
-        <SummaryLine palette={p} label="Total Deduct Value (TDV)" value={one(output.total_deduct_value)} />
+        <SummaryLine palette={p} label="Total Deduct Value (TDV)" value={two(output.total_deduct_value)} />
         <SummaryLine palette={p} label="q (deduct values above 2)" value={String(iterations.length ? iterations[0].q : output.q ?? 0)} />
-        <SummaryLine palette={p} label="Corrected Deduct Value (CDV)" value={one(cdv)} />
-        <SummaryLine palette={p} label="Maximum CDV" value={one(output.max_corrected_deduct_value)} highlight />
+        <SummaryLine palette={p} label="Corrected Deduct Value (CDV)" value={two(cdv)} />
+        <SummaryLine palette={p} label="Maximum CDV" value={two(output.max_corrected_deduct_value)} highlight />
       </View>
       {!!iterations.length && <View style={{ gap: 4, marginTop: 10 }}>
         <Text style={{ color: p.text, fontWeight: '700' }}>CDV correction (q above 1)</Text>
-        {iterations.map((it, i) => <Text key={i} accessibilityLabel={`Iteration ${i + 1}: q ${it.q}, TDV ${one(it.total_deduct_value)}, CDV ${one(it.corrected_deduct_value)}`} style={{ color: p.muted }}>Iteration {i + 1}: q {it.q} · TDV {one(it.total_deduct_value)} · CDV {one(it.corrected_deduct_value)}</Text>)}
+        {iterations.map((it, i) => <Text key={i} accessibilityLabel={`Iteration ${i + 1}: q ${it.q}, TDV ${two(it.total_deduct_value)}, CDV ${two(it.corrected_deduct_value)}`} style={{ color: p.muted }}>Iteration {i + 1}: q {it.q} · TDV {two(it.total_deduct_value)} · CDV {two(it.corrected_deduct_value)}</Text>)}
       </View>}
     </ReportCard>
     <View style={{ flex: 1, gap: 14, alignSelf: 'stretch' }}>
       {finalPci}
       <ReportCard palette={p}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><Feather name="hash" size={20} color={p.text} /><Text style={{ color: p.text, fontSize: 18, fontWeight: '700' }}>Formula</Text></View>
-        <Text accessibilityLabel={`PCI = 100 - Maximum CDV = 100 - ${one(output.max_corrected_deduct_value)} = ${one(output.pci)}`} style={{ color: p.text, fontWeight: '700', lineHeight: 24, marginLeft: 30, marginTop: 4 }}>
-          {`PCI = 100 − Maximum CDV\n     = 100 − ${one(output.max_corrected_deduct_value)}\n     = ${one(output.pci)}`}
+        <Text accessibilityLabel={`PCI = 100 - Maximum CDV = 100 - ${two(output.max_corrected_deduct_value)} = ${two(output.pci)}`} style={{ color: p.text, fontWeight: '700', lineHeight: 24, marginLeft: 30, marginTop: 4 }}>
+          {`PCI = 100 − Maximum CDV\n     = 100 − ${two(output.max_corrected_deduct_value)}\n     = ${two(output.pci)}`}
         </Text>
       </ReportCard>
     </View>

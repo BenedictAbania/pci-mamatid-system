@@ -62,14 +62,14 @@ export function measureParts(drafts: PartDraft[], unit: Unit, severity: Severity
       const diameter_mm = positiveInput(draft.diameter, 'Pothole diameter');
       const depth_mm = positiveInput(draft.depth, 'Pothole maximum depth');
       if (!Number.isSafeInteger(count)) throw new Error('Small pothole count must be a whole number.');
-      if (smallPotholeSeverity(diameter_mm, depth_mm) !== severity) throw new Error('Pothole dimensions do not match the selected provisional severity.');
+      if (smallPotholeSeverity(diameter_mm, depth_mm) !== severity) throw new Error('Pothole dimensions do not match the selected severity.');
       parts.push({ mode: 'small_pothole', count, diameter_mm, depth_mm }); potholes.small_count += count;
     } else if (unit === 'No.' && draft.mode === 'large_pothole') {
       const diameter_mm = positiveInput(draft.diameter, 'Large pothole diameter');
       const depth_mm = positiveInput(draft.depth, 'Large pothole maximum depth');
       const area_sqm = positiveInput(draft.area, 'Measured large-hole area');
       if (diameter_mm <= 750) throw new Error('Large-hole equivalent count requires diameter greater than 750 mm.');
-      if (severity !== (depth_mm <= 25 ? 'medium' : 'high')) throw new Error('Large-hole depth does not match the selected provisional severity.');
+      if (severity !== (depth_mm <= 25 ? 'medium' : 'high')) throw new Error('Large-hole depth does not match the selected severity.');
       parts.push({ mode: 'large_pothole', diameter_mm, depth_mm, area_sqm }); potholes.large_holes.push({ diameter_mm, depth_mm, area_sqm });
     } else throw new Error('Measurement shape does not match the catalog unit.');
   }

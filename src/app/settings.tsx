@@ -6,7 +6,7 @@ import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text
 import { AdminButton, AdminField, AdminPanel, AdminShell, useAdminPalette, type AdminPalette } from '@/components/admin/admin-shell';
 import { PageControls } from '@/components/workflow/pagination';
 import { Choices, Notice, useWorkflow } from '@/components/workflow/shared';
-import { ASPHALT_CATALOG, RULES } from '@/lib/d6433-07/catalog';
+import { ASPHALT_CATALOG } from '@/lib/d6433-07/catalog';
 import { d07MeasureFor } from '@/lib/d6433-07/measure-guidance';
 import { d07GuidanceFor } from '@/lib/d6433-07/severity-guidance';
 import { newPhotoFolder, photoSlots, REFERENCE_PHOTO_BUCKET, removeReferencePhotos, slotPath, uploadReferencePhoto, type PhotoSlot, type PhotoSlotKey, type SeverityPhotos } from '@/lib/data/reference-photos';
@@ -42,12 +42,12 @@ const distressColumns = [{ width: 44 }, { flex: 2.4 }, { flex: 1 }, { flex: 1 },
 
 /** Values the calculation code uses (src/lib/d6433-07, src/lib/pci/pci-service.ts). Fixed by ASTM D6433-07. */
 const parameters: [string, string, string][] = [
-  ['Sample unit size', `${SAMPLE_UNIT_TARGET_AREA} m² ± ${SAMPLE_UNIT_TARGET_AREA - SAMPLE_UNIT_MIN_AREA} m² (${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m²)`, `Dividing sections into sample units (${RULES.area})`],
-  ['Confidence level', '95%', `Units to inspect (${RULES.sampling})`],
+  ['Sample unit size', `${SAMPLE_UNIT_TARGET_AREA} m² ± ${SAMPLE_UNIT_TARGET_AREA - SAMPLE_UNIT_MIN_AREA} m² (${SAMPLE_UNIT_MIN_AREA}–${SAMPLE_UNIT_MAX_AREA} m²)`, 'Dividing sections into sample units'],
+  ['Confidence level', '95%', 'Units to inspect'],
   ['Acceptable error (e)', '± 5 PCI points', 'Units to inspect'],
   ['Assumed standard deviation (s)', '10', 'First inspection of a section'],
   ['Minimum counted deduct value', '2.0', 'Which deducts count in q'],
-  ['Maximum allowable deducts (m)', '1 + (9/98)(100 − HDV), up to 10', `Limit when correcting deducts (${RULES.allowable})`],
+  ['Maximum allowable deducts (m)', '1 + (9/98)(100 − HDV), up to 10', 'Limit when correcting deducts'],
   ['Rounding', 'Full precision; n rounded up', 'Sample units and units to inspect'],
 ];
 

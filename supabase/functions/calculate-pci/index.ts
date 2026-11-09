@@ -33,4 +33,6 @@ Deno.serve(handler({
     const {error}=await service.rpc('lakad_record_provisional_calculation',{actor,context,output});
     if(error)throw new Error(error.message);
   },
+  // Public prototype switch. Off unless the PCI_PUBLIC_DEMO secret is exactly "on".
+  demoEnabled:()=>Deno.env.get('PCI_PUBLIC_DEMO')==='on',
 }));

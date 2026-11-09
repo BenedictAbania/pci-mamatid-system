@@ -74,8 +74,8 @@ export function SectionSummaries() {
         {expanded && <PageControls page={page + 1} busy={loading} hasNext={shown < total} previous={() => setPage(Math.max(0, page - 1))} next={() => setPage(page + 1)} />}
       </>}>
       {rows.map(r => <SummaryRow key={r.id} palette={p} columns={COLUMNS} selected={r.id === selectedId} onView={() => setSelectedId(r.id)}
-        label={`${r.section_name}, ${r.branch_name}, ${r.total_sample_units ?? '—'} total samples, ${r.inspected} inspected, PCI ${Number(r.pci).toFixed(1)}, ${r.condition}`}
-        cells={[r.section_name, r.branch_name, r.total_sample_units === null ? '—' : String(r.total_sample_units), String(r.inspected), Number(r.pci).toFixed(1), r.condition]} />)}
+        label={`${r.section_name}, ${r.branch_name}, ${r.total_sample_units ?? '—'} total samples, ${r.inspected} inspected, PCI ${Number(r.pci).toFixed(2)}, ${r.condition}`}
+        cells={[r.section_name, r.branch_name, r.total_sample_units === null ? '—' : String(r.total_sample_units), String(r.inspected), Number(r.pci).toFixed(2), r.condition]} />)}
       {!rows.length && !loading && !error && <Text style={{ color: p.muted, padding: 20, textAlign: 'center' }}>{filtered ? 'No published sections match these filters. Change or clear the filters.' : 'No published section results yet. A section PCI appears after all of its sample units are approved and the section result is published.'}</Text>}
       {!rows.length && loading && <Text style={{ color: p.muted, padding: 20, textAlign: 'center' }}>Loading results…</Text>}
     </SummaryTable>

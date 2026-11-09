@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AdminButton, AdminField, AdminPanel, type AdminPalette } from '@/components/admin/admin-shell';
 import { Notice } from '@/components/workflow/shared';
-import type { RoadSection, Sample, SurveyRounds } from '@/lib/data/workflow-data';
+import type { RoadSection, Sample, SectionReport, SurveyRounds } from '@/lib/data/workflow-data';
 import {
   randomStart,
   samplingSelection,
@@ -49,10 +49,13 @@ export function SectionPlan({
   onAddAdditional,
   onBack,
   onConfirm,
+  onComputeSection,
   onEditDetails,
   onPublishSection,
+  onViewReport,
   onStartRound,
   palette,
+  report,
   rounds,
   roundsError,
   samples,
@@ -65,12 +68,18 @@ export function SectionPlan({
   onAddAdditional: (payload: AdditionalUnitPayload) => Promise<boolean>;
   onBack: () => void;
   onConfirm: (payload: ConfirmPlanPayload) => Promise<boolean>;
+  /** Computes the section PCI once every sample unit of the current round is approved; publishes nothing. */
+  onComputeSection?: () => Promise<boolean>;
   onEditDetails: () => void;
-  /** Computes the section PCI from its published sample results and publishes it. */
+  /** Publishes the computed section PCI once every sample unit of the current round is published. */
   onPublishSection?: () => Promise<boolean>;
+  /** Opens the Section PCI report of the latest computation. */
+  onViewReport?: () => void;
   /** Plans the next survey round once every unit of the current round is published. */
   onStartRound?: (payload: StartRoundPayload) => Promise<boolean>;
   palette: AdminPalette;
+  /** Latest computed section PCI; null before the first computation. */
+  report?: SectionReport | null;
   /** Survey round progress from lakad_survey_rounds; null while loading or unavailable. */
   rounds?: SurveyRounds | null;
   roundsError?: string;
@@ -113,6 +122,13 @@ export function SectionPlan({
   const additionalUnits = viewSamples.filter((sample) => sample.sample_type === 'additional').sort((a, b) => a.unit_number - b.unit_number);
   const publishedCount = currentSamples.filter((sample) => sample.workflow_state === 'published').length;
   const approvedCount = currentSamples.filter((sample) => sample.workflow_state === 'approved').length;
+  // Approved and published units both have a current approved result, so either can enter the section PCI.
+  const readyCount = publishedCount + approvedCount;
+  const allApproved = currentSamples.length > 0 && readyCount === currentSamples.length;
+  const allPublished = currentSamples.length > 0 && publishedCount === currentSamples.length;
+  // A computation is out of date once a sample unit was added or one of its results was superseded.
+  const reportCurrent = !!report && report.samples.length === currentSamples.length
+    && report.results.every((result) => result.is_current && !result.superseded_at);
   const activeMethod = confirmed ? section.sampling_method : method;
   const preview = useMemo(() => {
     if (!total || !activeMethod) return null;
@@ -155,7 +171,7 @@ export function SectionPlan({
     : roundsError ? `Survey rounds are unavailable: ${roundsError}`
     : !rounds ? 'Loading survey rounds…'
     : planningNext
-      ? `Round ${currentRound} is complete. Choose how to sample round ${currentRound + 1}. Option 2 uses s measured from the round-${currentRound} PCIs instead of s = 10 (§7.5.2).${deviation === null ? ' It needs at least two random sample units with published PCIs.' : ''}`
+      ? `Round ${currentRound} is complete. Choose how to sample round ${currentRound + 1}. Option 2 uses s measured from the round-${currentRound} PCIs instead of s = 10.${deviation === null ? ' It needs at least two random sample units with published PCIs.' : ''}`
     : !rounds.ready
       ? currentRound === 1
         ? `Round 2 opens once every round-1 sample unit is published (${rounds.published} of ${rounds.units} so far).`
@@ -231,7 +247,7 @@ export function SectionPlan({
         <StatCard label="Target Unit Area (Au)" palette={palette} value={`${TARGET_UNIT_AREA} m²`} />
         <StatCard label="Sample Unit (N)" palette={palette} value={total ? String(total) : '—'} />
       </View>
-      {!layout ? <Notice error>This section&apos;s area cannot be divided into asphalt sample units of 135–315 m² (225 ± 90 m², §2.1.7). Use Edit Details to check the length, width and area.</Notice> : null}
+      {!layout ? <Notice error>This section&apos;s area cannot be divided into asphalt sample units of 135–315 m² (225 ± 90 m²). Use Edit Details to check the length, width and area.</Notice> : null}
 
       <AdminPanel palette={palette}>
         <Text style={[styles.panelTitle, { color: palette.text }]}>Preview along the section</Text>
@@ -345,7 +361,7 @@ export function SectionPlan({
                     <PlanRow label="Sample units to inspect" palette={palette} value={String(selectedUnits.length)} />
                     {selectedUnits.length > preview.required ? (
                       <Text style={[styles.muted, styles.planNote, { color: palette.muted }]}>
-                        Why {selectedUnits.length} and not {preview.required}? Units are picked evenly: every {ordinal(preview.interval)} unit, starting at SU{preview.first}, until the section ends (§7.5.3). That fits {selectedUnits.length} units. {preview.required} is only the minimum, so the extra unit{selectedUnits.length - preview.required === 1 ? '' : 's'} make{selectedUnits.length - preview.required === 1 ? 's' : ''} the result more reliable.
+                        Why {selectedUnits.length} and not {preview.required}? Units are picked evenly: every {ordinal(preview.interval)} unit, starting at SU{preview.first}, until the section ends. That fits {selectedUnits.length} units. {preview.required} is only the minimum, so the extra unit{selectedUnits.length - preview.required === 1 ? '' : 's'} make{selectedUnits.length - preview.required === 1 ? 's' : ''} the result more reliable.
                       </Text>
                     ) : null}
                   </View>
@@ -401,11 +417,10 @@ export function SectionPlan({
             <Text style={[styles.panelTitle, { color: palette.text }]}>Previous Survey Data</Text>
             <PlanRow label="Measured from" palette={palette} value={rounds ? `Round ${currentRound}` : '—'} />
             <PlanRow label="Random units with PCI" palette={palette} value={rounds ? String(rounds.random_count) : '—'} />
-            <PlanRow label="Mean PCI" palette={palette} value={rounds?.mean != null ? rounds.mean.toFixed(1) : '—'} />
+            <PlanRow label="Mean PCI" palette={palette} value={rounds?.mean != null ? rounds.mean.toFixed(2) : '—'} />
             <PlanRow label="Standard deviation, s" palette={palette} value={deviation !== null ? deviation.toFixed(2) : rounds ? 'Needs 2+ units' : '—'} />
             <PlanRow label="Allowable error, e" palette={palette} value="± 5 PCI points" />
             <PlanRow label={`Round ${currentRound} results published`} palette={palette} value={rounds ? `${rounds.published} of ${rounds.units}` : '—'} />
-            <Notice>s is the spread of the PCIs measured in round {currentRound} (§7.5.2.1 Eq. 2). The next round uses Eq. 1 again with this s instead of s = 10, so a uniform section needs fewer units and an uneven one needs more.</Notice>
           </AdminPanel>
         ) : sideKind !== 'additional' ? (
           <AdminPanel palette={palette} style={sideStyle}>
@@ -415,7 +430,6 @@ export function SectionPlan({
                 <PlanRow label="Sample units to inspect" palette={palette} value={total ? `${total} of ${total}` : '—'} />
                 <PlanRow label="Average sample unit area" palette={palette} value={layout ? formatNumber(Math.round(layout.unitArea * 10) / 10, ' m²') : '—'} />
                 <PlanRow label="Section PCI" palette={palette} value="Area-weighted mean" />
-                <Notice>Every sample unit is inspected, so no additional sample unit is needed. The section PCI is the area-weighted mean of all {total || 'N'} units (§11.1).</Notice>
               </>
             ) : (
               <>
@@ -467,16 +481,25 @@ export function SectionPlan({
       {confirmed && currentSamples.length ? (
         <AdminPanel palette={palette}>
           <Text style={[styles.panelTitle, { color: palette.text }]}>Section PCI{currentRound > 1 ? ` · Round ${currentRound}` : ''}</Text>
-          <Text accessibilityLabel={`Published sample units: ${publishedCount} of ${currentSamples.length}`} style={[styles.muted, { color: palette.text }]}>
-            {publishedCount} of {currentSamples.length} sample units have published results{approvedCount ? ` · ${approvedCount} approved, awaiting publication` : ''}.
+          <Text accessibilityLabel={`Approved sample units: ${readyCount} of ${currentSamples.length}, published ${publishedCount}`} style={[styles.muted, { color: palette.text }]}>
+            {readyCount} of {currentSamples.length} sample units approved · {publishedCount} published.
           </Text>
+          {reportCurrent && report ? (
+            <Text accessibilityLabel={`Computed section PCI ${report.output.pci.toFixed(2)}, ${report.output.condition}`} style={[styles.panelTitle, { color: palette.text }]}>
+              PCI {report.output.pci.toFixed(2)} · {report.output.condition}
+            </Text>
+          ) : null}
           <Text style={[styles.muted, { color: palette.muted }]}>
-            {publishedCount === currentSamples.length
-              ? 'Every sample unit is published. Compute the area-weighted section PCI (§11.1) and publish it to the Viewer.'
-              : 'Approve and publish every sample unit in this section first. The section PCI uses all of them.'}
+            {!allApproved
+              ? 'Approve every sample unit in this section first. The section PCI uses all of them.'
+              : !reportCurrent
+                ? report ? 'The sample results changed since the last computation. Compute the section PCI again.' : 'Every sample unit is approved. Compute the section PCI.'
+                : report?.published ? 'Section PCI published to the Viewer.' : allPublished ? 'Section PCI computed. Publish it to the Viewer.' : 'Section PCI computed. Publish every sample unit before publishing the section PCI.'}
           </Text>
-          {canEdit && onPublishSection ? <View style={styles.confirmRow}>
-            <AdminButton disabled={busy || publishedCount !== currentSamples.length} label={busy ? 'Publishing...' : 'Compute and publish section PCI'} onPress={() => void onPublishSection()} palette={palette} />
+          {canEdit ? <View style={styles.sectionActions}>
+            {onComputeSection ? <AdminButton disabled={busy || !allApproved} label={busy ? 'Working...' : reportCurrent ? 'Compute again' : 'Compute section PCI'} onPress={() => void onComputeSection()} palette={palette} tone={reportCurrent ? 'secondary' : 'primary'} /> : null}
+            {reportCurrent && onViewReport ? <AdminButton disabled={busy} icon="file-text" label="View section PCI report" onPress={onViewReport} palette={palette} tone="secondary" /> : null}
+            {onPublishSection ? <AdminButton disabled={busy || !reportCurrent || !allPublished || !!report?.published} label={report?.published ? 'Published' : 'Publish section PCI'} onPress={() => void onPublishSection()} palette={palette} /> : null}
           </View> : null}
         </AdminPanel>
       ) : null}
@@ -576,6 +599,7 @@ const styles = StyleSheet.create({
   chip: { alignItems: 'center', borderRadius: 6, borderWidth: 1, minWidth: 58, paddingHorizontal: 10, paddingVertical: 6 },
   chipText: { fontSize: 14, fontWeight: '800' },
   confirmRow: { alignItems: 'flex-end', marginTop: 12 },
+  sectionActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', marginTop: 12 },
   confirmedText: { fontSize: 13, marginTop: 12, textAlign: 'right' },
   additionalPanel: { flexBasis: 280, flexGrow: 1, minWidth: 280 },
   additionalHead: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
