@@ -42,8 +42,11 @@ const features: { icon: keyof typeof Feather.glyphMap; title: string; body: stri
 /**
  * Highlight video. Put the video's web address here (an .mp4 link, e.g. from Supabase Storage or
  * the site's public folder) and the frame plays it on the website. Leave null until the video is ready.
+ * The files live in public/videos/; Expo copies public/ to the root of the web build.
  */
-const highlightVideo: string | null = null;
+const highlightVideo: string | null = '/videos/lakad-highlight.mp4';
+/** First frame shown before playback starts (the LAKAD title card). */
+const highlightPoster = '/videos/lakad-highlight-poster.jpg';
 const highlights: { icon: keyof typeof Feather.glyphMap; title: string }[] = [
   { icon: 'edit-3', title: 'Record road distresses right on site' },
   { icon: 'activity', title: 'Compute PCI automatically' },
@@ -89,7 +92,7 @@ function HighlightVideo({ dark }: { dark: boolean }) {
     boxShadow: dark ? '0px 18px 40px rgba(0,0,0,0.35)' : '0px 22px 48px rgba(10,27,77,0.16)' } as ViewStyle;
   if (highlightVideo && Platform.OS === 'web') {
     return <View style={frame}>
-      <video src={highlightVideo} controls playsInline preload="metadata" aria-label="LAKAD highlight video" style={{ width: '100%', height: '100%', objectFit: 'cover', backgroundColor: hero.bar }} />
+      <video src={highlightVideo} poster={highlightPoster} controls playsInline preload="metadata" aria-label="LAKAD highlight video" style={{ width: '100%', height: '100%', objectFit: 'cover', backgroundColor: hero.bar }} />
     </View>;
   }
   return <View style={frame} accessibilityLabel="LAKAD highlight video, coming soon">
