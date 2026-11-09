@@ -819,7 +819,6 @@ Measured in ${unitLabel(type.default_unit_of_measure)}.`}</Text>
             <Text style={[styles.sectionTitle, { color: palette.text }]}>Do not confuse with</Text>
             {measure.confuse.map(item => <Text key={item.name} style={[styles.dialogText, { color: palette.text }]}><Text style={styles.confuseName}>{item.name}: </Text>{item.difference}</Text>)}
           </View> : null}
-          {guidance || measure ? <Text style={[styles.dialogMeta, { color: palette.muted }]}>Short field cues checked against ASTM D6433-07 Appendix X1. Provisional until reviewed by the civil engineer.</Text> : null}
         </ScrollView>
         <View style={[styles.dialogFooter, { borderTopColor: palette.border }]}>
           <Text style={[styles.dialogMeta, styles.footerMeta, { color: palette.muted }]}>{year ? `20${year} edition` : type.astm_edition ?? 'Custom type'}{changed ? ` • Last changed ${changed}` : ''}</Text>
