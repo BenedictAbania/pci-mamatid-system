@@ -39,6 +39,7 @@ const offices = [
   'Barangay Mamatid Office',
   'Other',
 ];
+const OTHER_OFFICE = 'Other';
 const PAGE_SIZE = 50;
 type PressState = { pressed: boolean; hovered?: boolean };
 
@@ -175,8 +176,8 @@ export default function UsersScreen() {
       setError('Enter a full name and valid email address.');
       return null;
     }
-    if (!draft.office || !draft.jobTitle.trim()) {
-      setError('Choose an office and enter a position or job title.');
+    if (!draft.office.trim() || !draft.jobTitle.trim()) {
+      setError('Choose an office (type it in if you chose Other) and enter a position or job title.');
       return null;
     }
     if (!draft.role) {
@@ -213,7 +214,7 @@ export default function UsersScreen() {
     if (!role) return;
     const name = draft.name.trim();
     const email = draft.email.trim();
-    void sendInvite('form', { email, full_name: name, office: draft.office, job_title: draft.jobTitle.trim(), role },
+    void sendInvite('form', { email, full_name: name, office: draft.office.trim(), job_title: draft.jobTitle.trim(), role },
       `${name} was added as ${titleCase(role)}. They set a password from the email link sent to ${email}.`);
   }
 
@@ -225,7 +226,7 @@ export default function UsersScreen() {
     setMessage('');
     try {
       await callWorkflow('lakad_update_account', {
-        target: account.id, new_full_name: draft.name.trim(), new_office: draft.office, new_job_title: draft.jobTitle.trim(), new_role: role,
+        target: account.id, new_full_name: draft.name.trim(), new_office: draft.office.trim(), new_job_title: draft.jobTitle.trim(), new_role: role,
       });
       setMessage(`${draft.name.trim()}'s account was updated.`);
       closeForm();
@@ -267,6 +268,7 @@ export default function UsersScreen() {
 
       {form ? <>
         <AccountForm
+          key={form.mode === 'edit' ? form.account.id : 'new'}
           busy={savingId !== null}
           draft={draft}
           editing={form.mode === 'edit' ? form.account : null}
@@ -418,12 +420,17 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
   draft: Draft; editing: LakadAccount | null; isPhone: boolean; busy: boolean; saving: boolean; palette: AdminPalette;
   onField: <K extends keyof Draft>(key: K) => (value: Draft[K]) => void; onSubmit: () => void; onCancel: () => void;
 }) {
-  const unchanged = !!editing && draft.name.trim() === (editing.full_name ?? '') && draft.office === (editing.office ?? '')
+  const unchanged = !!editing && draft.name.trim() === (editing.full_name ?? '') && draft.office.trim() === (editing.office ?? '')
     && draft.jobTitle.trim() === (editing.job_title ?? '') && draft.role === editing.role;
   const roleChanged = !!editing && !!draft.role && draft.role !== editing.role;
   const submitLabel = editing ? (saving ? 'Saving…' : unchanged ? 'No Changes' : 'Save Changes') : (saving ? 'Adding…' : 'Add User');
-  // Keep an office saved before the list changed, so editing never silently drops it.
-  const officeOptions = draft.office && !offices.includes(draft.office) ? [draft.office, ...offices] : offices;
+  // "Other" lets the administrator type the office. A saved office that is not in the list opens as Other,
+  // with the saved text in the box, so editing never silently drops it.
+  const [otherOffice, setOtherOffice] = useState(() => !!draft.office && (draft.office === OTHER_OFFICE || !offices.includes(draft.office)));
+  const chooseOffice = (value: string) => {
+    setOtherOffice(value === OTHER_OFFICE);
+    onField('office')(value === OTHER_OFFICE ? '' : value);
+  };
 
   return (
     <AdminPanel palette={palette} style={[styles.form, editing && { borderTopColor: palette.action, borderTopWidth: 3 }]}>
@@ -453,7 +460,10 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
         <View style={styles.gridCell}><AdminField editable={!editing} keyboardType="email-address" label="Email address" onChangeText={onField('email')} palette={palette} placeholder="name@example.com" required value={draft.email} /></View>
       </View>
       <View style={[styles.grid, isPhone && styles.stack]}>
-        <View style={styles.gridCell}><OfficeSelect onChange={onField('office')} options={officeOptions} palette={palette} value={draft.office} /></View>
+        <View style={[styles.gridCell, { gap: 12 }]}>
+          <OfficeSelect onChange={chooseOffice} options={offices} palette={palette} value={otherOffice ? OTHER_OFFICE : draft.office} />
+          {otherOffice ? <AdminField label="Specify office" onChangeText={value => onField('office')(value.slice(0, 150))} palette={palette} placeholder="Type the office or department" required value={draft.office} /> : null}
+        </View>
         <View style={styles.gridCell}><AdminField label="Position or job title" onChangeText={onField('jobTitle')} palette={palette} placeholder="Example, Civil Engineer" required value={draft.jobTitle} /></View>
       </View>
 
@@ -467,7 +477,6 @@ function AccountForm({ draft, editing, isPhone, busy, saving, palette, onField, 
             <View style={[styles.radio, { borderColor: selected ? palette.blue : palette.muted }]}>{selected ? <View style={[styles.radioDot, { backgroundColor: palette.blue }]} /> : null}</View>
             <View style={styles.roleBody}>
               <View style={styles.roleName}>
-                <View style={[styles.dot, { backgroundColor: roleColors[role] }]} />
                 <Text style={[styles.roleTitle, { color: palette.text }]}>{titleCase(role)}</Text>
                 {current ? <Text style={[styles.currentTag, { color: palette.muted, borderColor: palette.border }]}>Current</Text> : null}
               </View>
@@ -684,7 +693,6 @@ const styles = StyleSheet.create({
   seenText: { fontSize: 16 },
   pill: { alignItems: 'center', borderRadius: 999, justifyContent: 'center', minWidth: 92, paddingHorizontal: 12, paddingVertical: 2 },
   pillText: { color: '#111111', fontSize: 15 },
-  dot: { borderRadius: 4, height: 7, width: 7 },
   actions: { flexDirection: 'row', gap: 22 },
   link: { minHeight: 32, justifyContent: 'center' },
   linkText: { fontSize: 16 },
