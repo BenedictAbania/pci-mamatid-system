@@ -18,6 +18,7 @@ import {
     BranchFormValues,
     BranchRecord,
     EncoderWorkload,
+    loadAssignableEncoders,
     loadEncoderWorkload,
     loadRoadNetworkCounts,
     RoadNetworkCounts,
@@ -64,6 +65,8 @@ export default function RoadNetworkScreen() {
   const [assignMode, setAssignMode] = useState<'all' | 'choose'>('all');
   const [assignUnits, setAssignUnits] = useState<number[]>([]);
   const [workload, setWorkload] = useState<EncoderWorkload | null>(null);
+  /** Encoders who accepted their invitation; undefined while loading, null if the list is unavailable. */
+  const [assignable, setAssignable] = useState<Set<string> | null | undefined>(undefined);
   const [counts, setCounts] = useState<RoadNetworkCounts | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -162,6 +165,8 @@ export default function RoadNetworkScreen() {
   // Only planned units can change hands; started units stay with their encoder.
   const assignableUnits = roundSamples.filter((sample) => sample.workflow_state === 'planned').sort((a, b) => a.unit_number - b.unit_number);
   const encoderName = (id: string | null) => encoders.find((encoder) => encoder.id === id)?.full_name || null;
+  // Pending invitations cannot be assigned; the server refuses them too.
+  const assignableEncoders = assignable ? encoders.filter((encoder) => assignable.has(encoder.id)) : assignable === null ? encoders : [];
 
   function openAssign() {
     setAssignee(currentEncoderId);
@@ -172,6 +177,8 @@ export default function RoadNetworkScreen() {
     setAssignOpen(true);
     setWorkload(null);
     loadEncoderWorkload().then(setWorkload).catch(() => setWorkload(null));
+    setAssignable(undefined);
+    loadAssignableEncoders().then(setAssignable).catch(() => setAssignable(null));
   }
 
   function toggleAssignUnit(unit: number) {
@@ -492,7 +499,7 @@ export default function RoadNetworkScreen() {
               {roundSamples.length > assignableUnits.length ? <Text style={[styles.unitMeta, { color: palette.muted }]}>{roundSamples.length - assignableUnits.length} unit{roundSamples.length - assignableUnits.length === 1 ? ' has' : 's have'} already started and keep their encoder.</Text> : null}
 
               <Text style={[styles.assignHeading, { color: palette.text }]}>Encoder</Text>
-              {encoders.length ? encoders.map((encoder) => {
+              {assignable === undefined ? <Text style={[styles.unitMeta, { color: palette.muted }]}>Loading encoders…</Text> : assignableEncoders.length ? assignableEncoders.map((encoder) => {
                 const active = assignee === encoder.id;
                 const load = workload?.[encoder.id];
                 const name = encoder.full_name || encoder.email || 'Unnamed encoder';
@@ -511,7 +518,7 @@ export default function RoadNetworkScreen() {
                     </Text>
                   </Pressable>
                 );
-              }) : <Notice>No active encoder accounts yet. Ask the administrator to create one.</Notice>}
+              }) : <Notice>No active encoder accounts yet. Ask the administrator to create one. Invited encoders appear here after they accept the invitation.</Notice>}
               {error ? <ErrorBanner message={error} palette={palette} /> : null}
             </ScrollView>
             <View style={styles.modalActions}><AdminButton label="Cancel" onPress={() => setAssignOpen(false)} palette={palette} tone="secondary" /><AdminButton disabled={saving || !assignee || !assignableUnits.length || (assignMode === 'choose' && !assignUnits.length)} label={saving ? 'Saving...' : 'Assign'} onPress={() => void assignEncoder()} palette={palette} /></View>

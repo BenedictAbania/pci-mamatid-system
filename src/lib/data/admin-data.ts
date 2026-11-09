@@ -163,6 +163,13 @@ export async function loadEncoderWorkload(): Promise<EncoderWorkload> {
   return Object.fromEntries(rows.map((row) => [row.encoder_id, { sections: row.sections, units: row.units }]));
 }
 
+/** IDs of encoders who can be assigned: active and invitation accepted. */
+export async function loadAssignableEncoders(): Promise<Set<string>> {
+  const { data, error } = await supabase.rpc('lakad_assignable_encoders');
+  if (error) throw new Error(error.message);
+  return new Set(((data ?? []) as { id: string }[]).map((row) => row.id));
+}
+
 export type RoadNetworkCounts ={ branches: number; sections: number; sampleUnits: number };
 
 /** Exact totals within the signed-in user's RLS scope, independent of page size. */

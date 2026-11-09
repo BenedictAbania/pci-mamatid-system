@@ -38,21 +38,23 @@ async function count(table: string, filter?: (q: Query) => Query) {
   const result = await query; fail(result.error);
   return requireCount(result.count);
 }
+/** Admin account totals that leave out pending invitations (supabase/migrations/20261109130000_accounts_hide_pending_invites.sql). */
+async function accountTotals(): Promise<{ accounts: number; active: number; roles: Partial<Record<Role, number>> }> {
+  const { data, error } = await supabase.rpc('lakad_account_counts');
+  fail(error);
+  return data as { accounts: number; active: number; roles: Partial<Record<Role, number>> };
+}
 async function workSummary(role: Role, userId: string): Promise<WorkSummary> {
   const sampleScope = (q: Query) => scope(q, role, userId);
-  const [sections, plansRequiringAttention, samples, accounts, pendingCalculations, ...totals] = await Promise.all([
-    count('sections'), count('sections', q => q.is('homogeneous_confirmed_by', null)), count('sample_units', sampleScope), role === 'admin' ? count('profiles') : Promise.resolve(null),
+  const admin = role === 'admin';
+  const [sections, plansRequiringAttention, samples, accountCounts, pendingCalculations, ...totals] = await Promise.all([
+    count('sections'), count('sections', q => q.is('homogeneous_confirmed_by', null)), count('sample_units', sampleScope), admin ? accountTotals() : Promise.resolve(null),
     count('inspection_computations', q => q.eq('verification', 'pending')),
     ...states.map(state => count('sample_units', q => sampleScope(q).eq('workflow_state', state))),
   ]);
-  const admin = role === 'admin';
-  const [activeAccounts, ...roleTotals] = admin ? await Promise.all([
-    count('profiles', q => q.eq('is_active', true)),
-    ...roles.map(r => count('profiles', q => q.eq('is_active', true).eq('role', r))),
-  ]) : [null];
   return {
-    sections, plansRequiringAttention, samples, accounts, pendingCalculations,
-    activeAccounts, roles: admin ? Object.fromEntries(roles.map((r, i) => [r, roleTotals[i]])) as Record<Role, number> : null,
+    sections, plansRequiringAttention, samples, accounts: accountCounts?.accounts ?? null, pendingCalculations,
+    activeAccounts: accountCounts?.active ?? null, roles: accountCounts ? Object.fromEntries(roles.map(r => [r, accountCounts.roles[r] ?? 0])) as Record<Role, number> : null,
     states: Object.fromEntries(states.map((state, i) => [state, totals[i]])) as WorkSummary['states'],
   };
 }

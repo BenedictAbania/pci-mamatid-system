@@ -59,7 +59,10 @@ export interface LakadAccount {
 }
 
 /** An activate/deactivate or a permanent delete waiting for confirmation in a dialog. */
-type Pending = { kind: 'status'; account: LakadAccount; active: boolean } | { kind: 'delete'; account: LakadAccount };
+/** Someone invited who has not opened the email link yet (lakad_pending_invites). */
+type PendingInvite = { id: string; full_name: string | null; email: string | null; role: UserRole; office: string | null; job_title: string | null; invited_at: string | null };
+type AccountRef = Pick<LakadAccount, 'id' | 'full_name' | 'email'>;
+type Pending = { kind: 'status'; account: LakadAccount; active: boolean } | { kind: 'delete'; account: LakadAccount } | { kind: 'cancel'; account: AccountRef };
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 72;
 
@@ -96,6 +99,8 @@ export default function UsersScreen() {
   const [form, setForm] = useState<FormMode | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [invitesError, setInvitesError] = useState('');
   const isPhone = width < 760;
   const dark = palette.background !== '#F3F6FC';
 
@@ -110,6 +115,11 @@ export default function UsersScreen() {
       if (request !== sequence.current) return;
       setError('');
       setProfiles(data as LakadAccount[]);
+      // Pending invitations load on their own, so a failure here never hides the directory.
+      const invited = await supabase.rpc('lakad_pending_invites');
+      if (request !== sequence.current) return;
+      setInvites(invited.error ? [] : (invited.data as PendingInvite[]));
+      setInvitesError(invited.error ? 'Pending invitations could not be loaded.' : '');
     } catch (reason) {
       if (request === sequence.current) { setProfiles([]); setError(reason instanceof Error ? reason.message : 'User profiles could not be loaded.'); }
     } finally {
@@ -151,7 +161,7 @@ export default function UsersScreen() {
     }
   }
 
-  async function deleteAccount(account: LakadAccount) {
+  async function deleteAccount(account: AccountRef, cancelled = false) {
     if (account.id === user?.id) return false;
     const name = account.full_name || account.email || 'The account';
     setSavingId(account.id);
@@ -160,7 +170,7 @@ export default function UsersScreen() {
     try {
       await accountAction({ action: 'delete', target: account.id });
       await refresh();
-      setMessage(`${name} was deleted. Their login and profile are gone.`);
+      setMessage(cancelled ? `The invitation to ${name} was cancelled. Their invitation link no longer works.` : `${name} was deleted. Their login and profile are gone.`);
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The account could not be deleted.');
@@ -215,7 +225,14 @@ export default function UsersScreen() {
     const name = draft.name.trim();
     const email = draft.email.trim();
     void sendInvite('form', { email, full_name: name, office: draft.office.trim(), job_title: draft.jobTitle.trim(), role },
-      `${name} was added as ${titleCase(role)}. They set a password from the email link sent to ${email}.`);
+      `${name} was invited as ${titleCase(role)}. They appear in this list after they open the email link sent to ${email} and set a password.`);
+  }
+
+  /** Sends the invitation email again with the saved details. */
+  function resendInvite(invite: PendingInvite) {
+    if (!invite.email) return;
+    void sendInvite(`resend:${invite.id}`, { email: invite.email, full_name: invite.full_name || invite.email, office: invite.office ?? '', job_title: invite.job_title ?? '', role: invite.role },
+      `The invitation was sent again to ${invite.email}.`);
   }
 
   async function saveEdit(account: LakadAccount) {
@@ -349,13 +366,22 @@ export default function UsersScreen() {
 
       <PageControls page={cursors.length} busy={loading} hasNext={profiles.length === PAGE_SIZE} previous={() => setCursors(cursors.slice(0, -1))} next={() => { const last = profiles.at(-1); if (last) setCursors([...cursors, last.id]); }} />
 
+      {invites.length || invitesError ? <PendingInvites
+        invites={invites}
+        error={invitesError}
+        busyId={savingId}
+        palette={palette}
+        onResend={resendInvite}
+        onCancel={(invite) => setPending({ kind: 'cancel', account: { id: invite.id, full_name: invite.full_name, email: invite.email } })}
+      /> : null}
+
       <ConfirmDialog
         busy={savingId !== null}
         onCancel={() => setPending(null)}
         onConfirm={() => {
           if (!pending) return;
           // A failed delete closes the dialog so the reason shows on the page.
-          if (pending.kind === 'delete') void deleteAccount(pending.account).then(() => setPending(null));
+          if (pending.kind === 'delete' || pending.kind === 'cancel') void deleteAccount(pending.account, pending.kind === 'cancel').then(() => setPending(null));
           else void updateAccount(pending.account, pending.active).then((saved) => { if (saved) setPending(null); });
         }}
         palette={palette}
@@ -407,6 +433,34 @@ function LinkAction({ label, a11y, onPress, color, disabled }: { label: string; 
 
 function RolePill({ role }: { role: UserRole }) {
   return <View style={[styles.pill, { backgroundColor: roleColors[role] }]}><Text style={styles.pillText}>{titleCase(role)}</Text></View>;
+}
+
+/** Invitations not accepted yet. They join the directory once the person opens the email link. */
+function PendingInvites({ invites, error, busyId, palette, onResend, onCancel }: {
+  invites: PendingInvite[]; error: string; busyId: string | null; palette: AdminPalette; onResend: (invite: PendingInvite) => void; onCancel: (invite: PendingInvite) => void;
+}) {
+  return <View style={{ gap: 10 }}>
+    <Text accessibilityRole="header" style={[styles.section, { color: palette.muted }]}>Pending invitations ({invites.length})</Text>
+    <Text style={[styles.cardMeta, { color: palette.muted }]}>These people were invited but have not opened their email link yet. They move to the list above once they accept.</Text>
+    {error ? <Text style={[styles.cardMeta, { color: palette.red }]}>{error}</Text> : null}
+    {invites.length ? <View style={[styles.table, { backgroundColor: palette.panel }]}>
+      {invites.map((invite, index) => {
+        const name = invite.full_name || invite.email || 'Unnamed user';
+        const sending = busyId === `resend:${invite.id}`;
+        return <View key={invite.id} style={[styles.inviteRow, index < invites.length - 1 && { borderBottomColor: palette.border, borderBottomWidth: 1 }]}>
+          <View style={styles.inviteIdentity}>
+            <Text numberOfLines={1} style={[styles.name, { color: palette.text }]}>{name}</Text>
+            <Text numberOfLines={1} style={[styles.cardMeta, { color: palette.muted }]}>{invite.email || 'No email'} · Invited {invite.invited_at ? new Date(invite.invited_at).toLocaleDateString() : 'recently'}</Text>
+          </View>
+          <RolePill role={invite.role} />
+          <View style={styles.actions}>
+            <LinkAction disabled={busyId !== null} label={sending ? 'Sending…' : 'Resend'} a11y={`Resend invitation to ${name}`} onPress={() => onResend(invite)} color={palette.blue} />
+            <LinkAction disabled={busyId !== null} label="Cancel" a11y={`Cancel invitation to ${name}`} onPress={() => onCancel(invite)} color={palette.red} />
+          </View>
+        </View>;
+      })}
+    </View> : null}
+  </View>;
 }
 
 function StatusPill({ active }: { active: boolean }) {
@@ -508,14 +562,18 @@ function ConfirmDialog({ pending, palette, busy, onConfirm, onCancel }: {
 }) {
   if (!pending) return null;
   const name = pending.account.full_name || pending.account.email || 'this account';
-  const remove = pending.kind === 'delete';
-  const title = remove ? 'Delete account' : pending.active ? 'Reactivate account' : 'Deactivate account';
-  const text = remove
-    ? `${name} (${pending.account.email ?? 'no email'}) will be permanently deleted. Their login and profile are removed and cannot be restored. Only accounts with no inspection records can be deleted; deactivate the others instead.`
-    : pending.active
-      ? `${name} will be able to sign in and use LAKAD again.`
-      : `${name} will no longer be able to sign in. Their inspection history stays saved.`;
-  const confirmLabel = busy ? (remove ? 'Deleting…' : 'Saving…') : remove ? 'Delete Permanently' : pending.active ? 'Reactivate' : 'Deactivate';
+  const cancel = pending.kind === 'cancel';
+  const remove = pending.kind === 'delete' || cancel;
+  const reactivate = pending.kind === 'status' && pending.active;
+  const title = cancel ? 'Cancel invitation' : remove ? 'Delete account' : reactivate ? 'Reactivate account' : 'Deactivate account';
+  const text = cancel
+    ? `The invitation to ${name} (${pending.account.email ?? 'no email'}) will be cancelled and their invitation link will stop working. You can invite them again later.`
+    : remove
+      ? `${name} (${pending.account.email ?? 'no email'}) will be permanently deleted. Their login and profile are removed and cannot be restored. Only accounts with no inspection records can be deleted; deactivate the others instead.`
+      : reactivate
+        ? `${name} will be able to sign in and use LAKAD again.`
+        : `${name} will no longer be able to sign in. Their inspection history stays saved.`;
+  const confirmLabel = busy ? (cancel ? 'Cancelling…' : remove ? 'Deleting…' : 'Saving…') : cancel ? 'Cancel Invitation' : remove ? 'Delete Permanently' : reactivate ? 'Reactivate' : 'Deactivate';
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible>
       <View style={styles.backdrop}>
@@ -524,8 +582,8 @@ function ConfirmDialog({ pending, palette, busy, onConfirm, onCancel }: {
           <Text accessibilityRole="header" style={[styles.dialogTitle, { color: palette.text }]}>{title}</Text>
           <Text style={[styles.dialogText, { color: palette.muted }]}>{text}</Text>
           <View style={styles.dialogActions}>
-            <AdminButton label="Cancel" onPress={onCancel} palette={palette} tone="secondary" />
-            <AdminButton disabled={busy} label={confirmLabel} onPress={onConfirm} palette={palette} tone={!remove && pending.active ? 'primary' : 'danger'} />
+            <AdminButton label={cancel ? 'Keep Invitation' : 'Cancel'} onPress={onCancel} palette={palette} tone="secondary" />
+            <AdminButton disabled={busy} label={confirmLabel} onPress={onConfirm} palette={palette} tone={reactivate ? 'primary' : 'danger'} />
           </View>
         </View>
       </View>
@@ -700,6 +758,8 @@ const styles = StyleSheet.create({
   card: { gap: 10, padding: 16 },
   cardPills: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cardMeta: { fontSize: 13 },
+  inviteRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
+  inviteIdentity: { flexBasis: 220, flexGrow: 1, minWidth: 0 },
   backdrop: { alignItems: 'center', backgroundColor: layout.scrim, flex: 1, justifyContent: 'center', padding: 20 },
   dialog: { borderRadius: 18, borderWidth: 1, maxWidth: 440, padding: 26, width: '100%' },
   dialogTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },

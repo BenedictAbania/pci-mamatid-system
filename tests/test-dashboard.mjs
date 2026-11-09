@@ -41,7 +41,7 @@ const mock = {
       },
     }; return q;
   },
-  async rpc(name,args) { calls.push({rpc:name,args}); return {error:null,data:name==='lakad_report_summary'?{count:107,average:51.25}:[]}; },
+  async rpc(name,args) { calls.push({rpc:name,args}); return {error:null,data:name==='lakad_report_summary'?{count:107,average:51.25}:name==='lakad_account_counts'?{accounts:4,active:4,roles:{admin:1,reviewer:1,encoder:1,viewer:1}}:[]}; },
 };
 const {loadDashboardData,loadDashboardRegister,resource,DASHBOARD_PAGE_SIZE} = load('src/lib/data/dashboard.ts',{'./supabase':{supabase:mock}});
 for(const role of ['admin','reviewer','encoder','viewer']) {
@@ -57,7 +57,8 @@ for(const role of ['admin','reviewer','encoder','viewer']) {
     if(role!=='admin') for(const c of calls.filter(c=>c.table==='sample_units')) check(c.filters.some(x=>x[1]===(role==='encoder'?'assigned_to':'reviewer_id')&&x[2]===userId),'Staff summary carries explicit assignment filter');
     check(role==='admin'||!calls.some(c=>c.table==='profiles'),'Non-admin has no account query');
     if(role==='encoder') check(data.results.status==='unavailable' && !calls.some(c=>c.rpc||c.table==='approved_results'),'Encoder does not query reports');
-    if(role==='admin') check(data.results.status==='unavailable' && !calls.some(c=>c.rpc||c.table==='approved_results'),'Admin home does not query reports');
+    if(role==='admin') check(data.results.status==='unavailable' && !calls.some(c=>(c.rpc&&c.rpc!=='lakad_account_counts')||c.table==='approved_results'),'Admin home does not query reports');
+    if(role==='admin') check(calls.some(c=>c.rpc==='lakad_account_counts') && data.work.data.accounts===4 && data.work.data.roles.encoder===1,'Admin account totals come from lakad_account_counts (pending invitations excluded)');
     if(role==='admin') check(Number.isInteger(data.work.data.activeAccounts) && ['admin','reviewer','encoder','viewer'].every(r=>Number.isInteger(data.work.data.roles[r])),'Admin home has active and per-role account totals');
     if(role!=='admin') check(data.work.data.activeAccounts===null && data.work.data.roles===null,'Non-admin has no account totals');
   }
