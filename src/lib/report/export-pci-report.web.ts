@@ -1,4 +1,4 @@
-import html2pdf from 'html2pdf.js';
+import type Html2Pdf from 'html2pdf.js';
 import type { PciReportData } from '../data/pci-report';
 import { pciReportParts, type PciReportMeta } from './pci-report-html';
 
@@ -10,6 +10,11 @@ const MARGIN: [number, number, number, number] = [14, 12, 16, 12];
  * The report's styles are scoped to `.lakad-report`, so rendering it here leaves the app page untouched.
  */
 export async function exportPciReport(data: PciReportData, meta: PciReportMeta) {
+  // Loaded here, not at the top of the file: html2pdf.js reads the browser global `self`
+  // as soon as it loads, which breaks Expo's static rendering of web pages in Node.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deferred load, see above
+  const loaded = require('html2pdf.js') as typeof Html2Pdf | { default: typeof Html2Pdf };
+  const html2pdf = 'default' in loaded ? loaded.default : loaded;
   const { css, body } = pciReportParts(data, meta);
   const host = document.createElement('div');
   host.innerHTML = `<style>${css}</style>${body}`;
