@@ -22,5 +22,21 @@ export async function loadApprovedSummary() {
 export async function loadSectionReportPage(after: string | null) {
   const { data, error } = await supabase.rpc('lakad_section_reports', { page_after: after, page_size: REPORT_PAGE_SIZE });
   if (error) throw new Error(error.message);
-  return data as (SectionResult & { rank: number; road_snapshot: { section_name: string; branch_name: string } | null })[];
+  return data as RankedSection[];
+}
+export type RankedSection = SectionResult & { rank: number; road_snapshot: { section_name: string; branch_name: string } | null };
+
+/** Upper bound on ranked sections read at once. */
+export const RANKING_MAX_ROWS = 500;
+/** Every current ranked section the account may read, in rank order (the database ranks them). */
+export async function loadSectionRanking() {
+  const rows: RankedSection[] = [];
+  let after: string | null = null;
+  for (;;) {
+    const page = await loadSectionReportPage(after);
+    rows.push(...page);
+    if (page.length < REPORT_PAGE_SIZE) return { rows, truncated: false };
+    if (rows.length >= RANKING_MAX_ROWS) return { rows, truncated: true };
+    after = page[page.length - 1].id;
+  }
 }

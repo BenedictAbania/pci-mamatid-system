@@ -8,35 +8,35 @@ import { PCI_CONDITION_SCALE, getPciConditionCategory } from '../pci/pci-classif
 type Output = ApprovedResult['report_snapshot']['output'] & Partial<Pick<SampleOutput, 'groups'>>;
 export type PciReportMeta = { generatedAt: Date; generatedBy: string; roleLabel: string; publishedOnly: boolean };
 
-const NAVY = '#0A1B4D';
+export const NAVY = '#0A1B4D';
 const ROYAL = '#1850E0';
 const SEVERITY: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' };
 
-function esc(value: unknown) {
+export function esc(value: unknown) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
-function num(value: unknown, digits = 2) {
+export function num(value: unknown, digits = 2) {
   const n = Number(value);
   return value !== null && value !== undefined && Number.isFinite(n) ? n.toFixed(digits) : '—';
 }
-function area(value: unknown) {
+export function area(value: unknown) {
   const n = Number(value);
   return value !== null && value !== undefined && Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—';
 }
-function date(value: string | null | undefined) {
+export function date(value: string | null | undefined) {
   if (!value) return 'Not recorded';
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
 }
 const su = (n: number) => `SU-${String(n).padStart(3, '0')}`;
 
 /** Condition pill coloured by the PCI condition scale. */
-function condition(pci: unknown) {
+export function condition(pci: unknown) {
   const n = Number(pci);
   if (!Number.isFinite(n)) return '—';
   const c = getPciConditionCategory(n);
   return `<span class="pill" style="background:${c.softColor};color:${c.color};border-color:${c.color}">${esc(c.rating)}</span>`;
 }
-function table(headers: string[], rows: string[][], align: ('l' | 'c' | 'r')[] = []) {
+export function table(headers: string[], rows: string[][], align: ('l' | 'c' | 'r')[] = []) {
   const cls = (i: number) => (align[i] ? ` class="${align[i]}"` : '');
   return `<table><thead><tr>${headers.map((h, i) => `<th${cls(i)}>${esc(h)}</th>`).join('')}</tr></thead>`
     + `<tbody>${rows.map(r => `<tr>${r.map((cell, i) => `<td${cls(i)}>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
@@ -124,7 +124,7 @@ function sampleBlock(row: ApprovedResult) {
 }
 
 /** Every rule is scoped to `.lakad-report`, so the web download can render the report inside the app page. */
-const REPORT_CSS = `
+export const REPORT_CSS = `
   .lakad-report, .lakad-report * { box-sizing: border-box; }
   .lakad-report { font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; background: #FFFFFF; font-size: 11px; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .lakad-report header.cover { background: ${NAVY}; color: #fff; padding: 18px 20px; border-radius: 8px; }
@@ -189,13 +189,4 @@ ${data.sections.map(sectionBlock).join('')}
 <footer>Calculations follow ASTM D6433-07. Approval of a result does not by itself establish ASTM compliance.</footer>
 </div>`;
   return { css: REPORT_CSS, body };
-}
-
-/** A whole HTML document for native printing; the page margins come from `@page`. */
-export function pciReportHtml(data: PciReportData, meta: PciReportMeta) {
-  const { css, body } = pciReportParts(data, meta);
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LAKAD PCI Report</title>
-<style>@page { size: A4; margin: 14mm 12mm; } html, body { margin: 0; padding: 0; background: #FFFFFF; }${css}</style></head>
-<body>${body}</body></html>`;
 }
