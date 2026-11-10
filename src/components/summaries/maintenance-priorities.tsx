@@ -21,8 +21,7 @@ import { SectionReportModal } from './section-report-modal';
 
 const COLUMNS: Column[] = [
   { label: 'Rank', flex: 0.7, align: 'center' }, { label: 'Section', flex: 1.5 }, { label: 'Branch', flex: 1.3 },
-  { label: 'Section PCI', flex: 1.3, align: 'center' }, { label: 'Condition', flex: 1.3, align: 'center' },
-  { label: 'Safety / High Severity', flex: 1.5, align: 'center' }, { label: 'Affected Area', flex: 1.1, align: 'center' }, { label: 'Action', flex: 0.7, align: 'center' },
+  { label: 'Section PCI', flex: 1.3, align: 'center' }, { label: 'Condition', flex: 1.3, align: 'center' }, { label: 'Action', flex: 0.7, align: 'center' },
 ];
 
 /** Solid condition colour and its readable text colour, in either theme. */
@@ -92,8 +91,8 @@ export function MaintenancePriorities() {
   function downloadCsvFile() {
     try {
       downloadCsv(`lakad-maintenance-priorities-${isoDate(new Date())}.csv`, [
-        ['Rank', 'Section', 'Branch', 'Section PCI', 'Condition', 'Safety-related distress', 'High-severity distresses', 'Affected area (m²)', 'Published'],
-        ...rows.map(r => [r.rank, r.road_snapshot?.section_name ?? '', r.road_snapshot?.branch_name ?? '', Number(r.pci).toFixed(2), getPciConditionCategory(Number(r.pci)).rating, r.safety ? 'Yes' : 'No', r.high_severity, r.affected_area, r.published_at]),
+        ['Rank', 'Section', 'Branch', 'Section PCI', 'Condition', 'Published'],
+        ...rows.map(r => [r.rank, r.road_snapshot?.section_name ?? '', r.road_snapshot?.branch_name ?? '', Number(r.pci).toFixed(2), getPciConditionCategory(Number(r.pci)).rating, r.published_at]),
       ]);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'The CSV could not be downloaded.'); }
   }
@@ -109,7 +108,7 @@ export function MaintenancePriorities() {
 
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: p.blueSoft, borderRadius: 10, padding: 14 }}>
       <Feather name="info" size={18} color={p.blue} style={{ marginTop: 2 }} />
-      <Text style={{ color: p.text, flex: 1, lineHeight: 21 }}><Text style={{ fontWeight: '700' }}>How sections are ranked: </Text>lowest section PCI first. When PCI is tied, sections with safety-related or high-severity distress come first, then the larger affected area.</Text>
+      <Text style={{ color: p.text, flex: 1, lineHeight: 21 }}><Text style={{ fontWeight: '700' }}>How sections are ranked: </Text>from the lowest section PCI to the highest. The lower the PCI, the sooner the section needs maintenance.</Text>
     </View>
 
     <SummaryTable palette={p} title="Ranked Sections" icon="alert-triangle" columns={COLUMNS} label="Ranked sections" aside={`${rows.length} ${rows.length === 1 ? 'Section' : 'Sections'}`}
@@ -152,11 +151,10 @@ function PriorityRow({ palette: p, dark, row, onView }: { palette: AdminPalette;
   const pci = Number(row.pci);
   const category = getPciConditionCategory(pci);
   const color = solid(category, dark);
-  const flagged = row.safety || row.high_severity > 0;
   const name = row.road_snapshot?.section_name ?? 'Label not captured';
   const branch = row.road_snapshot?.branch_name ?? '—';
   const cell = (index: number) => ({ flex: COLUMNS[index].flex, alignItems: COLUMNS[index].align === 'center' ? 'center' as const : 'flex-start' as const });
-  return <View accessibilityLabel={`Rank ${row.rank}: ${name}, ${branch}, PCI ${pci.toFixed(2)}, ${category.rating}, ${flagged ? 'safety or high-severity distress present' : 'no safety or high-severity distress'}, affected area ${row.affected_area} square metres, published ${formatDate(row.published_at)}`}
+  return <View accessibilityLabel={`Rank ${row.rank}: ${name}, ${branch}, PCI ${pci.toFixed(2)}, ${category.rating}, published ${formatDate(row.published_at)}`}
     style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingRight: 16, paddingLeft: 11, borderLeftWidth: 5, borderLeftColor: color.fill, borderBottomWidth: 1, borderBottomColor: p.border }}>
     <View style={cell(0)}>
       <View style={{ minWidth: 34, height: 34, borderRadius: 17, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: color.fill }}>
@@ -176,15 +174,6 @@ function PriorityRow({ palette: p, dark, row, onView }: { palette: AdminPalette;
     </View>
     <View style={cell(4)}><ConditionPill pci={pci} dark={dark} /></View>
     <View style={cell(5)}>
-      {flagged
-        ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: p.redSoft, borderColor: p.red, borderWidth: 1, borderRadius: 8, paddingVertical: 3, paddingHorizontal: 10 }}>
-          <Feather name="alert-triangle" size={13} color={p.red} />
-          <Text style={{ color: p.red, fontWeight: '700', fontSize: 13 }}>{row.high_severity > 0 ? `${row.high_severity} high severity` : 'Safety'}</Text>
-        </View>
-        : <Text style={{ color: p.muted, fontSize: 15 }}>None</Text>}
-    </View>
-    <View style={cell(6)}><Text style={{ color: p.text, fontSize: 16, fontVariant: ['tabular-nums'] }}>{Number(row.affected_area).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²</Text></View>
-    <View style={cell(7)}>
       <Pressable accessibilityRole="link" accessibilityLabel={`View ${name}`} onPress={onView}>
         <Text style={{ color: p.blue, fontSize: 16, fontWeight: '700', textDecorationLine: 'underline' }}>View</Text>
       </Pressable>
