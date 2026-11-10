@@ -1,7 +1,7 @@
 import type { ApprovedResult } from '../data/approved-results';
 import type { PciReportData, PciReportSection } from '../data/pci-report';
 import { sectionBreakdown } from '../data/summary-data';
-import { ASPHALT_CATALOG, PROVISIONAL_LABEL } from '../d6433-07/catalog';
+import { ASPHALT_CATALOG } from '../d6433-07/catalog';
 import type { SampleOutput } from '../d6433-07/sample';
 import { PCI_CONDITION_SCALE, getPciConditionCategory } from '../pci/pci-classification';
 
@@ -99,7 +99,6 @@ function sampleBlock(row: ApprovedResult) {
       const density = Number(d.quantity) / sampleArea * 100;
       return [String(i + 1), esc(d.name), d.severity ? SEVERITY[d.severity] ?? esc(d.severity) : 'N/A', `${area(d.quantity)} ${esc(d.unit_of_measure)}`, num(density), num(deductFor(density))];
     });
-  const notes = ((out as { provisional_notes?: string[] }).provisional_notes ?? []).filter(Boolean);
   const iterations = out.iterations ?? [];
   const q = iterations.length ? iterations[0].q : out.q;
   return `<article class="sample">
@@ -108,7 +107,6 @@ function sampleBlock(row: ApprovedResult) {
       <div class="grow">${info([
         ['Sample type', snap.sample.sample_type === 'additional' ? 'Additional' : 'Random'], ['Sample unit area', `${area(snap.sample.area_sqm)} m²`],
         ['Inspection date', date(snap.sample.surveyed_at)], ['Revision', esc(row.input_revision)],
-        ['Algorithm', esc(snap.algorithm_version || '—')],
         ['Status', row.published_at ? `Published ${date(row.published_at)}` : `Approved ${date(row.approved_at)}; awaiting publication`],
       ])}</div>
       <div class="score"><div class="label">Sample PCI</div><div class="big">${num(out.pci)}</div>${condition(out.pci)}</div>
@@ -121,13 +119,45 @@ function sampleBlock(row: ApprovedResult) {
     ])}
     ${iterations.length ? `<h4>CDV iterations</h4>${table(['Iteration', 'q', 'TDV', 'CDV'], iterations.map((it, i) => [String(i + 1), esc(it.q), num(it.total_deduct_value), num(it.corrected_deduct_value)]), ['l', 'c', 'c', 'c'])}` : ''}
     <p class="formula">PCI = 100 − Maximum CDV = 100 − ${num(out.max_corrected_deduct_value)} = ${num(out.pci)}</p>
-    ${notes.length ? `<p class="small"><b>Calculation notes:</b> ${notes.map(esc).join(' ')}</p>` : ''}
     ${snap.sample.inspection_notes ? `<p class="small"><b>Inspection notes:</b> ${esc(snap.sample.inspection_notes)}</p>` : ''}
   </article>`;
 }
 
-/** One printable HTML document: overview, then each section with its sample units. */
-export function pciReportHtml(data: PciReportData, meta: PciReportMeta) {
+/** Every rule is scoped to `.lakad-report`, so the web download can render the report inside the app page. */
+const REPORT_CSS = `
+  .lakad-report, .lakad-report * { box-sizing: border-box; }
+  .lakad-report { font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; background: #FFFFFF; font-size: 11px; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .lakad-report header.cover { background: ${NAVY}; color: #fff; padding: 18px 20px; border-radius: 8px; }
+  .lakad-report header.cover h1 { margin: 0 0 4px; font-size: 22px; color: #fff; }
+  .lakad-report header.cover p { margin: 2px 0; opacity: .9; }
+  .lakad-report p { margin: 4px 0 8px; }
+  .lakad-report h2 { color: ${NAVY}; font-size: 17px; border-bottom: 2px solid ${ROYAL}; padding-bottom: 4px; margin: 0 0 10px; }
+  .lakad-report h3 { color: ${NAVY}; font-size: 13px; margin: 14px 0 6px; }
+  .lakad-report h4 { font-size: 11.5px; margin: 10px 0 4px; }
+  .lakad-report table { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
+  .lakad-report th, .lakad-report td { border: 1px solid #D1D5DB; padding: 4px 6px; text-align: left; vertical-align: middle; }
+  .lakad-report thead th { background: #E8EEFF; color: ${NAVY}; }
+  .lakad-report tr { break-inside: avoid; page-break-inside: avoid; }
+  .lakad-report .c { text-align: center; } .lakad-report .r { text-align: right; }
+  .lakad-report table.info { width: auto; min-width: 60%; }
+  .lakad-report table.info th { background: #F3F4F6; font-weight: 600; width: 46%; }
+  .lakad-report .row { display: flex; gap: 12px; align-items: stretch; }
+  .lakad-report .grow { flex: 1; }
+  .lakad-report .score { min-width: 150px; border: 1px solid #D1D5DB; border-radius: 8px; padding: 10px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .lakad-report .score .label { font-weight: 700; color: ${NAVY}; }
+  .lakad-report .score .big { font-size: 28px; font-weight: 800; margin: 2px 0 6px; }
+  .lakad-report .pill { display: inline-block; border: 1px solid; border-radius: 6px; padding: 1px 7px; font-weight: 700; font-size: 10px; margin: 1px 0; }
+  .lakad-report .formula { background: #E8EEFF; border-radius: 6px; padding: 6px 10px; font-weight: 700; }
+  .lakad-report .note { background: #FFF7ED; border-left: 4px solid #EA580C; padding: 6px 10px; }
+  .lakad-report .muted { color: #6B7280; font-weight: 400; } .lakad-report .small { font-size: 10px; }
+  .lakad-report section.section { break-before: page; page-break-before: always; }
+  .lakad-report article.sample { border: 1px solid #D1D5DB; border-radius: 8px; padding: 10px 12px; margin: 12px 0; break-inside: avoid; page-break-inside: avoid; }
+  .lakad-report .sample-title { margin-top: 0; }
+  .lakad-report footer { margin-top: 14px; color: #6B7280; font-size: 9.5px; }
+`;
+
+/** The report as a scoped stylesheet and a `.lakad-report` element. */
+export function pciReportParts(data: PciReportData, meta: PciReportMeta) {
   const withSummary = data.sections.filter(s => s.summary);
   const overview = data.sections.length
     ? table(['Branch', 'Section', 'Inspected / Total', 'Section PCI', 'Condition'], data.sections.map(s => [
@@ -140,39 +170,7 @@ export function pciReportHtml(data: PciReportData, meta: PciReportMeta) {
   const scale = PCI_CONDITION_SCALE.map(c => `<span class="pill" style="background:${c.softColor};color:${c.color};border-color:${c.color}">${esc(c.range)} ${esc(c.rating)}</span>`).join(' ');
   const generated = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(meta.generatedAt);
 
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LAKAD PCI Report</title>
-<style>
-  @page { size: A4; margin: 14mm 12mm; }
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; font-size: 11px; line-height: 1.45; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  header.cover { background: ${NAVY}; color: #fff; padding: 18px 20px; border-radius: 8px; }
-  header.cover h1 { margin: 0 0 4px; font-size: 22px; }
-  header.cover p { margin: 2px 0; opacity: .9; }
-  h2 { color: ${NAVY}; font-size: 17px; border-bottom: 2px solid ${ROYAL}; padding-bottom: 4px; margin: 0 0 10px; }
-  h3 { color: ${NAVY}; font-size: 13px; margin: 14px 0 6px; }
-  h4 { font-size: 11.5px; margin: 10px 0 4px; }
-  table { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
-  th, td { border: 1px solid #D1D5DB; padding: 4px 6px; text-align: left; vertical-align: middle; }
-  thead th { background: #E8EEFF; color: ${NAVY}; }
-  tr { break-inside: avoid; page-break-inside: avoid; }
-  .c { text-align: center; } .r { text-align: right; }
-  table.info { width: auto; min-width: 60%; }
-  table.info th { background: #F3F4F6; font-weight: 600; width: 46%; }
-  .row { display: flex; gap: 12px; align-items: stretch; }
-  .grow { flex: 1; }
-  .score { min-width: 150px; border: 1px solid #D1D5DB; border-radius: 8px; padding: 10px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .score .label { font-weight: 700; color: ${NAVY}; }
-  .score .big { font-size: 28px; font-weight: 800; margin: 2px 0 6px; }
-  .pill { display: inline-block; border: 1px solid; border-radius: 6px; padding: 1px 7px; font-weight: 700; font-size: 10px; margin: 1px 0; }
-  .formula { background: #E8EEFF; border-radius: 6px; padding: 6px 10px; font-weight: 700; }
-  .note { background: #FFF7ED; border-left: 4px solid #EA580C; padding: 6px 10px; }
-  .muted { color: #6B7280; font-weight: 400; } .small { font-size: 10px; }
-  section.section { break-before: page; page-break-before: always; }
-  article.sample { border: 1px solid #D1D5DB; border-radius: 8px; padding: 10px 12px; margin: 12px 0; break-inside: avoid; page-break-inside: avoid; }
-  .sample-title { margin-top: 0; }
-  footer { margin-top: 14px; color: #6B7280; font-size: 9.5px; }
-</style></head><body>
+  const body = `<div class="lakad-report">
 <header class="cover">
   <h1>Pavement Condition Index (PCI) Report</h1>
   <p>LAKAD · ASTM D6433-07 · Asphalt pavement</p>
@@ -182,13 +180,22 @@ export function pciReportHtml(data: PciReportData, meta: PciReportMeta) {
 <p>${meta.publishedOnly ? 'Published, Reviewer-approved results only.' : 'Current Reviewer-approved results in your access scope, including approvals awaiting publication.'}
   ${withSummary.length} section PCI result${withSummary.length === 1 ? '' : 's'} · ${data.sampleCount} sample unit result${data.sampleCount === 1 ? '' : 's'}.
   Every value comes from the frozen approved snapshot. Displayed numbers are rounded; full precision is stored.</p>
-${data.sections.some(s => s.samples.some(r => /provisional/i.test(r.report_snapshot.algorithm_version ?? ''))) ? `<p class="note">${esc(PROVISIONAL_LABEL)}. Results computed with the provisional algorithm are marked in each sample unit.</p>` : ''}
-${data.truncated ?'<p class="note">This report reached its row limit. Some results are not included.</p>' : ''}
+${data.truncated ? '<p class="note">This report reached its row limit. Some results are not included.</p>' : ''}
 <h3>Section summary</h3>
 ${overview}
 <h3>PCI rating scale</h3>
 <p>${scale}</p>
 ${data.sections.map(sectionBlock).join('')}
 <footer>Calculations follow ASTM D6433-07. Approval of a result does not by itself establish ASTM compliance.</footer>
-</body></html>`;
+</div>`;
+  return { css: REPORT_CSS, body };
+}
+
+/** A whole HTML document for native printing; the page margins come from `@page`. */
+export function pciReportHtml(data: PciReportData, meta: PciReportMeta) {
+  const { css, body } = pciReportParts(data, meta);
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LAKAD PCI Report</title>
+<style>@page { size: A4; margin: 14mm 12mm; } html, body { margin: 0; padding: 0; background: #FFFFFF; }${css}</style></head>
+<body>${body}</body></html>`;
 }

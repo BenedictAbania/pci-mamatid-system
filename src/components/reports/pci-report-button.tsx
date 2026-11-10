@@ -5,7 +5,6 @@ import { Notice } from '@/components/workflow/shared';
 import { roleLabels } from '@/lib/auth/access';
 import { loadPciReport } from '@/lib/data/pci-report';
 import { exportPciReport } from '@/lib/report/export-pci-report';
-import { pciReportHtml } from '@/lib/report/pci-report-html';
 import { useAuth } from '@/providers/AuthProvider';
 
 /**
@@ -24,11 +23,10 @@ export function PciReportButton() {
     setBusy(true); setError('');
     try {
       const data = await loadPciReport(publishedOnly);
-      const html = pciReportHtml(data, {
+      await exportPciReport(data, {
         generatedAt: new Date(), generatedBy: profile?.full_name || user?.email || 'LAKAD user',
         roleLabel: roleLabels[role!], publishedOnly,
       });
-      await exportPciReport(html);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The PCI report could not be generated.');
     } finally { setBusy(false); }
