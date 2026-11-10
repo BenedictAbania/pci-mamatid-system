@@ -11,6 +11,7 @@ const items: Record<Role, NavigationItem[]> = {
     { label: 'Dashboard', route: '/dashboard', icon: 'home' },
     { label: 'Road Network', route: '/road-network', icon: 'map' },
     { label: 'Inspections to Review', route: '/field-inspections', icon: 'clipboard' },
+    { label: 'Maintenance Priorities', route: '/maintenance-plan', icon: 'alert-triangle' },
   ],
   encoder: [
     { label: 'Dashboard', route: '/dashboard', icon: 'home' },
@@ -20,15 +21,15 @@ const items: Record<Role, NavigationItem[]> = {
     { label: 'Dashboard', route: '/workspace', icon: 'home' },
     { label: 'Sample Units Summaries', route: '/sample-summaries', icon: 'file-text' },
     { label: 'Sections Summaries', route: '/section-summaries', icon: 'layers' },
+    { label: 'Maintenance Priorities', route: '/maintenance-plan', icon: 'alert-triangle' },
   ],
 };
 export function navigationForRole(role: Role) { return items[role].filter(item => canAccess(role, item.route)); }
 /** Legacy URLs remain valid, with one active navigation destination. */
 export function navigationRoute(role: Role, pathname: string) {
-  if (pathname === '/reports' || (pathname === '/maintenance-plan' && role !== 'viewer')) return '/pci-results';
+  if (pathname === '/reports') return '/pci-results';
   if (pathname === '/dashboard' && role === 'viewer') return '/workspace';
   if (role === 'viewer' && pathname === '/pci-results') return '/sample-summaries';
-  if (role === 'viewer' && pathname === '/maintenance-plan') return '/section-summaries';
   if (pathname === '/workspace' && (role === 'reviewer' || role === 'encoder')) return '/dashboard';
   return pathname;
 }

@@ -98,7 +98,7 @@ const user = userEvent.setup({ document });
 await React.act(async () => root.render(e(SampleSummaries)));
 check(getByRole(host, 'heading', { name: 'Sample Units Summaries' }), 'Page title');
 const nav = host.querySelector('[data-testid="lakad-navigation"]');
-check(['Dashboard', 'Sample Units Summaries', 'Sections Summaries'].every(name => getByRole(nav, 'button', { name })) && getAllByRole(nav, 'button').length === 5, 'Exactly three viewer navigation buttons plus My Profile and sign out');
+check(['Dashboard', 'Sample Units Summaries', 'Sections Summaries', 'Maintenance Priorities'].every(name => getByRole(nav, 'button', { name })) && getAllByRole(nav, 'button').length === 6, 'Exactly four viewer navigation buttons plus My Profile and sign out');
 check(['Sample Unit', 'Branch', 'Section', 'PCI', 'Condition Rating', 'Action'].every(name => getByText(host, name, { selector: 'div' })), 'Table columns include Branch');
 check(getByLabelText(host, 'SU-001, SYNTHETIC Branch A, Section 01, PCI 86.50, Good'), 'Rows show the branch of each sample unit');
 check(getByText(host, 'Showing 5 of 6 results') && requests.at(-1).limit === 5, 'Preview shows five of the total');

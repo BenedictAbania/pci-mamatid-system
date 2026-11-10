@@ -71,7 +71,7 @@ for(const r of ['admin','encoder','reviewer','viewer'])for(const w of [1672,820,
     check(getByLabelText(host,'SYNTHETIC Test User, '+access.roleLabels[r]),'Account identity from auth');
     if(w<980)await React.act(async()=>user.click(getByRole(host,'button',{name:'Open navigation'})));
     const nav=host.querySelector('[data-testid="lakad-navigation"]');
-    const expected={admin:['Dashboard','User Accounts','Reference Data'],reviewer:['Dashboard','Road Network','Inspections to Review'],encoder:['Dashboard','My Inspections'],viewer:['Dashboard','Sample Units Summaries','Sections Summaries']}[r];
+    const expected={admin:['Dashboard','User Accounts','Reference Data'],reviewer:['Dashboard','Road Network','Inspections to Review','Maintenance Priorities'],encoder:['Dashboard','My Inspections'],viewer:['Dashboard','Sample Units Summaries','Sections Summaries','Maintenance Priorities']}[r];
     check(expected.every(name=>queryByRole(nav,'button',{name,exact:true})),'Exact role navigation labels');
     check(['Maintenance priorities','Next actions','Submitted inspections','Your pending work','System inspection register','Published snapshots','Access'].every(name=>!queryByText(host,name)),'Simple dashboard: no next actions, register or priorities panels');
     check(r==='encoder'||r==='reviewer'?!!queryByText(host,'Your inspection status'):r==='viewer'?!!queryByText(host,'Published pavement results')&&!!queryByText(host,'Average published PCI'):true,'Each role keeps its own status or results section');
