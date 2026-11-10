@@ -345,7 +345,17 @@ export function DistressEntry({ sample, data, busy, run, error, onRefresh }: {
     </View>
   </View>;
 
+  // The reviewer's comments travel with a returned report so the encoder knows what to correct.
+  const returnComments = sample.workflow_state === 'returned' ? sample.review_notes?.trim() : '';
+  const reviewerName = data.profiles.find(u => u.id === sample.reviewed_by)?.full_name ?? 'Civil Engineer';
+  const returnedOn = sample.reviewed_at ? new Date(sample.reviewed_at).toLocaleString() : '';
+
   return <View style={{ gap: 16 }}>
+    {!!returnComments && <View accessibilityRole="alert" style={{ gap: 6, padding: 14, borderRadius: 10, borderWidth: 1, borderLeftWidth: 5, borderColor: p.amber, backgroundColor: p.amberSoft }}>
+      <Text accessibilityRole="header" style={{ color: p.text, fontSize: 16, fontWeight: '700' }}>Returned for correction</Text>
+      <Text style={{ color: p.muted, fontSize: 13 }}>{[reviewerName, returnedOn].filter(Boolean).join(' · ')}</Text>
+      <Text selectable style={{ color: p.text, fontSize: 15, lineHeight: 22 }}>{returnComments}</Text>
+    </View>}
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
       <Heading palette={p} title={branch?.name ?? 'Branch'} />
       <Heading palette={p} title={section?.name ?? 'Section'} />
