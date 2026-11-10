@@ -27,7 +27,7 @@ const icons={Feather:Icon,MaterialCommunityIcons:Icon};
 const themes={useAppTheme:()=>({colorScheme:dark?'dark':'light',toggleColorScheme(){dark=!dark;}})};
 const auth={useAuth:()=>({role,user:{id:userId,email:'synthetic@example.test'},profile:{full_name:'SYNTHETIC Test User'}})};
 const rn={...native,useWindowDimensions:()=>({width,height:900,scale:1,fontScale:1})};
-const shell=load('src/components/admin/admin-shell.tsx',{'@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, 
+const shell=load('src/components/admin/admin-shell.tsx',{ '@/components/notifications/notification-bell': { NotificationBell: () => null }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, 
   'react-native':rn,'@expo/vector-icons':icons,'expo-image':{Image:()=>e('span',{'aria-hidden':true})},'expo-router':{usePathname:()=>role==='admin'?'/dashboard':'/workspace',useRouter:()=>({push:p=>paths.push(p),navigate:p=>paths.push(p)})},
   '@/lib/data/supabase':{supabase:{auth:{signOut:async()=>{signedOut++;}}}},'@/providers/AuthProvider':auth,'@/providers/ThemeProvider':themes,'@/lib/auth/access':access,'@/lib/ui/design-system':tokens,'@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display':identity,
 });

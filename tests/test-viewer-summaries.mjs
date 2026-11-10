@@ -26,7 +26,7 @@ const auth = { useAuth: () => ({ role: 'viewer', user: { id: 'synthetic-viewer' 
 const access = load('src/lib/auth/access.ts'), tokens = load('src/lib/ui/design-system.ts');
 const navigation = load('src/lib/auth/navigation.ts', { './access': access });
 let pathname = '/sample-summaries';
-const shell = load('src/components/admin/admin-shell.tsx', {'@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, 
+const shell = load('src/components/admin/admin-shell.tsx', { '@/components/notifications/notification-bell': { NotificationBell: () => null }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, 
   'react-native': rn, '@expo/vector-icons': { Feather: Icon }, 'expo-router': { useRouter: () => ({ navigate() {} }), usePathname: () => pathname },
   '@/lib/data/supabase': {}, '@/providers/AuthProvider': auth, '@/providers/ThemeProvider': { useAppTheme: () => ({ colorScheme: 'light', toggleColorScheme() {} }) },
   '@/lib/auth/access': access, '@/lib/ui/design-system': tokens, '@/lib/auth/account-display': load('src/lib/auth/account-display.ts'), '@/lib/auth/navigation': navigation,

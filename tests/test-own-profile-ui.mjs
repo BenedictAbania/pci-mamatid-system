@@ -28,7 +28,7 @@ let refreshes = 0, saves = [], saveError = '', passwords = [], passwordError = '
 const auth = { useAuth: () => ({ role: 'reviewer', user: { id: 'synthetic-reviewer', email: 'reviewer@synthetic.example' }, profile, refreshProfile: async () => { refreshes++; } }) };
 const access = load('src/lib/auth/access.ts'), tokens = load('src/lib/ui/design-system.ts');
 const navigation = load('src/lib/auth/navigation.ts', { './access': access });
-const shell = load('src/components/admin/admin-shell.tsx', {
+const shell = load('src/components/admin/admin-shell.tsx', { '@/components/notifications/notification-bell': { NotificationBell: () => null }, 
   'react-native': rn, '@expo/vector-icons': { Feather: Icon }, 'expo-router': { useRouter: () => ({ navigate() {} }), usePathname: () => '/dashboard' },
   '@/lib/data/supabase': { supabase: { auth: { signOut: async () => {} } } }, '@/providers/AuthProvider': auth,
   '@/providers/ThemeProvider': { useAppTheme: () => ({ colorScheme: 'light', toggleColorScheme() {} }) },

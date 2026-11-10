@@ -142,7 +142,7 @@ await test('F03', 'Initial failure, success/failure/retry, real empty state and 
 
 await test('F04', 'Actual React Native Web markup: area/date/orientation/notes labels and validation alert', () => {
   const native = require('react-native-web');
-  const { AdminField } = load('src/components/admin/admin-shell.tsx', {'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 
+  const { AdminField } = load('src/components/admin/admin-shell.tsx', { '@/components/notifications/notification-bell': { NotificationBell: () => null }, 'expo-image-picker': { launchImageLibraryAsync: async () => ({ canceled: true, assets: null }) }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 
     'react-native': native, '@expo/vector-icons': {}, 'expo-image': { Image: () => null }, 'expo-router': {},
     '@/lib/data/supabase': {}, '@/providers/AuthProvider': {}, '@/providers/ThemeProvider': {}, '@/lib/auth/access': {},
     '@/lib/ui/design-system': load('src/lib/ui/design-system.ts'), '@/lib/auth/navigation': load('src/lib/auth/navigation.ts', { './access': load('src/lib/auth/access.ts') }), '@/lib/auth/account-display': load('src/lib/auth/account-display.ts'),

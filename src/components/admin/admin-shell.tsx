@@ -27,6 +27,7 @@ import { canAccess, ROLE_ORDER, roleColors, roleHints, roleLabels } from '@/lib/
 import { brand, createPalette, layout } from '@/lib/ui/design-system';
 import { accountDisplayName } from '@/lib/auth/account-display';
 import { navigationForRole, navigationRoute } from '@/lib/auth/navigation';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 
 const logo = require('../../../assets/images/LAKAD.png');
 /** React Native Web reports hover in Pressable state; native leaves it undefined. */
@@ -238,6 +239,7 @@ export function AdminShell({
           </View>
           {headerSearch}
           {action && !isPhone ? <View style={styles.headerAction}>{action}</View> : null}
+          <NotificationBell palette={palette} />
           {onRefresh ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Refresh data" onPress={onRefresh} style={({ hovered, pressed }: PressState) => [styles.roundButton, { backgroundColor: hovered ? palette.blueSoft : palette.panel, borderColor: hovered ? palette.blue : palette.border }, pressed && styles.pressedScale]}>
               <Feather color={palette.text} name="refresh-cw" size={17} />

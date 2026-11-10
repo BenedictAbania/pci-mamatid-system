@@ -32,7 +32,7 @@ function load(file, deps = {}) {
 const access = load('src/lib/auth/access.ts');
 const design = load('src/lib/ui/design-system.ts');
 const identity = load('src/lib/auth/account-display.ts');
-const shell = load('src/components/admin/admin-shell.tsx', {'@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 
+const shell = load('src/components/admin/admin-shell.tsx', { '@/components/notifications/notification-bell': { NotificationBell: () => null }, '@/lib/data/profile-data': { profilePhotoUrl: async () => '', saveOwnProfile: async () => {}, PROFILE_PHOTO_MAX_BYTES: 2097152, PROFILE_PHOTO_MESSAGE: '' }, 
   'react-native': rn,
   '@expo/vector-icons': { Feather: Icon, MaterialCommunityIcons: Icon },
   'expo-image': { Image: () => React.createElement('span', { 'aria-hidden': true }) },
