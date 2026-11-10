@@ -43,6 +43,7 @@ const {RoleDashboard}=load('src/components/dashboard/role-dashboard.tsx',{
   '@/lib/utils/admin-utils':{formatDate:v=>v||'Not recorded'},'@/lib/data/approved-results':approved,'@/lib/ui/design-system':tokens,'@/lib/data/dashboard':data,
   '@/lib/pci/pci-classification':{getPciConditionCategory:()=>({rating:'SYNTHETIC fallback'})},
   '@/providers/AuthProvider':auth,'./dashboard-parts':parts,
+  '@/components/reports/pci-report-button':{PciReportButton:()=>e('button',{type:'button'},'Download PCI report (PDF)')},
 });
 const ready=data=>({status:'ready',data});
 const work={sections:91,plansRequiringAttention:7,samples:125,accounts:4,activeAccounts:4,roles:{admin:1,reviewer:2,encoder:5,viewer:9},pendingCalculations:2,states:{planned:100,draft:10,submitted:6,returned:3,approved:4,published:2}};

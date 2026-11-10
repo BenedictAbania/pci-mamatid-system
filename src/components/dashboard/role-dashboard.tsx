@@ -9,6 +9,7 @@ import { dashboardLayout, layout } from '@/lib/ui/design-system';
 import { loadDashboardData, type DashboardData, type Resource, type WorkSummary } from '@/lib/data/dashboard';
 import { useAuth } from '@/providers/AuthProvider';
 import { DashboardState, MetricCard, PanelHeader, StatusBadge, WorkflowProgress } from './dashboard-parts';
+import { PciReportButton } from '@/components/reports/pci-report-button';
 
 const roleCopy = {
   admin: ['Manage user accounts and the reference data inspectors use.', 'Manage user accounts', '/users'],
@@ -61,6 +62,7 @@ function AdminDashboard({ userId }: { userId: string }) {
 
   return <AdminShell dashboard title="Dashboard" subtitle="LAKAD at a glance." onRefresh={() => void refresh()}>
     {refreshing && <Text accessibilityLiveRegion="polite" style={[styles.body, { color: p.muted }]}>Updating overview…</Text>}
+    <View style={styles.actions}><PciReportButton /></View>
     {work.status === 'error' || work.status === 'unavailable'
       ? <AdminPanel palette={p}><DashboardState palette={p} status={work.status} title="Totals unavailable" message={work.message} retry={() => void refresh()} /></AdminPanel>
       : <>
@@ -131,7 +133,7 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
   const state = <T,>(r: Resource<T>, title: string) => r.status !== 'ready' ? <DashboardState palette={p} status={r.status} title={r.status === 'loading' ? undefined : title} message={r.status === 'loading' ? 'Loading authorized live data…' : r.message} retry={r.status === 'loading' ? undefined : () => void refresh()} /> : null;
   return <AdminShell dashboard title="Dashboard" subtitle={copy[0]} onRefresh={() => void refresh()}>
     {refreshing && <Text accessibilityLiveRegion="polite" style={[styles.body, { color: p.muted }]}>Updating overview…</Text>}
-    <View style={styles.intro}><Text style={[styles.body, styles.lead, { color: p.muted }]}>{role === 'viewer' ? 'Published information only. Internal inspection and review records are excluded.' : 'Choose your next task. Counts cover your full authorized scope.'}</Text><AdminButton label={primary[0]} palette={p} onPress={() => go(primary[1])} /></View>
+    <View style={styles.intro}><Text style={[styles.body, styles.lead, { color: p.muted }]}>{role === 'viewer' ? 'Published information only. Internal inspection and review records are excluded.' : 'Choose your next task. Counts cover your full authorized scope.'}</Text><View style={styles.actions}><PciReportButton /><AdminButton label={primary[0]} palette={p} onPress={() => go(primary[1])} /></View></View>
     <View style={styles.metricGrid}>{metrics.map(item => <View key={item.title} style={{ width: metricWidth as `${number}%` }}><MetricCard {...item} palette={p} compact={responsive.phone} /></View>)}</View>
     {role === 'viewer'
       ? <AdminPanel palette={p}><PanelHeader title="Published pavement results" palette={p} />{state(results, 'Results unavailable')}{results.status === 'ready' && (results.data.published ? currentApprovedResults(results.data.rows, true).map(row => <View key={row.id} style={[styles.task, { borderColor: p.border }]}><Text style={[styles.rowTitle, { color: p.text }]}>{row.report_snapshot.road.section_name} · SU-{row.report_snapshot.sample.unit_number}</Text><Text style={[styles.body, { color: p.muted }]}>PCI {row.report_snapshot.output.pci.toFixed(2)} · {row.report_snapshot.output.condition || getPciConditionCategory(row.report_snapshot.output.pci).rating}</Text><StatusBadge state="published" palette={p} /></View>) : <DashboardState palette={p} status="empty" title="No published results yet" message="Results appear after eligible calculation approval and separate publication." />)}</AdminPanel>
@@ -140,6 +142,7 @@ function DashboardContent({ role, userId }: { role: Role; userId: string }) {
 }
 const styles = StyleSheet.create({
   intro: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'space-between' }, lead: { flex: 1, minWidth: 180 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: layout.spacing.sm },
   task: { paddingVertical: 16, borderBottomWidth: 1, gap: 8 },
   stat: { ...layout.shadow, borderRadius: layout.radius.card, borderWidth: 1, gap: 6, minHeight: 112, paddingHorizontal: 20, paddingVertical: 18 },
